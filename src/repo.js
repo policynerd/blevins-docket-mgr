@@ -288,6 +288,13 @@ const meetings = {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
   },
+  setMotion(itemId, { mover_id, seconder_id, motion_text }) {
+    db.prepare('UPDATE agenda_items SET mover_id=?, seconder_id=?, motion_text=? WHERE id=?')
+      .run(mover_id || null, seconder_id || null, motion_text || null, itemId);
+  },
+  setVoteStatus(itemId, status) {
+    db.prepare('UPDATE agenda_items SET vote_status=? WHERE id=?').run(status, itemId);
+  },
   // Persist a new ordering. Only items that belong to the meeting are touched,
   // so a stale or tampered id list can't move items between meetings.
   reorderItems(meetingId, orderedIds) {
@@ -332,6 +339,10 @@ const votes = {
   clearForItem(agendaItemId) {
     db.prepare('DELETE FROM votes WHERE agenda_item_id = ?').run(agendaItemId);
   },
+  clearPersonForItem(agendaItemId, personId) {
+    db.prepare('DELETE FROM votes WHERE agenda_item_id = ? AND person_id = ?')
+      .run(agendaItemId, personId);
+  },
   record(agendaItemId, personId, vote) {
     return db.prepare(`INSERT INTO votes (agenda_item_id, person_id, vote)
       VALUES (?,?,?)`).run(agendaItemId, personId, vote).lastInsertRowid;
@@ -359,6 +370,53 @@ const votes = {
 };
 
 // ---------------------------------------------------------------------------
+// Reports (authored in the word processor)
+// ---------------------------------------------------------------------------
+const reports = {
+  forMatter(matterId) {
+    return db.prepare(`
+      SELECT r.*, u.name AS author_name
+      FROM reports r LEFT JOIN users u ON u.id = r.author_id
+      WHERE r.matter_id = ? ORDER BY r.created_at DESC, r.id DESC`).all(matterId);
+  },
+  get(id) {
+    return db.prepare(`
+      SELECT r.*, u.name AS author_name, m.file_number, m.title AS matter_title
+      FROM reports r
+      LEFT JOIN users u ON u.id = r.author_id
+      LEFT JOIN matters m ON m.id = r.matter_id
+      WHERE r.id = ?`).get(id);
+  },
+  recent(limit = 25) {
+    return db.prepare(`
+      SELECT r.*, u.name AS author_name, m.file_number
+      FROM reports r
+      LEFT JOIN users u ON u.id = r.author_id
+      LEFT JOIN matters m ON m.id = r.matter_id
+      ORDER BY r.updated_at DESC, r.id DESC LIMIT ?`).all(limit);
+  },
+  insert(r) {
+    return db.prepare(`INSERT INTO reports (matter_id, title, kind, body_html, author_id)
+      VALUES (?,?,?,?,?)`).run(
+      r.matter_id || null, r.title, r.kind || 'Staff Report',
+      r.body_html || null, r.author_id || null).lastInsertRowid;
+  },
+  update(id, r) {
+    db.prepare(`UPDATE reports SET title=?, kind=?, body_html=?, updated_at=datetime('now')
+      WHERE id=?`).run(r.title, r.kind || 'Staff Report', r.body_html || null, id);
+  },
+  remove(id) {
+    db.prepare('DELETE FROM reports WHERE id = ?').run(id);
+  },
+};
+
+// Add a rich-text body setter for matters (word-processor output).
+matters.setBodyHtml = function (id, bodyHtml) {
+  db.prepare(`UPDATE matters SET body_html=?, updated_at=datetime('now') WHERE id=?`)
+    .run(bodyHtml || null, id);
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -381,5 +439,5 @@ function statusBuckets() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES,
-  people, bodies, matters, meetings, votes, stats, statusBuckets,
+  people, bodies, matters, meetings, votes, reports, stats, statusBuckets,
 };

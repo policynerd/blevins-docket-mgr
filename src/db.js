@@ -127,20 +127,68 @@ CREATE TABLE IF NOT EXISTS votes (
   vote TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  person_id INTEGER REFERENCES people(id),
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  password_hash TEXT,
+  password_salt TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER REFERENCES matters(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'Staff Report',
+  body_html TEXT,
+  author_id INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_votes_item ON votes(agenda_item_id);
+CREATE INDEX IF NOT EXISTS idx_reports_matter ON reports(matter_id);
 `;
+
+// Additive column migrations for databases created before a column existed
+// (the Fly volume persists the DB across deploys).
+const COLUMN_MIGRATIONS = {
+  agenda_items: {
+    mover_id: 'INTEGER REFERENCES people(id)',
+    seconder_id: 'INTEGER REFERENCES people(id)',
+    motion_text: 'TEXT',
+    vote_status: "TEXT NOT NULL DEFAULT 'pending'",
+  },
+  matters: {
+    body_html: 'TEXT',
+  },
+};
+
+function migrate() {
+  for (const [table, cols] of Object.entries(COLUMN_MIGRATIONS)) {
+    const existing = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((r) => r.name));
+    for (const [col, def] of Object.entries(cols)) {
+      if (!existing.has(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def};`);
+    }
+  }
+}
 
 function init() {
   db.exec(SCHEMA);
+  migrate();
   return db;
 }
 
 function reset() {
-  const tables = ['votes', 'agenda_items', 'attachments', 'matter_history',
+  const tables = ['reports', 'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   for (const t of tables) db.exec(`DROP TABLE IF EXISTS ${t};`);
