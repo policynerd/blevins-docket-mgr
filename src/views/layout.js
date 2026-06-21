@@ -107,6 +107,7 @@ function layout({ title, active, body, subtitle, head }) {
       <div class="footer-links">
         <a href="/legislation">Legislation</a>
         <a href="/calendar">Calendar</a>
+        <a href="/topics">Indexes</a>
         <a href="/api/v1">Web API</a>
         <a href="/legislation.rss">RSS</a>
         <a href="/calendar.ics">iCalendar</a>

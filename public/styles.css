@@ -346,6 +346,15 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .live-ag-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .lai-title { flex: 1; }
 
+/* Topics / indexes */
+.topic-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+.topic-tag { display: inline-flex; align-items: center; gap: 6px; background: #e8f0fb; border: 1px solid #cfe0f5;
+  border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.topic-tag:hover { background: #d7e6fa; text-decoration: none; }
+.topic-n { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 7px; font-weight: 700; }
+.topic-notice { background: #fff8e6; border: 1px solid #f0d98a; border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; font-size: 13px; }
+.att-list li { display: flex; gap: 10px; align-items: center; }
+
 /* Footer */
 .site-footer { border-top: 3px solid #f4b400; background: var(--banner); color: #cfe0f2; padding: 22px 0; margin-top: 30px; }
 .footer-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }

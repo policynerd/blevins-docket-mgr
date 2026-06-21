@@ -67,12 +67,14 @@ function dashboard() {
 
 // --- Legislation list --------------------------------------------------------
 function legislationList(query) {
-  const { q = '', type = '', status = '', body_id = '', sponsor_id = '' } = query;
+  const { q = '', type = '', status = '', body_id = '', sponsor_id = '', topic = '' } = query;
   const rows = repo.matters.search({
     q, type, status,
     bodyId: body_id ? Number(body_id) : undefined,
     sponsorId: sponsor_id ? Number(sponsor_id) : undefined,
+    topicId: topic ? Number(topic) : undefined,
   });
+  const activeTopic = topic ? repo.topics.get(Number(topic)) : null;
   const allBodies = repo.bodies.all();
   const allPeople = repo.people.all();
 
@@ -82,6 +84,7 @@ function legislationList(query) {
   const filters = html`
     <form class="search-panel" method="get" action="/legislation" role="search">
       <div class="sp-head">Search Legislation</div>
+      ${topic ? raw(`<input type="hidden" name="topic" value="${escapeText(topic)}">`) : ''}
       <div class="sp-grid">
         <label class="sp-field">Words or file number
           <input type="search" name="q" value="${q}" placeholder="e.g. zoning, ORD-2026-0003">
@@ -120,12 +123,17 @@ function legislationList(query) {
     : emptyState('No legislative files match your search.');
 
   const exportQs = new URLSearchParams(
-    Object.entries({ q, type, status, body_id, sponsor_id }).filter(([, v]) => v)
+    Object.entries({ q, type, status, body_id, sponsor_id, topic }).filter(([, v]) => v)
   ).toString();
   const exportSuffix = exportQs ? '?' + exportQs : '';
 
+  const topicNotice = activeTopic
+    ? `<p class="topic-notice">Index: <strong>${escapeText(activeTopic.name)}</strong> · <a href="/legislation">clear</a></p>`
+    : '';
+
   const body = html`
     ${raw(filters)}
+    ${raw(topicNotice)}
     <div class="list-toolbar">
       <p class="muted result-count">${rows.length} legislative file${rows.length === 1 ? '' : 's'}</p>
       <span class="export-links">
@@ -171,6 +179,11 @@ function matterDetail(matter) {
       <td>${a.result ? statusBadge(a.result) : ''}</td>
     </tr>`).join('') : null;
 
+  const topics = repo.topics.forMatter(matter.id);
+  const topicChips = topics.length
+    ? raw(topics.map((t) => html`<a class="chip" href="/legislation?topic=${t.id}">${t.name}</a>`).join(''))
+    : raw('<span class="muted">None</span>');
+
   const reports = repo.reports.forMatter(matter.id);
   const reportList = reports.length
     ? `<ul class="attach-list doc-list">${reports.map((r) => html`
@@ -187,6 +200,7 @@ function matterDetail(matter) {
       <dt>Introduced</dt><dd>${raw(formatDate(matter.intro_date)) || '—'}</dd>
       ${matter.final_date ? raw(html`<dt>Final action</dt><dd>${raw(formatDate(matter.final_date))}</dd>`) : ''}
       <dt>Sponsors</dt><dd class="chips">${sponsorHtml}</dd>
+      <dt>Indexes</dt><dd class="chips">${topicChips}</dd>
     </dl>`;
 
   const body = html`
@@ -232,7 +246,9 @@ function calendar() {
       <td class="icon-col"><a href="/meetings/${m.id}">Details</a></td>
       <td class="icon-col">${raw(docCell(m.agenda_url, 'Agenda'))}</td>
       <td class="icon-col">${raw(`<a class="doc-link" href="/meetings/${m.id}/packet">Packet</a>`)}</td>
-      <td class="icon-col">${raw(docCell(m.minutes_url, 'Minutes'))}</td>
+      <td class="icon-col">${raw(m.minutes_status === 'published'
+        ? `<a class="doc-link" href="/meetings/${m.id}/minutes">Minutes</a>`
+        : docCell(m.minutes_url, 'Minutes'))}</td>
       <td class="icon-col">${raw(docCell(m.video_url, 'Video'))}</td>
     </tr>`;
 
@@ -268,6 +284,11 @@ function meetingDetail(meeting) {
     const titleLine = it.matter_id
       ? html`<a href="/legislation/${encodeURIComponent(it.file_number)}">${it.file_number}</a> — ${it.matter_title}`
       : html`${it.title || '(item)'}`;
+    const mover = it.mover_id ? repo.people.get(it.mover_id) : null;
+    const seconder = it.seconder_id ? repo.people.get(it.seconder_id) : null;
+    const motionLine = (it.motion_text || mover || seconder)
+      ? `<div class="ai-action">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
+      : '';
     return html`
       <li class="agenda-item">
         <div class="ai-head">
@@ -275,12 +296,19 @@ function meetingDetail(meeting) {
           <div class="ai-body">
             <div class="ai-title">${raw(titleLine)}</div>
             ${it.section ? raw(`<div class="sub">${escapeText(it.section)}</div>`) : ''}
+            ${raw(motionLine)}
             ${it.action ? raw(`<div class="ai-action">${escapeText(it.action)} ${it.result ? `— <strong>${escapeText(it.result)}</strong>` : ''}</div>`) : ''}
           </div>
         </div>
         ${raw(voteSummary)}
       </li>`;
   }).join('') : emptyState('No agenda items posted.');
+
+  const attendance = repo.meetings.attendance(meeting.id);
+  const attendanceCard = attendance.length
+    ? card('Roll call / attendance', `<ul class="plain att-list">${attendance.map((a) => html`
+        <li><a href="/people/${a.person_id}">${a.full_name}</a> ${raw(`<span class="badge st-${String(a.status).toLowerCase() === 'present' ? 'passed' : (String(a.status).toLowerCase() === 'absent' ? 'failed' : 'on-agenda')}">${escapeText(a.status)}</span>`)}</li>`).join('')}</ul>`)
+    : '';
 
   const links = [
     meeting.agenda_url ? `<a href="${escapeText(meeting.agenda_url)}">Agenda packet</a>` : '',
@@ -295,6 +323,7 @@ function meetingDetail(meeting) {
       <span class="head-actions">
         <a class="btn" href="/live/${meeting.id}">● Live</a>
         <a class="btn" href="/meetings/${meeting.id}/packet">📄 Agenda packet</a>
+        <a class="btn" href="/meetings/${meeting.id}/minutes">🧾 Minutes</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>
       </span>
     </div>
@@ -303,8 +332,12 @@ function meetingDetail(meeting) {
         <dt>Date</dt><dd>${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))}</dd>
         <dt>Location</dt><dd>${meeting.location || '—'}</dd>
         <dt>Status</dt><dd>${statusBadge(meeting.status)}</dd>
+        <dt>Minutes</dt><dd>${raw(meeting.minutes_status === 'published'
+          ? `<a href="/meetings/${meeting.id}/minutes">Published minutes</a>`
+          : '<span class="muted">Not yet published</span>')}</dd>
         ${links ? raw(html`<dt>Documents</dt><dd class="chips">${raw(links)}</dd>`) : ''}
       </dl>`))}
+    ${raw(attendanceCard)}
     ${raw(card('Agenda', `<ol class="agenda">${itemBlocks}</ol>`))}
   `;
   return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
@@ -489,6 +522,18 @@ function bodyDetail(b) {
   return layout({ title: b.name, active: '/bodies', body });
 }
 
+// --- Topics / indexes --------------------------------------------------------
+function topicsList() {
+  const list = repo.topics.all();
+  const cloud = list.length
+    ? `<div class="topic-cloud">${list.map((t) => html`
+        <a class="topic-tag" href="/legislation?topic=${t.id}">${t.name} <span class="topic-n">${t.n}</span></a>`).join('')}</div>`
+    : emptyState('No index terms yet.');
+  const body = html`${raw(card('Legislative index terms', cloud))}`;
+  return layout({ title: 'Indexes', active: '/legislation',
+    subtitle: 'Browse legislation by subject index term.', body });
+}
+
 // --- helpers -----------------------------------------------------------------
 function initials(name) {
   return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
@@ -525,5 +570,5 @@ function notFound() {
 
 module.exports = {
   dashboard, legislationList, matterDetail, calendar, meetingDetail, agendaPacket,
-  peopleList, personDetail, bodiesList, bodyDetail, notFound,
+  peopleList, personDetail, bodiesList, bodyDetail, topicsList, notFound,
 };

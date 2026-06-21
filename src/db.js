@@ -150,12 +150,33 @@ CREATE TABLE IF NOT EXISTS reports (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS attendance (
+  id INTEGER PRIMARY KEY,
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES people(id),
+  status TEXT NOT NULL DEFAULT 'Present'
+);
+
+CREATE TABLE IF NOT EXISTS topics (
+  id INTEGER PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS matter_topics (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_votes_item ON votes(agenda_item_id);
 CREATE INDEX IF NOT EXISTS idx_reports_matter ON reports(matter_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_meeting ON attendance(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_mtopics_matter ON matter_topics(matter_id);
+CREATE INDEX IF NOT EXISTS idx_mtopics_topic ON matter_topics(topic_id);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -169,6 +190,10 @@ const COLUMN_MIGRATIONS = {
   },
   matters: {
     body_html: 'TEXT',
+  },
+  meetings: {
+    minutes_html: 'TEXT',
+    minutes_status: "TEXT NOT NULL DEFAULT 'none'",
   },
 };
 

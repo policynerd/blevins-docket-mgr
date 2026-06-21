@@ -15,6 +15,8 @@ const live = require('./src/live');
 const liveViews = require('./src/views/live');
 const member = require('./src/views/member');
 const reportsView = require('./src/views/reports');
+const minutesView = require('./src/views/minutes');
+const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -103,6 +105,12 @@ route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.agendaPacket(mt));
 });
+route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, minutesView.minutesView(mt));
+});
+route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
 route('GET', /^\/people\/?$/, (req, res) => sendHtml(res, pages.peopleList()));
 route('GET', /^\/people\/(\d+)$/, (req, res, ctx) => {
   const p = repo.people.get(Number(ctx.params[0]));
@@ -130,6 +138,7 @@ route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
     intro_date: b.intro_date || null, summary: b.summary || null, full_text: b.full_text || null,
   });
   applySponsors(id, b.sponsor_id);
+  repo.topics.setForMatter(id, parseTopics(b.topics));
   redirect(res, `/legislation/${encodeURIComponent(fileNumber)}`);
 });
 
@@ -150,6 +159,7 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
   });
   repo.matters.clearSponsors(id);
   applySponsors(id, b.sponsor_id);
+  repo.topics.setForMatter(id, parseTopics(b.topics));
   redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
 });
 
@@ -361,6 +371,37 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
   sendJson(res, { ok: true });
 });
 
+// Minutes & attendance (clerk) -----------------------------------------------
+route('GET', /^\/admin\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, minutesView.minutesEditor(mt));
+});
+route('POST', /^\/admin\/meetings\/(\d+)\/minutes\/generate$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  if (!repo.meetings.get(id)) return sendHtml(res, pages.notFound(), 404);
+  repo.meetings.setMinutes(id, minutesGen.generate(id), 'draft');
+  redirect(res, `/admin/meetings/${id}/minutes`);
+});
+route('POST', /^\/admin\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  if (!repo.meetings.get(id)) return sendHtml(res, pages.notFound(), 404);
+  const status = ctx.body.status === 'published' ? 'published' : 'draft';
+  repo.meetings.setMinutes(id, sanitizeHtml(ctx.body.minutes_html), status);
+  redirect(res, status === 'published' ? `/meetings/${id}/minutes` : `/admin/meetings/${id}/minutes`);
+});
+route('POST', /^\/admin\/meetings\/(\d+)\/attendance$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  if (!repo.meetings.get(id)) return sendHtml(res, pages.notFound(), 404);
+  const rows = [];
+  for (const key of Object.keys(ctx.body)) {
+    const m = key.match(/^att_(\d+)$/);
+    if (m && ctx.body[key]) rows.push({ person_id: Number(m[1]), status: ctx.body[key] });
+  }
+  repo.meetings.setAttendance(id, rows);
+  redirect(res, `/admin/meetings/${id}/minutes`);
+});
+
 // JSON API -------------------------------------------------------------------
 route('GET', /^\/api\/v1\/?$/, (req, res) => api.index(res));
 route('GET', /^\/api\/v1\/matters\/?$/, (req, res, ctx) => api.matters(res, ctx.query));
@@ -386,6 +427,10 @@ function gate(req, res, pathname, user) {
   if (!user) { redirect(res, '/login?next=' + encodeURIComponent(pathname)); return false; }
   sendHtml(res, forbidden(), 403);
   return false;
+}
+
+function parseTopics(str) {
+  return String(str || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 25);
 }
 
 function recordSingleVote(itemId, personId, vote) {
