@@ -27,11 +27,12 @@ function adminHome() {
       <div class="stat"><span class="stat-n">${s.meetings}</span><span class="stat-l">Meetings</span></div>
       <div class="stat"><span class="stat-n">${s.people}</span><span class="stat-l">Officials</span></div>
     </div>
+    ${raw(card('Run a meeting live', require('./live').liveLauncher()))}
     ${raw(card('Manage legislation',
       `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th></th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`))}
   `;
-  return layout({ title: 'Admin', active: '/admin',
-    subtitle: 'Clerk workspace — create files, record actions, build agendas, capture votes.', body });
+  return layout({ title: 'Clerk Workspace', active: '/admin',
+    subtitle: 'Create files, draft documents, build agendas, run live voting, and capture results.', body });
 }
 
 function selectOptions(values, current, { includeBlank } = {}) {
@@ -95,7 +96,7 @@ function matterForm(matter, opts = {}) {
 
   let extras = '';
   if (isEdit) {
-    extras = actionRecorder(matter) + attachmentForm(matter);
+    extras = actionRecorder(matter) + documentsPanel(matter) + attachmentForm(matter);
   }
 
   const body = html`
@@ -133,6 +134,17 @@ function actionRecorder(matter) {
     </form>
     ${raw(histRows ? `<table class="data compact"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${histRows}</tbody></table>` : '')}`;
   return card('Record an action', form);
+}
+
+function documentsPanel(matter) {
+  const reports = repo.reports.forMatter(matter.id);
+  const list = reports.length
+    ? `<ul class="attach-list doc-list">${reports.map((r) => html`
+        <li><a href="/reports/${r.id}">${r.title}</a> <span class="badge type">${r.kind}</span>
+        — <a class="btn-link" href="/admin/reports/${r.id}/edit">Edit</a></li>`).join('')}</ul>`
+    : emptyState('No documents yet.');
+  const inner = `<p><a class="btn" href="/admin/matters/${matter.id}/reports/new">✎ New document (word processor)</a></p>${list}`;
+  return card('Documents & reports', inner);
 }
 
 function attachmentForm(matter) {

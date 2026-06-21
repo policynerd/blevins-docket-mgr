@@ -10,6 +10,14 @@ const pages = require('./src/views/pages');
 const admin = require('./src/views/admin');
 const api = require('./src/api');
 const feeds = require('./src/exports');
+const auth = require('./src/auth');
+const live = require('./src/live');
+const liveViews = require('./src/views/live');
+const member = require('./src/views/member');
+const reportsView = require('./src/views/reports');
+const authView = require('./src/views/auth');
+const { setUser, forbidden } = require('./src/views/layout');
+const { sanitizeHtml } = require('./src/sanitize');
 const {
   sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray,
 } = require('./src/util');
@@ -20,6 +28,8 @@ init();
 if (repo.stats().people === 0) {
   try { require('./src/seed').run(); } catch (e) { console.error('Seed failed:', e.message); }
 }
+// Seed login accounts (clerk + board members) once people exist.
+try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed failed:', e.message); }
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -30,6 +40,28 @@ const MIME = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+
 // Each route: [method, RegExp, handler(req,res,{params,query,body})]
 const routes = [];
 function route(method, pattern, handler) { routes.push({ method, pattern, handler }); }
+
+// --- Auth -------------------------------------------------------------------
+function safeNext(next) {
+  return (typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')) ? next : null;
+}
+route('GET', /^\/login$/, (req, res, ctx) => {
+  if (ctx.user) return redirect(res, ctx.user.role === 'clerk' ? '/admin' : '/member');
+  sendHtml(res, authView.loginPage({ next: safeNext(ctx.query.next) || '' }));
+});
+route('POST', /^\/login$/, (req, res, ctx) => {
+  const { email, password, next } = ctx.body;
+  const sid = auth.login(email, password);
+  if (!sid) return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
+  auth.setSessionCookie(res, sid);
+  const user = auth.findUserByEmail(email);
+  redirect(res, safeNext(next) || (user && user.role === 'clerk' ? '/admin' : '/member'));
+});
+route('POST', /^\/logout$/, (req, res) => {
+  auth.logout(auth.sidFromReq(req));
+  auth.clearSessionCookie(res);
+  redirect(res, '/');
+});
 
 // Public portal --------------------------------------------------------------
 route('GET', /^\/$/, (req, res) => sendHtml(res, pages.dashboard()));
@@ -196,6 +228,139 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
 
+// Reports / word processor (clerk) -------------------------------------------
+route('GET', /^\/reports\/(\d+)$/, (req, res, ctx) => {
+  const r = repo.reports.get(Number(ctx.params[0]));
+  if (!r) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, reportsView.reportView(r));
+});
+route('GET', /^\/admin\/matters\/(\d+)\/reports\/new$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, reportsView.reportForm(null, m));
+});
+route('POST', /^\/admin\/matters\/(\d+)\/reports$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  if (!b.title) return redirect(res, `/admin/matters/${m.id}/reports/new`);
+  repo.reports.insert({
+    matter_id: m.id, title: b.title, kind: b.kind,
+    body_html: sanitizeHtml(b.body_html), author_id: ctx.user ? ctx.user.id : null,
+  });
+  redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
+});
+route('GET', /^\/admin\/reports\/(\d+)\/edit$/, (req, res, ctx) => {
+  const r = repo.reports.get(Number(ctx.params[0]));
+  if (!r) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, reportsView.reportForm(r, null));
+});
+route('POST', /^\/admin\/reports\/(\d+)$/, (req, res, ctx) => {
+  const r = repo.reports.get(Number(ctx.params[0]));
+  if (!r) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  repo.reports.update(r.id, { title: b.title, kind: b.kind, body_html: sanitizeHtml(b.body_html) });
+  redirect(res, `/reports/${r.id}`);
+});
+
+// Member portal --------------------------------------------------------------
+route('GET', /^\/member\/?$/, (req, res, ctx) => sendHtml(res, member.memberHome(ctx.user)));
+route('GET', /^\/member\/files\/new$/, (req, res, ctx) => sendHtml(res, member.memberFileForm(ctx.user)));
+route('POST', /^\/member\/files$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.title || !b.type) return redirect(res, '/member/files/new');
+  const fileNumber = repo.matters.nextFileNumber(b.type);
+  const id = repo.matters.insert({
+    file_number: fileNumber, type: b.type, title: b.title, status: 'Draft',
+    summary: b.summary || null,
+  });
+  repo.matters.setBodyHtml(id, sanitizeHtml(b.body_html));
+  if (ctx.user && ctx.user.person_id) repo.matters.addSponsor(id, ctx.user.person_id, 'Primary');
+  redirect(res, `/legislation/${encodeURIComponent(fileNumber)}`);
+});
+route('POST', /^\/member\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
+  const itemId = Number(ctx.params[0]);
+  const item = repo.meetings.getItem(itemId);
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  if (!ctx.user || !ctx.user.person_id) return sendJson(res, { error: 'No member identity' }, 403);
+  if ((item.vote_status || 'pending') !== 'open') return sendJson(res, { error: 'Voting is not open' }, 409);
+  const roster = new Set(repo.bodies.members(item.body_id).map((m) => m.person_id));
+  if (!roster.has(ctx.user.person_id)) return sendJson(res, { error: 'Not on this body' }, 403);
+  if (!repo.VOTE_VALUES.includes(ctx.body.vote)) return sendJson(res, { error: 'Invalid vote' }, 400);
+  recordSingleVote(itemId, ctx.user.person_id, ctx.body.vote);
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+
+// Live voting — public read view + SSE ---------------------------------------
+route('GET', /^\/live\/(\d+)$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, liveViews.publicLive(mt, ctx.user));
+});
+route('GET', /^\/live\/(\d+)\/stream$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  if (!repo.meetings.get(id)) return sendJson(res, { error: 'Not found' }, 404);
+  live.subscribe(id, req, res);
+  live.sendInitial(id, res);
+});
+
+// Live voting — clerk console + controls -------------------------------------
+route('GET', /^\/admin\/meetings\/(\d+)\/live$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, liveViews.clerkConsole(mt, ctx.user));
+});
+route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  // Only one item open at a time per meeting.
+  for (const it of repo.meetings.items(item.meeting_id)) {
+    if (it.vote_status === 'open') repo.meetings.setVoteStatus(it.id, 'pending');
+  }
+  repo.meetings.setVoteStatus(item.id, 'open');
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  const t = repo.votes.tally(item.id);
+  const result = t.Yea > t.Nay ? 'Pass' : 'Fail';
+  repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
+  repo.meetings.setVoteStatus(item.id, 'closed');
+  // Reflect the outcome on the matter's legislative history.
+  if (item.matter_id) {
+    repo.matters.addHistory({
+      matter_id: item.matter_id, action_date: require('./src/util').todayISO(),
+      body_id: item.body_id, action: 'Vote taken in live session', result,
+      meeting_id: item.meeting_id,
+    });
+  }
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true, result });
+});
+route('POST', /^\/admin\/agenda-items\/(\d+)\/motion$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  const b = ctx.body;
+  repo.meetings.setMotion(item.id, {
+    mover_id: b.mover_id ? Number(b.mover_id) : null,
+    seconder_id: b.seconder_id ? Number(b.seconder_id) : null,
+    motion_text: b.motion_text || null,
+  });
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+route('POST', /^\/admin\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  if (!repo.VOTE_VALUES.includes(ctx.body.vote)) return sendJson(res, { error: 'Invalid vote' }, 400);
+  recordSingleVote(item.id, Number(ctx.body.person_id), ctx.body.vote);
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+
 // JSON API -------------------------------------------------------------------
 route('GET', /^\/api\/v1\/?$/, (req, res) => api.index(res));
 route('GET', /^\/api\/v1\/matters\/?$/, (req, res, ctx) => api.matters(res, ctx.query));
@@ -210,6 +375,25 @@ route('GET', /^\/api\/v1\/people\/?$/, (req, res) => api.persons(res));
 route('GET', /^\/api\/v1\/people\/(\d+)$/, (req, res, ctx) => api.person(res, ctx.params[0]));
 
 // --- helpers ----------------------------------------------------------------
+// Centralized access control. Returns false (and writes a response) when the
+// request should be blocked. /admin requires clerk; /member requires member+.
+function gate(req, res, pathname, user) {
+  let need = null;
+  if (pathname.startsWith('/admin')) need = 'clerk';
+  else if (pathname.startsWith('/member')) need = 'member';
+  if (!need) return true;
+  if (auth.hasRole(user, need)) return true;
+  if (!user) { redirect(res, '/login?next=' + encodeURIComponent(pathname)); return false; }
+  sendHtml(res, forbidden(), 403);
+  return false;
+}
+
+function recordSingleVote(itemId, personId, vote) {
+  if (!personId) return;
+  repo.votes.clearPersonForItem(itemId, personId);
+  repo.votes.record(itemId, personId, vote);
+}
+
 function applySponsors(matterId, sponsorIds) {
   const ids = asArray(sponsorIds).filter(Boolean);
   ids.forEach((pid, i) => {
@@ -245,13 +429,20 @@ const server = http.createServer(async (req, res) => {
     body = await parseBody(req);
   }
 
+  // Resolve the current user and gate protected areas. Set the user for the
+  // layout synchronously here — handlers render without an intervening await.
+  const user = auth.currentUser(req);
+  setUser(user);
+
+  if (!gate(req, res, pathname, user)) return;
+
   for (const r of routes) {
     if (r.method !== req.method) continue;
     const match = pathname.match(r.pattern);
     if (match) {
       const params = match.slice(1);
       try {
-        return r.handler(req, res, { params, query, body });
+        return r.handler(req, res, { params, query, body, user, pathname });
       } catch (err) {
         console.error('Handler error:', err);
         if (pathname.startsWith('/api/')) return sendJson(res, { error: 'Internal error' }, 500);

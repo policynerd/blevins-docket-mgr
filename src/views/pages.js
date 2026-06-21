@@ -171,6 +171,13 @@ function matterDetail(matter) {
       <td>${a.result ? statusBadge(a.result) : ''}</td>
     </tr>`).join('') : null;
 
+  const reports = repo.reports.forMatter(matter.id);
+  const reportList = reports.length
+    ? `<ul class="attach-list doc-list">${reports.map((r) => html`
+        <li><a href="/reports/${r.id}">${r.title}</a> <span class="badge type">${r.kind}</span>
+        ${r.author_name ? raw(`<span class="muted"> — ${escapeText(r.author_name)}</span>`) : ''}</li>`).join('')}</ul>`
+    : emptyState('No staff reports or documents.');
+
   const meta = html`
     <dl class="meta">
       <dt>File #</dt><dd>${matter.file_number}</dd>
@@ -190,7 +197,10 @@ function matterDetail(matter) {
     </div>
     ${raw(card('Overview', meta))}
     ${matter.summary ? raw(card('Summary', `<p>${escapeText(matter.summary)}</p>`)) : ''}
-    ${matter.full_text ? raw(card('Full text', `<pre class="fulltext">${escapeText(matter.full_text)}</pre>`)) : ''}
+    ${matter.body_html
+      ? raw(card('Legislation text', `<div class="doc-body">${matter.body_html}</div>`))
+      : (matter.full_text ? raw(card('Full text', `<pre class="fulltext">${escapeText(matter.full_text)}</pre>`)) : '')}
+    ${raw(card('Documents & reports', reportList))}
     ${raw(card('Legislative history',
       historyRows
         ? `<table class="data"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th><th></th></tr></thead><tbody>${historyRows}</tbody></table>`
@@ -283,6 +293,7 @@ function meetingDetail(meeting) {
     <div class="detail-head">
       <h1>${meeting.body_name}</h1>
       <span class="head-actions">
+        <a class="btn" href="/live/${meeting.id}">● Live</a>
         <a class="btn" href="/meetings/${meeting.id}/packet">📄 Agenda packet</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>
       </span>

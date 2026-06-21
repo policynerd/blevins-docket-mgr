@@ -211,6 +211,21 @@ function run() {
       ],
     });
 
+    // --- Documents / reports (word-processor output) ---------------------
+    repo.reports.insert({
+      matter_id: m1.id, title: 'Staff Report — Climate Resilience & Tree Canopy', kind: 'Staff Report',
+      body_html: '<h2>Purpose</h2><p>This report supports the proposed ordinance establishing a citywide '
+        + '<strong>Climate Resilience and Tree Canopy Program</strong>.</p><h3>Background</h3>'
+        + '<p>The current canopy covers an estimated 28% of the city. Staff recommends a target of '
+        + '<strong>40% by 2035</strong>.</p><h3>Recommendation</h3><ul><li>Adopt the ordinance.</li>'
+        + '<li>Establish the dedicated resilience fund.</li><li>Direct staff to report annually.</li></ul>',
+    });
+    repo.reports.insert({
+      matter_id: m4.id, title: 'Fiscal Note — FY2027 Capital Improvement Program', kind: 'Fiscal Note',
+      body_html: '<p>The six-year CIP totals <strong>$128M</strong>, with priority allocations to '
+        + 'transit, water infrastructure, and parks. No new debt issuance is required in the first year.</p>',
+    });
+
     // --- Meetings & agendas ----------------------------------------------
     // Past council meeting (with recorded votes)
     const pastMeeting = repo.meetings.insert({

@@ -8,8 +8,24 @@ const NAV = [
   { href: '/calendar', label: 'Calendar' },
   { href: '/people', label: 'Council Members' },
   { href: '/bodies', label: 'Bodies & Committees' },
-  { href: '/admin', label: 'Admin' },
 ];
+
+// Request-scoped current user. Handlers render synchronously after this is set
+// (no awaits between setUser and rendering), so a module field is safe here.
+let _user = null;
+function setUser(u) { _user = u; }
+
+const RANK = { public: 0, member: 1, staff: 2, clerk: 3 };
+function navFor(user) {
+  const items = NAV.slice();
+  if (user && (RANK[user.role] || 0) >= RANK.member) {
+    items.push({ href: '/member', label: 'Member Portal' });
+  }
+  if (user && (RANK[user.role] || 0) >= RANK.clerk) {
+    items.push({ href: '/admin', label: 'Clerk Workspace' });
+  }
+  return items;
+}
 
 function statusBadge(status) {
   const cls = 'st-' + String(status || '').toLowerCase().replace(/[^a-z]+/g, '-');
@@ -26,11 +42,17 @@ function escapeText(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function layout({ title, active, body, subtitle }) {
-  const nav = NAV.map((n) => {
+function layout({ title, active, body, subtitle, head }) {
+  const user = _user;
+  const nav = navFor(user).map((n) => {
     const isActive = n.href === active;
     return html`<a class="${isActive ? 'active' : ''}" href="${n.href}">${n.label}</a>`;
   });
+
+  const authArea = user
+    ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
+       <form method="post" action="/logout" class="util-logout"><button type="submit">Sign out</button></form>`
+    : '<a href="/login">Staff &amp; Member Sign-In</a>';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -41,6 +63,7 @@ function layout({ title, active, body, subtitle }) {
   <link rel="stylesheet" href="/styles.css">
   <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
   <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
+  ${head || ''}
 </head>
 <body>
   <div class="gov-utility">
@@ -49,7 +72,7 @@ function layout({ title, active, body, subtitle }) {
       <span class="util-right">
         <a href="/api/v1">Developers / API</a>
         <a href="/legislation.rss">RSS</a>
-        <a href="/admin">Staff Sign-In</a>
+        ${authArea}
       </span>
     </div>
   </div>
@@ -106,4 +129,11 @@ function emptyState(msg) {
   return `<p class="empty">${escapeText(msg)}</p>`;
 }
 
-module.exports = { layout, card, statusBadge, typeBadge, emptyState, escapeText, NAV };
+function forbidden() {
+  return layout({
+    title: 'Access denied', active: '',
+    body: '<div class="hero"><h1>403 — Access denied</h1><p>You don’t have permission to view this page. <a style="color:#fff;text-decoration:underline" href="/login">Sign in</a> with an authorized account.</p></div>',
+  });
+}
+
+module.exports = { layout, card, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
