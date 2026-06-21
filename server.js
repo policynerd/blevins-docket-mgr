@@ -9,8 +9,9 @@ const repo = require('./src/repo');
 const pages = require('./src/views/pages');
 const admin = require('./src/views/admin');
 const api = require('./src/api');
+const feeds = require('./src/exports');
 const {
-  sendHtml, sendJson, redirect, parseBody, parseQuery, asArray,
+  sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray,
 } = require('./src/util');
 
 init();
@@ -33,6 +34,27 @@ function route(method, pattern, handler) { routes.push({ method, pattern, handle
 // Public portal --------------------------------------------------------------
 route('GET', /^\/$/, (req, res) => sendHtml(res, pages.dashboard()));
 route('GET', /^\/legislation\/?$/, (req, res, ctx) => sendHtml(res, pages.legislationList(ctx.query)));
+
+// Feeds & exports -----------------------------------------------------------
+route('GET', /^\/legislation\.csv$/, (req, res, ctx) => {
+  const q = ctx.query;
+  const rows = repo.matters.search({
+    q: q.q, type: q.type, status: q.status,
+    bodyId: q.body_id ? Number(q.body_id) : undefined,
+    sponsorId: q.sponsor_id ? Number(q.sponsor_id) : undefined,
+    limit: 1000,
+  });
+  sendText(res, feeds.mattersCsv(rows), 'text/csv; charset=utf-8', { filename: 'legislation.csv' });
+});
+route('GET', /^\/legislation\.rss$/, (req, res) => {
+  const rows = repo.matters.search({ limit: 50 }).filter((m) => m.intro_date);
+  sendText(res, feeds.legislationRss(rows, baseUrl(req)), 'application/rss+xml; charset=utf-8');
+});
+route('GET', /^\/calendar\.ics$/, (req, res) => {
+  sendText(res, feeds.icalCalendar(repo.meetings.all(), baseUrl(req)), 'text/calendar; charset=utf-8',
+    { filename: 'meetings.ics' });
+});
+
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);

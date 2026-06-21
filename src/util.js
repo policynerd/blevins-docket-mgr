@@ -69,6 +69,20 @@ function redirect(res, location, status = 303) {
   res.end();
 }
 
+// Send an arbitrary text payload (CSV, iCalendar, RSS, …).
+function sendText(res, body, contentType, { status = 200, filename } = {}) {
+  const headers = { 'Content-Type': contentType };
+  if (filename) headers['Content-Disposition'] = `attachment; filename="${filename}"`;
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+function baseUrl(req) {
+  const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return `${proto}://${host}`;
+}
+
 // Parse a urlencoded request body into a plain object (arrays for repeats).
 function parseBody(req) {
   return new Promise((resolve) => {
@@ -118,5 +132,5 @@ function slugify(s) {
 module.exports = {
   escapeHtml, html, raw, renderValue,
   formatDate, formatDateTime, todayISO, MONTHS,
-  sendHtml, sendJson, redirect, parseBody, parseQuery, asArray, slugify,
+  sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray, slugify,
 };

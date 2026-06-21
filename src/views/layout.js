@@ -39,6 +39,8 @@ function layout({ title, active, body, subtitle }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeText(title ? title + ' · ' : '')}Docket Manager</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
+  <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
 </head>
 <body>
   <header class="site-header">

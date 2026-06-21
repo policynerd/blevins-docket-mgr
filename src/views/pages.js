@@ -104,9 +104,20 @@ function legislationList(query) {
     ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title / Sponsors</th><th>In control</th><th>Introduced</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>`
     : emptyState('No legislative files match your search.');
 
+  const exportQs = new URLSearchParams(
+    Object.entries({ q, type, status, body_id, sponsor_id }).filter(([, v]) => v)
+  ).toString();
+  const exportSuffix = exportQs ? '?' + exportQs : '';
+
   const body = html`
     ${raw(filters)}
-    <p class="muted result-count">${rows.length} legislative file${rows.length === 1 ? '' : 's'}</p>
+    <div class="list-toolbar">
+      <p class="muted result-count">${rows.length} legislative file${rows.length === 1 ? '' : 's'}</p>
+      <span class="export-links">
+        <a class="btn-link" href="/legislation.csv${exportSuffix}">⬇ Export CSV</a>
+        <a class="btn-link" href="/legislation.rss">🔔 RSS</a>
+      </span>
+    </div>
     ${raw(table)}`;
   return layout({ title: 'Legislation', active: '/legislation', body });
 }
@@ -119,7 +130,7 @@ function matterDetail(matter) {
   const appearances = repo.matters.appearsOn(matter.id);
 
   const sponsorHtml = sponsors.length
-    ? sponsors.map((p) => html`<a class="chip" href="/people/${p.id}">${p.full_name}${p.sponsor_type === 'Primary' ? raw(' <em>(primary)</em>') : ''}</a>`)
+    ? raw(sponsors.map((p) => html`<a class="chip" href="/people/${p.id}">${p.full_name}${p.sponsor_type === 'Primary' ? raw(' <em>(primary)</em>') : ''}</a>`).join(''))
     : raw('<span class="muted">None</span>');
 
   const historyRows = history.length ? history.map((h) => html`
@@ -152,7 +163,7 @@ function matterDetail(matter) {
       <dt>Status</dt><dd>${statusBadge(matter.status)}</dd>
       <dt>In control</dt><dd>${matter.body_name || '—'}</dd>
       <dt>Introduced</dt><dd>${raw(formatDate(matter.intro_date)) || '—'}</dd>
-      ${matter.final_date ? html`<dt>Final action</dt><dd>${raw(formatDate(matter.final_date))}</dd>` : ''}
+      ${matter.final_date ? raw(html`<dt>Final action</dt><dd>${raw(formatDate(matter.final_date))}</dd>`) : ''}
       <dt>Sponsors</dt><dd class="chips">${sponsorHtml}</dd>
     </dl>`;
 
@@ -196,7 +207,7 @@ function calendar() {
 
   const body = html`
     ${raw(card('Upcoming meetings', tbl(upcoming, 'No upcoming meetings.'),
-      { actions: '<a class="btn-link" href="/admin/meetings/new">+ Schedule meeting</a>' }))}
+      { actions: '<a class="btn-link" href="/calendar.ics">📅 Subscribe (iCal)</a> &nbsp; <a class="btn-link" href="/admin/meetings/new">+ Schedule meeting</a>' }))}
     ${raw(card('Past meetings', tbl(past, 'No past meetings on record.')))}
   `;
   return layout({ title: 'Calendar', active: '/calendar', body });
@@ -227,7 +238,7 @@ function meetingDetail(meeting) {
         <div class="ai-head">
           <span class="ai-num">${it.agenda_number || ''}</span>
           <div class="ai-body">
-            <div class="ai-title">${titleLine}</div>
+            <div class="ai-title">${raw(titleLine)}</div>
             ${it.section ? raw(`<div class="sub">${escapeText(it.section)}</div>`) : ''}
             ${it.action ? raw(`<div class="ai-action">${escapeText(it.action)} ${it.result ? `— <strong>${escapeText(it.result)}</strong>` : ''}</div>`) : ''}
           </div>
@@ -253,7 +264,7 @@ function meetingDetail(meeting) {
         <dt>Date</dt><dd>${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))}</dd>
         <dt>Location</dt><dd>${meeting.location || '—'}</dd>
         <dt>Status</dt><dd>${statusBadge(meeting.status)}</dd>
-        ${links ? html`<dt>Documents</dt><dd class="chips">${raw(links)}</dd>` : ''}
+        ${links ? raw(html`<dt>Documents</dt><dd class="chips">${raw(links)}</dd>`) : ''}
       </dl>`))}
     ${raw(card('Agenda', `<ol class="agenda">${itemBlocks}</ol>`))}
   `;
@@ -279,6 +290,8 @@ function peopleList() {
 function personDetail(person) {
   const memberships = repo.people.memberships(person.id);
   const sponsored = repo.people.sponsored(person.id);
+  const voteRecord = repo.votes.byPerson(person.id);
+  const voteSummary = repo.votes.personSummary(person.id);
 
   const memRows = memberships.length
     ? `<ul class="plain">${memberships.map((m) => html`<li><a href="/bodies/${m.body_id}">${m.body_name}</a> — ${m.role}${m.voting ? '' : ' (non-voting)'}</li>`).join('')}</ul>`
@@ -312,6 +325,7 @@ function personDetail(person) {
       sponsoredRows
         ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th></tr></thead><tbody>${sponsoredRows}</tbody></table>`
         : emptyState('No sponsored legislation.')))}
+    ${raw(card('Voting record', votingRecordHtml(voteRecord, voteSummary)))}
   `;
   return layout({ title: person.full_name, active: '/people', body });
 }
@@ -374,6 +388,27 @@ function bodyDetail(b) {
 function initials(name) {
   return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
     .map((p) => p[0].toUpperCase()).join('');
+}
+
+function votingRecordHtml(record, summary) {
+  if (!record.length) return emptyState('No recorded votes.');
+  const chips = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent']
+    .filter((k) => summary[k])
+    .map((k) => `<span class="v ${k === 'Yea' ? 'yea' : k === 'Nay' ? 'nay' : ''}">${k} ${summary[k]}</span>`)
+    .join(' ');
+  const rows = record.map((r) => html`
+    <tr>
+      <td>${raw(formatDate(r.meeting_date))}</td>
+      <td>${r.body_name}</td>
+      <td class="title-cell">${r.file_number
+        ? raw(html`<a href="/legislation/${encodeURIComponent(r.file_number)}">${r.file_number}</a> — ${r.matter_title}`)
+        : (r.item_action || '')}</td>
+      <td>${raw(`<span class="vt vt-${r.vote.toLowerCase()}">${escapeText(r.vote)}</span>`)}</td>
+      <td>${r.item_result ? statusBadge(r.item_result) : ''}</td>
+    </tr>`).join('');
+  return `<div class="vote-summary" style="margin:0 0 12px">${chips}</div>
+    <table class="data"><thead><tr><th>Meeting</th><th>Body</th><th>Item</th><th>Vote</th><th>Outcome</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
 }
 
 function notFound() {

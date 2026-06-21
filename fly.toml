@@ -1,10 +1,12 @@
 # Fly.io config — runs the Docker image with a persistent volume for SQLite.
 # First-time setup:
 #   fly launch --no-deploy        # or `fly apps create blevins-docket-mgr`
-#   fly volumes create docket_data --size 1 --region iad
+#   fly volumes create docket_data --size 1 --region ord
 #   fly deploy
+# If a region reports "insufficient CPUs available", switch to another
+# (e.g. ord, ewr, den, sjc, lax) in both the volume and primary_region.
 app = "blevins-docket-mgr"
-primary_region = "iad"
+primary_region = "ord"
 
 [build]
   dockerfile = "Dockerfile"
