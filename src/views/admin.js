@@ -84,6 +84,9 @@ function matterForm(matter, opts = {}) {
       <label>Full text
         <textarea name="full_text" rows="8" placeholder="BE IT ORDAINED…">${matter ? (matter.full_text || '') : ''}</textarea>
       </label>
+      <label>Index terms (comma-separated)
+        <input type="text" name="topics" value="${isEdit ? repo.topics.forMatter(matter.id).map((t) => t.name).join(', ') : ''}" placeholder="Zoning, Budget, Public Safety">
+      </label>
       <fieldset>
         <legend>Sponsors</legend>
         <div class="chk-grid">${raw(sponsorChecks)}</div>
@@ -224,7 +227,11 @@ function agendaManager(meeting) {
     <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> / Manage agenda</p>
     <div class="detail-head">
       <h1>Agenda — ${meeting.body_name}</h1>
-      <a class="btn" href="/meetings/${meeting.id}/packet">📄 Agenda packet</a>
+      <span class="head-actions">
+        <a class="btn" href="/admin/meetings/${meeting.id}/live">● Run live</a>
+        <a class="btn" href="/admin/meetings/${meeting.id}/minutes">🧾 Minutes</a>
+        <a class="btn" href="/meetings/${meeting.id}/packet">📄 Packet</a>
+      </span>
     </div>
     <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
     ${raw(card('Add agenda item', addItemForm))}

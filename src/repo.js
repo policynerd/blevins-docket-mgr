@@ -99,7 +99,7 @@ const bodies = {
 // Matters (legislative files)
 // ---------------------------------------------------------------------------
 const matters = {
-  search({ q, type, status, bodyId, sponsorId, limit = 200 } = {}) {
+  search({ q, type, status, bodyId, sponsorId, topicId, limit = 200 } = {}) {
     const clauses = [];
     const args = [];
     if (q) {
@@ -113,6 +113,10 @@ const matters = {
     if (sponsorId) {
       clauses.push('m.id IN (SELECT matter_id FROM matter_sponsors WHERE person_id = ?)');
       args.push(sponsorId);
+    }
+    if (topicId) {
+      clauses.push('m.id IN (SELECT matter_id FROM matter_topics WHERE topic_id = ?)');
+      args.push(topicId);
     }
     const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
     args.push(limit);
@@ -295,6 +299,25 @@ const meetings = {
   setVoteStatus(itemId, status) {
     db.prepare('UPDATE agenda_items SET vote_status=? WHERE id=?').run(status, itemId);
   },
+  attendance(meetingId) {
+    return db.prepare(`
+      SELECT a.*, p.full_name, p.district
+      FROM attendance a JOIN people p ON p.id = a.person_id
+      WHERE a.meeting_id = ? ORDER BY p.full_name`).all(meetingId);
+  },
+  setAttendance(meetingId, rows) {
+    db.exec('SAVEPOINT sp_att');
+    try {
+      db.prepare('DELETE FROM attendance WHERE meeting_id = ?').run(meetingId);
+      const ins = db.prepare('INSERT INTO attendance (meeting_id, person_id, status) VALUES (?,?,?)');
+      for (const r of rows) ins.run(meetingId, r.person_id, r.status);
+      db.exec('RELEASE sp_att');
+    } catch (e) { db.exec('ROLLBACK TO sp_att'); db.exec('RELEASE sp_att'); throw e; }
+  },
+  setMinutes(meetingId, html, status) {
+    db.prepare('UPDATE meetings SET minutes_html=?, minutes_status=? WHERE id=?')
+      .run(html || null, status || 'draft', meetingId);
+  },
   // Persist a new ordering. Only items that belong to the meeting are touched,
   // so a stale or tampered id list can't move items between meetings.
   reorderItems(meetingId, orderedIds) {
@@ -302,15 +325,15 @@ const meetings = {
       .all(meetingId).map((r) => r.id));
     const upd = db.prepare('UPDATE agenda_items SET sort_order = ? WHERE id = ? AND meeting_id = ?');
     let pos = 0;
-    db.exec('BEGIN');
+    db.exec('SAVEPOINT sp_reorder');
     try {
       for (const id of orderedIds) {
         const n = Number(id);
         if (owned.has(n)) upd.run(++pos, n, meetingId);
       }
-      db.exec('COMMIT');
+      db.exec('RELEASE sp_reorder');
     } catch (e) {
-      db.exec('ROLLBACK');
+      db.exec('ROLLBACK TO sp_reorder'); db.exec('RELEASE sp_reorder');
       throw e;
     }
     return pos;
@@ -417,6 +440,46 @@ matters.setBodyHtml = function (id, bodyHtml) {
 };
 
 // ---------------------------------------------------------------------------
+// Topics / indexes
+// ---------------------------------------------------------------------------
+const topics = {
+  all() {
+    return db.prepare(`
+      SELECT t.id, t.name, COUNT(mt.matter_id) AS n
+      FROM topics t LEFT JOIN matter_topics mt ON mt.topic_id = t.id
+      GROUP BY t.id ORDER BY t.name`).all();
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM topics WHERE id = ?').get(id);
+  },
+  forMatter(matterId) {
+    return db.prepare(`
+      SELECT t.id, t.name FROM matter_topics mt JOIN topics t ON t.id = mt.topic_id
+      WHERE mt.matter_id = ? ORDER BY t.name`).all(matterId);
+  },
+  ensure(name) {
+    const clean = String(name).trim();
+    if (!clean) return null;
+    const existing = db.prepare('SELECT id FROM topics WHERE lower(name) = lower(?)').get(clean);
+    if (existing) return existing.id;
+    return db.prepare('INSERT INTO topics (name) VALUES (?)').run(clean).lastInsertRowid;
+  },
+  setForMatter(matterId, names) {
+    db.exec('SAVEPOINT sp_topics');
+    try {
+      db.prepare('DELETE FROM matter_topics WHERE matter_id = ?').run(matterId);
+      const link = db.prepare('INSERT INTO matter_topics (matter_id, topic_id) VALUES (?,?)');
+      const seen = new Set();
+      for (const name of names) {
+        const id = topics.ensure(name);
+        if (id && !seen.has(id)) { link.run(matterId, id); seen.add(id); }
+      }
+      db.exec('RELEASE sp_topics');
+    } catch (e) { db.exec('ROLLBACK TO sp_topics'); db.exec('RELEASE sp_topics'); throw e; }
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -439,5 +502,5 @@ function statusBuckets() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES,
-  people, bodies, matters, meetings, votes, reports, stats, statusBuckets,
+  people, bodies, matters, meetings, votes, reports, topics, stats, statusBuckets,
 };

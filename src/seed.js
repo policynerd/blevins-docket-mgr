@@ -226,6 +226,15 @@ function run() {
         + 'transit, water infrastructure, and parks. No new debt issuance is required in the first year.</p>',
     });
 
+    // --- Index terms / topics --------------------------------------------
+    repo.topics.setForMatter(m1.id, ['Environment', 'Climate', 'Parks & Trees']);
+    repo.topics.setForMatter(m2.id, ['Infrastructure', 'Contracts', 'Transportation']);
+    repo.topics.setForMatter(m3.id, ['Zoning', 'Housing']);
+    repo.topics.setForMatter(m4.id, ['Budget', 'Capital Improvement']);
+    repo.topics.setForMatter(m5.id, ['Environment', 'Public Health']);
+    repo.topics.setForMatter(m7.id, ['Public Safety', 'Transportation']);
+    repo.topics.setForMatter(m9.id, ['Budget', 'Fees']);
+
     // --- Meetings & agendas ----------------------------------------------
     // Past council meeting (with recorded votes)
     const pastMeeting = repo.meetings.insert({
@@ -254,6 +263,11 @@ function run() {
     for (const name of council) {
       repo.votes.record(ai_fee, P[name], feeVotes[name] || 'Nay');
     }
+
+    // Roll-call attendance for the past council meeting
+    repo.meetings.setAttendance(pastMeeting, council.map((name) => ({
+      person_id: P[name], status: name === 'Theo Jackson' ? 'Excused' : 'Present',
+    })));
 
     // Upcoming council meeting (agenda posted, no votes yet)
     const nextMeeting = repo.meetings.insert({
