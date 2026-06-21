@@ -66,6 +66,11 @@ route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.meetingDetail(mt));
 });
+route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.agendaPacket(mt));
+});
 route('GET', /^\/people\/?$/, (req, res) => sendHtml(res, pages.peopleList()));
 route('GET', /^\/people\/(\d+)$/, (req, res, ctx) => {
   const p = repo.people.get(Number(ctx.params[0]));
@@ -166,6 +171,15 @@ route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
     agenda_number: b.agenda_number, section: b.section, title: b.title,
   });
   redirect(res, `/admin/meetings/${id}/agenda`);
+});
+
+route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/reorder$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const mt = repo.meetings.get(id);
+  if (!mt) return sendJson(res, { error: 'Meeting not found' }, 404);
+  const order = asArray(ctx.body && ctx.body.order).map(Number).filter((n) => !Number.isNaN(n));
+  const moved = repo.meetings.reorderItems(id, order);
+  sendJson(res, { ok: true, moved });
 });
 
 route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {

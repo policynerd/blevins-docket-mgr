@@ -204,12 +204,21 @@ function agendaManager(meeting) {
       <button type="submit" class="btn">Add to agenda</button>
     </form>`;
 
+  const reorderHint = items.length > 1
+    ? '<p class="muted reorder-hint">Drag items by the ⠿ handle to reorder. <span class="reorder-status" data-reorder-status></span></p>'
+    : '';
+
   const body = html`
     <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> / Manage agenda</p>
-    <h1>Agenda — ${meeting.body_name}</h1>
+    <div class="detail-head">
+      <h1>Agenda — ${meeting.body_name}</h1>
+      <a class="btn" href="/meetings/${meeting.id}/packet">📄 Agenda packet</a>
+    </div>
     <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
     ${raw(card('Add agenda item', addItemForm))}
-    ${raw(card('Agenda items & voting', `<div class="agenda-manage">${itemBlocks}</div>`))}
+    ${raw(card('Agenda items & voting',
+      reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
+    <script src="/assets/agenda-reorder.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
 }
@@ -245,8 +254,10 @@ function voteBlock(meeting, it) {
       <button type="submit" class="btn">Save votes</button>
     </form>` : '';
 
-  return `<div class="agenda-manage-item">
-    <div class="ami-head"><span class="ai-num">${escapeText(it.agenda_number || '')}</span>
+  return `<div class="agenda-manage-item" draggable="true" data-id="${it.id}">
+    <div class="ami-head">
+      <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
+      <span class="ai-num">${escapeText(it.agenda_number || '')}</span>
       <strong>${titleLine}</strong>
       ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}</div>
     ${voteForm}
