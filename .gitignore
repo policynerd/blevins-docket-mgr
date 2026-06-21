@@ -1,0 +1,11 @@
+# Generated SQLite database (auto-seeded on first run)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# Dependencies (this project has none, but just in case)
+/node_modules
+
+# Logs & OS cruft
+*.log
+.DS_Store

@@ -1,0 +1,31 @@
+# Fly.io config — runs the Docker image with a persistent volume for SQLite.
+# First-time setup:
+#   fly launch --no-deploy        # or `fly apps create blevins-docket-mgr`
+#   fly volumes create docket_data --size 1 --region iad
+#   fly deploy
+app = "blevins-docket-mgr"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  DOCKET_DB = "/data/docket.db"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+# The volume attaches to a single machine; keep this app to one machine so the
+# SQLite file has a single writer.
+[[mounts]]
+  source = "docket_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
