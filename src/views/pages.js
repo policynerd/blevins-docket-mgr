@@ -80,14 +80,29 @@ function legislationList(query) {
     `<option value="${escapeText(value)}"${String(value) === String(current) ? ' selected' : ''}>${escapeText(label)}</option>`;
 
   const filters = html`
-    <form class="filters" method="get" action="/legislation">
-      <input type="search" name="q" value="${q}" placeholder="Search title, file #, summary…">
-      <select name="type">${raw('<option value="">All types</option>' + repo.MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>
-      <select name="status">${raw('<option value="">All statuses</option>' + repo.MATTER_STATUSES.map((s) => opt(s, status, s)).join(''))}</select>
-      <select name="body_id">${raw('<option value="">All bodies</option>' + allBodies.map((b) => opt(b.id, body_id, b.name)).join(''))}</select>
-      <select name="sponsor_id">${raw('<option value="">Any sponsor</option>' + allPeople.map((p) => opt(p.id, sponsor_id, p.full_name)).join(''))}</select>
-      <button type="submit">Filter</button>
-      <a class="btn-link" href="/legislation">Reset</a>
+    <form class="search-panel" method="get" action="/legislation" role="search">
+      <div class="sp-head">Search Legislation</div>
+      <div class="sp-grid">
+        <label class="sp-field">Words or file number
+          <input type="search" name="q" value="${q}" placeholder="e.g. zoning, ORD-2026-0003">
+        </label>
+        <label class="sp-field">Type
+          <select name="type">${raw('<option value="">— All types —</option>' + repo.MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>
+        </label>
+        <label class="sp-field">Status
+          <select name="status">${raw('<option value="">— All statuses —</option>' + repo.MATTER_STATUSES.map((s) => opt(s, status, s)).join(''))}</select>
+        </label>
+        <label class="sp-field">In control (body)
+          <select name="body_id">${raw('<option value="">— All bodies —</option>' + allBodies.map((b) => opt(b.id, body_id, b.name)).join(''))}</select>
+        </label>
+        <label class="sp-field">Sponsor
+          <select name="sponsor_id">${raw('<option value="">— Any sponsor —</option>' + allPeople.map((p) => opt(p.id, sponsor_id, p.full_name)).join(''))}</select>
+        </label>
+        <div class="sp-actions">
+          <button type="submit">Search</button>
+          <a class="btn-link" href="/legislation">Clear</a>
+        </div>
+      </div>
     </form>`;
 
   const tableRows = rows.length ? rows.map((m) => html`
@@ -193,16 +208,26 @@ function calendar() {
   const upcoming = repo.meetings.upcoming(today, 50);
   const past = repo.meetings.past(today, 50);
 
+  const docCell = (url, label) => url
+    ? `<a class="doc-link" href="${escapeText(url)}">${label}</a>`
+    : '<span class="doc-na">—</span>';
+
   const row = (m) => html`
     <tr>
-      <td>${raw(formatDateTime(m.meeting_date, m.meeting_time))}</td>
       <td><a href="/meetings/${m.id}">${m.body_name}</a></td>
+      <td>${raw(formatDate(m.meeting_date))}</td>
+      <td>${m.meeting_time || ''}</td>
       <td>${m.location || ''}</td>
       <td>${statusBadge(m.status)}</td>
+      <td class="icon-col"><a href="/meetings/${m.id}">Details</a></td>
+      <td class="icon-col">${raw(docCell(m.agenda_url, 'Agenda'))}</td>
+      <td class="icon-col">${raw(`<a class="doc-link" href="/meetings/${m.id}/packet">Packet</a>`)}</td>
+      <td class="icon-col">${raw(docCell(m.minutes_url, 'Minutes'))}</td>
+      <td class="icon-col">${raw(docCell(m.video_url, 'Video'))}</td>
     </tr>`;
 
   const tbl = (list, empty) => list.length
-    ? `<table class="data"><thead><tr><th>When</th><th>Body</th><th>Location</th><th>Status</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>`
+    ? `<table class="data"><thead><tr><th>Name</th><th>Meeting Date</th><th>Time</th><th>Location</th><th>Status</th><th>Details</th><th>Agenda</th><th>Packet</th><th>Minutes</th><th>Video</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>`
     : emptyState(empty);
 
   const body = html`

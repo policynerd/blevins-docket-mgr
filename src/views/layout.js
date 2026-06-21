@@ -37,36 +37,57 @@ function layout({ title, active, body, subtitle }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeText(title ? title + ' · ' : '')}Docket Manager</title>
+  <title>${escapeText(title ? title + ' · ' : '')}Legislative Information Center</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
   <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap header-inner">
+  <div class="gov-utility">
+    <div class="wrap util-inner">
+      <span class="util-left">City of Westbrook</span>
+      <span class="util-right">
+        <a href="/api/v1">Developers / API</a>
+        <a href="/legislation.rss">RSS</a>
+        <a href="/admin">Staff Sign-In</a>
+      </span>
+    </div>
+  </div>
+  <header class="gov-banner">
+    <div class="wrap banner-inner">
       <a class="brand" href="/">
-        <span class="brand-seal">DM</span>
+        <span class="brand-seal" aria-hidden="true">★</span>
         <span class="brand-text">
-          <strong>Legislative Docket Manager</strong>
-          <small>Office of the City Clerk</small>
+          <strong>City of Westbrook</strong>
+          <small>Legislative Information Center</small>
         </span>
       </a>
-      <form class="header-search" action="/legislation" method="get">
-        <input type="search" name="q" placeholder="Search legislation, file #, sponsor…" aria-label="Search">
+      <form class="banner-search" action="/legislation" method="get" role="search">
+        <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
         <button type="submit">Search</button>
       </form>
     </div>
-    <nav class="site-nav"><div class="wrap nav-inner">${nav.join('')}</div></nav>
   </header>
-  <main class="wrap">
+  <nav class="gov-tabs" aria-label="Primary">
+    <div class="wrap tabs-inner">${nav.join('')}</div>
+  </nav>
+  <main class="wrap main-area">
     ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
     ${body}
   </main>
   <footer class="site-footer">
-    <div class="wrap">
-      <p>Legislative Docket Manager · an open, Legistar-style legislative management system.
-         Public records portal &amp; <a href="/api/v1">Web API</a>.</p>
+    <div class="wrap footer-inner">
+      <div>
+        <strong>City of Westbrook — Legislative Information Center</strong>
+        <p>Public records of ordinances, resolutions, meetings, and votes.</p>
+      </div>
+      <div class="footer-links">
+        <a href="/legislation">Legislation</a>
+        <a href="/calendar">Calendar</a>
+        <a href="/api/v1">Web API</a>
+        <a href="/legislation.rss">RSS</a>
+        <a href="/calendar.ics">iCalendar</a>
+      </div>
     </div>
   </footer>
 </body>
