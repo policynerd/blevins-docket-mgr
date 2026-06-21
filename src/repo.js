@@ -288,6 +288,26 @@ const meetings = {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
   },
+  // Persist a new ordering. Only items that belong to the meeting are touched,
+  // so a stale or tampered id list can't move items between meetings.
+  reorderItems(meetingId, orderedIds) {
+    const owned = new Set(db.prepare('SELECT id FROM agenda_items WHERE meeting_id = ?')
+      .all(meetingId).map((r) => r.id));
+    const upd = db.prepare('UPDATE agenda_items SET sort_order = ? WHERE id = ? AND meeting_id = ?');
+    let pos = 0;
+    db.exec('BEGIN');
+    try {
+      for (const id of orderedIds) {
+        const n = Number(id);
+        if (owned.has(n)) upd.run(++pos, n, meetingId);
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return pos;
+  },
 };
 
 // ---------------------------------------------------------------------------
