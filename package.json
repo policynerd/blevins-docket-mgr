@@ -1,0 +1,16 @@
+{
+  "name": "blevins-docket-mgr",
+  "version": "0.1.0",
+  "description": "Legislative docket & agenda management system (Legistar-style) with zero runtime dependencies.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite --no-warnings server.js",
+    "seed": "node --experimental-sqlite --no-warnings src/seed.js --reset",
+    "reset": "node --experimental-sqlite --no-warnings src/seed.js --reset"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}
