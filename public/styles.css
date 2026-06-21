@@ -346,6 +346,34 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .live-ag-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .lai-title { flex: 1; }
 
+/* Tabs (record / meeting detail) */
+.tabs { margin-bottom: 18px; }
+.tab-nav { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 2px solid var(--grid-head); margin-bottom: 0; }
+.tab-btn { background: #e9eff6; border: 1px solid var(--line); border-bottom: none; color: var(--accent-dark);
+  padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 4px 4px 0 0; }
+.tab-btn:hover { background: #dde8f3; }
+.tab-btn.active { background: var(--grid-head); color: #fff; border-color: var(--grid-head); }
+.tab-count { display: inline-block; background: rgba(0,0,0,.12); border-radius: 999px; padding: 0 7px; font-size: 11px; margin-left: 4px; }
+.tab-btn.active .tab-count { background: rgba(255,255,255,.25); }
+.tab-panel { background: var(--card); border: 1px solid var(--line); border-top: none; padding: 16px; }
+.tabs.js .tab-panel { display: none; }
+.tabs.js .tab-panel.active { display: block; }
+.tab-h { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--accent-dark);
+  margin: 16px 0 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 4px; }
+.tab-h:first-child { margin-top: 0; }
+
+/* Record header (file / meeting detail) */
+dl.meta.record-header dt { width: 150px; }
+dl.meta.record-header dd { font-weight: 500; }
+
+/* Meeting items grid */
+table.meeting-items td { vertical-align: top; }
+table.meeting-items .section-row td { background: #e3ecf6; color: var(--accent-dark); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .4px; font-size: 11.5px; }
+table.meeting-items tr:hover td.section-row, table.meeting-items .section-row:hover td { background: #e3ecf6; }
+.vote-details summary { cursor: pointer; font-weight: 700; color: var(--accent-dark); }
+.vote-details .vote-list { margin: 6px 0 0; }
+
 /* Topics / indexes */
 .topic-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
 .topic-tag { display: inline-flex; align-items: center; gap: 6px; background: #e8f0fb; border: 1px solid #cfe0f5;

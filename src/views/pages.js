@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate, formatDateTime, todayISO } = require('../util');
-const { layout, card, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, tabs, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const repo = require('../repo');
 
 // --- Dashboard ---------------------------------------------------------------
@@ -191,17 +191,57 @@ function matterDetail(matter) {
         ${r.author_name ? raw(`<span class="muted"> — ${escapeText(r.author_name)}</span>`) : ''}</li>`).join('')}</ul>`
     : emptyState('No staff reports or documents.');
 
+  const onAgenda = appearances.length ? formatDate(appearances[0].meeting_date) : null;
+
   const meta = html`
-    <dl class="meta">
+    <dl class="meta record-header">
       <dt>File #</dt><dd>${matter.file_number}</dd>
+      <dt>Version</dt><dd>1</dd>
       <dt>Type</dt><dd>${typeBadge(matter.type)}</dd>
       <dt>Status</dt><dd>${statusBadge(matter.status)}</dd>
+      <dt>File created</dt><dd>${raw(formatDate(matter.created_at)) || '—'}</dd>
       <dt>In control</dt><dd>${matter.body_name || '—'}</dd>
       <dt>Introduced</dt><dd>${raw(formatDate(matter.intro_date)) || '—'}</dd>
-      ${matter.final_date ? raw(html`<dt>Final action</dt><dd>${raw(formatDate(matter.final_date))}</dd>`) : ''}
+      <dt>On agenda</dt><dd>${onAgenda ? raw(onAgenda) : '—'}</dd>
+      <dt>Final action</dt><dd>${matter.final_date ? raw(formatDate(matter.final_date)) : '—'}</dd>
+      <dt>Title</dt><dd>${matter.title}</dd>
       <dt>Sponsors</dt><dd class="chips">${sponsorHtml}</dd>
       <dt>Indexes</dt><dd class="chips">${topicChips}</dd>
     </dl>`;
+
+  // Tab panels (History default, mirroring the conventional record layout).
+  const historyPanel = historyRows
+    ? `<table class="data"><thead><tr><th>Date</th><th>Ver.</th><th>Action By</th><th>Action</th><th>Result</th><th></th></tr></thead><tbody>${
+        history.map((h) => html`
+          <tr>
+            <td>${raw(formatDate(h.action_date))}</td>
+            <td>1</td>
+            <td>${h.body_name || ''}</td>
+            <td>${h.action}${h.notes ? raw(`<div class="sub">${escapeText(h.notes)}</div>`) : ''}</td>
+            <td>${h.result ? statusBadge(h.result) : ''}</td>
+            <td>${h.meeting_id ? raw(`<a href="/meetings/${h.meeting_id}">meeting</a>`) : ''}</td>
+          </tr>`).join('')}</tbody></table>`
+    : emptyState('No recorded actions yet.');
+
+  const textPanel = ((matter.summary ? `<h3 class="tab-h">Summary</h3><p>${escapeText(matter.summary)}</p>` : '')
+    + (matter.body_html
+      ? `<h3 class="tab-h">Legislation text</h3><div class="doc-body">${matter.body_html}</div>`
+      : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : '')))
+    || emptyState('No text on file.');
+
+  const docsPanel = `<h3 class="tab-h">Documents &amp; reports</h3>${reportList}`
+    + `<h3 class="tab-h">Attachments</h3>${attachmentList}`;
+
+  const appearancesPanel = appearanceRows
+    ? `<table class="data"><thead><tr><th>Meeting date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${appearanceRows}</tbody></table>`
+    : emptyState('This file has not appeared on an agenda.');
+
+  const tabbed = tabs([
+    { id: 'history', label: 'History', count: history.length, html: historyPanel },
+    { id: 'text', label: 'Text', html: textPanel },
+    { id: 'docs', label: 'Reports & Attachments', count: reports.length + attachments.length, html: docsPanel },
+    { id: 'agenda', label: 'Agenda appearances', count: appearances.length, html: appearancesPanel },
+  ]);
 
   const body = html`
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
@@ -209,19 +249,9 @@ function matterDetail(matter) {
       <h1>${matter.title}</h1>
       <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
     </div>
-    ${raw(card('Overview', meta))}
-    ${matter.summary ? raw(card('Summary', `<p>${escapeText(matter.summary)}</p>`)) : ''}
-    ${matter.body_html
-      ? raw(card('Legislation text', `<div class="doc-body">${matter.body_html}</div>`))
-      : (matter.full_text ? raw(card('Full text', `<pre class="fulltext">${escapeText(matter.full_text)}</pre>`)) : '')}
-    ${raw(card('Documents & reports', reportList))}
-    ${raw(card('Legislative history',
-      historyRows
-        ? `<table class="data"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th><th></th></tr></thead><tbody>${historyRows}</tbody></table>`
-        : emptyState('No recorded actions yet.')))}
-    ${raw(card('Attachments', attachmentList))}
-    ${appearanceRows ? raw(card('Agenda appearances',
-      `<table class="data"><thead><tr><th>Meeting date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${appearanceRows}</tbody></table>`)) : ''}
+    ${raw(card('Record', meta))}
+    ${raw(tabbed)}
+    <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: matter.file_number, active: '/legislation', body });
 }
@@ -268,41 +298,48 @@ function calendar() {
 function meetingDetail(meeting) {
   const items = repo.meetings.items(meeting.id);
 
-  const itemBlocks = items.length ? items.map((it) => {
-    const tally = it.id ? repo.votes.tally(it.id) : null;
-    const itemVotes = it.matter_id ? repo.votes.forItem(it.id) : [];
-    const voteSummary = (itemVotes.length)
-      ? `<div class="vote-summary">
-          <span class="v yea">Yea ${tally.Yea}</span>
-          <span class="v nay">Nay ${tally.Nay}</span>
-          ${tally.Abstain ? `<span class="v">Abstain ${tally.Abstain}</span>` : ''}
-          ${tally.Recused ? `<span class="v">Recused ${tally.Recused}</span>` : ''}
-          ${tally.Absent ? `<span class="v">Absent ${tally.Absent}</span>` : ''}
-        </div>
-        <ul class="vote-list">${itemVotes.map((v) => html`<li><span class="vt vt-${v.vote.toLowerCase()}">${v.vote}</span> ${v.full_name}</li>`).join('')}</ul>`
-      : '';
-    const titleLine = it.matter_id
-      ? html`<a href="/legislation/${encodeURIComponent(it.file_number)}">${it.file_number}</a> — ${it.matter_title}`
-      : html`${it.title || '(item)'}`;
+  // Columnar "meeting items" grid grouped by agenda section.
+  let lastSection = null;
+  const itemRows = items.map((it) => {
+    let sectionRow = '';
+    if (it.section && it.section !== lastSection) {
+      lastSection = it.section;
+      sectionRow = `<tr class="section-row"><td colspan="7">${escapeText(it.section)}</td></tr>`;
+    }
     const mover = it.mover_id ? repo.people.get(it.mover_id) : null;
     const seconder = it.seconder_id ? repo.people.get(it.seconder_id) : null;
     const motionLine = (it.motion_text || mover || seconder)
-      ? `<div class="ai-action">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
+      ? `<div class="sub">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
       : '';
-    return html`
-      <li class="agenda-item">
-        <div class="ai-head">
-          <span class="ai-num">${it.agenda_number || ''}</span>
-          <div class="ai-body">
-            <div class="ai-title">${raw(titleLine)}</div>
-            ${it.section ? raw(`<div class="sub">${escapeText(it.section)}</div>`) : ''}
-            ${raw(motionLine)}
-            ${it.action ? raw(`<div class="ai-action">${escapeText(it.action)} ${it.result ? `— <strong>${escapeText(it.result)}</strong>` : ''}</div>`) : ''}
-          </div>
-        </div>
-        ${raw(voteSummary)}
-      </li>`;
-  }).join('') : emptyState('No agenda items posted.');
+    const fileCell = it.matter_id
+      ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a>` : '';
+    const typeCell = it.matter_id ? `<span class="badge type">${escapeText(it.matter_type)}</span>` : '';
+    const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)')) + motionLine;
+    const resultCell = it.result
+      ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
+
+    let voteCell = '<span class="doc-na">—</span>';
+    const itemVotes = it.matter_id ? repo.votes.forItem(it.id) : [];
+    if (itemVotes.length) {
+      const t = repo.votes.tally(it.id);
+      const list = itemVotes.map((v) => `<li><span class="vt vt-${String(v.vote).toLowerCase()}">${escapeText(v.vote)}</span> ${escapeText(v.full_name)}</li>`).join('');
+      voteCell = `<details class="vote-details"><summary>${t.Yea}–${t.Nay}${t.Abstain ? ' · ' + t.Abstain + ' abs' : ''}</summary><ul class="vote-list">${list}</ul></details>`;
+    }
+
+    return sectionRow + `<tr>
+      <td>${escapeText(it.agenda_number || '')}</td>
+      <td>${fileCell}</td>
+      <td>${typeCell}</td>
+      <td class="title-cell">${titleCell}</td>
+      <td>${it.action ? escapeText(it.action) : ''}</td>
+      <td>${resultCell}</td>
+      <td>${voteCell}</td>
+    </tr>`;
+  }).join('');
+
+  const itemsGrid = items.length
+    ? `<table class="data meeting-items"><thead><tr><th>Agenda #</th><th>File #</th><th>Type</th><th>Title</th><th>Action</th><th>Result</th><th>Vote</th></tr></thead><tbody>${itemRows}</tbody></table>`
+    : emptyState('No agenda items posted.');
 
   const attendance = repo.meetings.attendance(meeting.id);
   const attendanceCard = attendance.length
@@ -310,9 +347,10 @@ function meetingDetail(meeting) {
         <li><a href="/people/${a.person_id}">${a.full_name}</a> ${raw(`<span class="badge st-${String(a.status).toLowerCase() === 'present' ? 'passed' : (String(a.status).toLowerCase() === 'absent' ? 'failed' : 'on-agenda')}">${escapeText(a.status)}</span>`)}</li>`).join('')}</ul>`)
     : '';
 
-  const links = [
-    meeting.agenda_url ? `<a href="${escapeText(meeting.agenda_url)}">Agenda packet</a>` : '',
-    meeting.minutes_url ? `<a href="${escapeText(meeting.minutes_url)}">Minutes</a>` : '',
+  const docLinks = [
+    `<a href="/meetings/${meeting.id}/packet">Agenda packet</a>`,
+    meeting.agenda_url ? `<a href="${escapeText(meeting.agenda_url)}">Agenda</a>` : '',
+    meeting.minutes_status === 'published' ? `<a href="/meetings/${meeting.id}/minutes">Minutes</a>` : '',
     meeting.video_url ? `<a href="${escapeText(meeting.video_url)}">Video</a>` : '',
   ].filter(Boolean).join(' · ');
 
@@ -328,17 +366,19 @@ function meetingDetail(meeting) {
       </span>
     </div>
     ${raw(card('Meeting details', html`
-      <dl class="meta">
-        <dt>Date</dt><dd>${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))}</dd>
+      <dl class="meta record-header">
+        <dt>Name</dt><dd>${meeting.body_name}</dd>
+        <dt>Date</dt><dd>${raw(formatDate(meeting.meeting_date))}</dd>
+        <dt>Time</dt><dd>${meeting.meeting_time || '—'}</dd>
         <dt>Location</dt><dd>${meeting.location || '—'}</dd>
         <dt>Status</dt><dd>${statusBadge(meeting.status)}</dd>
-        <dt>Minutes</dt><dd>${raw(meeting.minutes_status === 'published'
-          ? `<a href="/meetings/${meeting.id}/minutes">Published minutes</a>`
+        <dt>Published minutes</dt><dd>${raw(meeting.minutes_status === 'published'
+          ? `<a href="/meetings/${meeting.id}/minutes">View minutes</a>`
           : '<span class="muted">Not yet published</span>')}</dd>
-        ${links ? raw(html`<dt>Documents</dt><dd class="chips">${raw(links)}</dd>`) : ''}
+        <dt>Documents</dt><dd class="chips">${raw(docLinks)}</dd>
       </dl>`))}
     ${raw(attendanceCard)}
-    ${raw(card('Agenda', `<ol class="agenda">${itemBlocks}</ol>`))}
+    ${raw(card('Meeting items', itemsGrid))}
   `;
   return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
 }

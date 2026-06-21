@@ -126,6 +126,19 @@ function card(title, inner, opts = {}) {
   </section>`;
 }
 
+// Tabbed panel container (progressive enhancement). `items` is
+// [{ id, label, count?, html }]. Without JS every panel renders; assets/tabs.js
+// marks the container `.js` and hides inactive panels.
+function tabs(items) {
+  const nav = items.map((t, i) => {
+    const label = escapeText(t.label) + (t.count != null ? ` <span class="tab-count">${escapeText(t.count)}</span>` : '');
+    return `<button type="button" class="tab-btn${i === 0 ? ' active' : ''}" data-tab="${escapeText(t.id)}">${label}</button>`;
+  }).join('');
+  const panels = items.map((t, i) => `
+    <div class="tab-panel${i === 0 ? ' active' : ''}" id="tab-${escapeText(t.id)}" role="tabpanel">${t.html}</div>`).join('');
+  return `<div class="tabs"><nav class="tab-nav" role="tablist">${nav}</nav>${panels}</div>`;
+}
+
 function emptyState(msg) {
   return `<p class="empty">${escapeText(msg)}</p>`;
 }
@@ -137,4 +150,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, card, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
+module.exports = { layout, card, tabs, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
