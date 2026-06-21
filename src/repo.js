@@ -316,6 +316,26 @@ const votes = {
     return db.prepare(`INSERT INTO votes (agenda_item_id, person_id, vote)
       VALUES (?,?,?)`).run(agendaItemId, personId, vote).lastInsertRowid;
   },
+  byPerson(personId) {
+    return db.prepare(`
+      SELECT v.vote, ai.agenda_number, ai.action AS item_action, ai.result AS item_result,
+             m.file_number, m.title AS matter_title, m.type AS matter_type,
+             mt.id AS meeting_id, mt.meeting_date, b.name AS body_name
+      FROM votes v
+      JOIN agenda_items ai ON ai.id = v.agenda_item_id
+      JOIN meetings mt ON mt.id = ai.meeting_id
+      JOIN bodies b ON b.id = mt.body_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE v.person_id = ?
+      ORDER BY mt.meeting_date DESC, ai.sort_order`).all(personId);
+  },
+  personSummary(personId) {
+    const rows = db.prepare(
+      'SELECT vote, COUNT(*) AS n FROM votes WHERE person_id = ? GROUP BY vote').all(personId);
+    const t = { Yea: 0, Nay: 0, Abstain: 0, Recused: 0, Absent: 0, total: 0 };
+    for (const r of rows) { t[r.vote] = r.n; t.total += r.n; }
+    return t;
+  },
 };
 
 // ---------------------------------------------------------------------------

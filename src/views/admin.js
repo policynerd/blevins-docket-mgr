@@ -78,10 +78,10 @@ function matterForm(matter, opts = {}) {
         </label>
       </div>
       <label>Summary
-        <textarea name="summary" rows="3" placeholder="Plain-language summary for the public record…">${matter ? escapeText(matter.summary || '') : ''}</textarea>
+        <textarea name="summary" rows="3" placeholder="Plain-language summary for the public record…">${matter ? (matter.summary || '') : ''}</textarea>
       </label>
       <label>Full text
-        <textarea name="full_text" rows="8" placeholder="BE IT ORDAINED…">${matter ? escapeText(matter.full_text || '') : ''}</textarea>
+        <textarea name="full_text" rows="8" placeholder="BE IT ORDAINED…">${matter ? (matter.full_text || '') : ''}</textarea>
       </label>
       <fieldset>
         <legend>Sponsors</legend>
@@ -131,7 +131,7 @@ function actionRecorder(matter) {
       <label>Notes<input type="text" name="notes" placeholder="Optional"></label>
       <button type="submit" class="btn">Record action</button>
     </form>
-    ${histRows ? `<table class="data compact"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${histRows}</tbody></table>` : ''}`;
+    ${raw(histRows ? `<table class="data compact"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${histRows}</tbody></table>` : '')}`;
   return card('Record an action', form);
 }
 
@@ -149,7 +149,7 @@ function attachmentForm(matter) {
       <label>Note<input type="text" name="note" placeholder="Optional"></label>
       <button type="submit" class="btn">Add attachment</button>
     </form>
-    ${list}`;
+    ${raw(list)}`;
   return card('Attachments', form);
 }
 

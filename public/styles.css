@@ -104,7 +104,9 @@ table.data tr:last-child td { border-bottom: none; }
 table.data.compact td, table.data.compact th { padding: 6px 8px; }
 .title-cell { font-weight: 500; max-width: 460px; }
 .title-cell .sub, .sub { color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 2px; }
-.result-count { margin: 4px 2px 12px; }
+.result-count { margin: 4px 2px; }
+.list-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 12px; }
+.export-links { display: flex; gap: 14px; }
 
 /* Badges */
 .badge {
