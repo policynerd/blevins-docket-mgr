@@ -4,10 +4,12 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = process.env.DOCKET_DB || path.join(DATA_DIR, 'docket.db');
+// DB_PATH may point anywhere (e.g. a mounted volume via DOCKET_DB); ensure its
+// parent directory exists rather than assuming the in-repo ./data folder.
+const DB_PATH = process.env.DOCKET_DB || path.join(__dirname, '..', 'data', 'docket.db');
+const DB_DIR = path.dirname(DB_PATH);
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL;');

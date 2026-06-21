@@ -1,0 +1,20 @@
+# Render Blueprint — deploys the Docker image with a persistent disk for SQLite.
+# Deploy: push this repo, then in Render choose "New +" → "Blueprint" and point
+# it at this repository. A persistent disk requires a paid instance type
+# (Render's free tier does not support disks).
+services:
+  - type: web
+    name: blevins-docket-mgr
+    runtime: docker
+    plan: starter
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: DOCKET_DB
+        value: /data/docket.db
+    disk:
+      name: docket-data
+      mountPath: /data
+      sizeGB: 1

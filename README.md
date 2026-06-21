@@ -61,6 +61,52 @@ npm run reset
 
 Set a custom port with `PORT=8080 npm start`.
 
+The database location defaults to `./data/docket.db`. Override it with the
+`DOCKET_DB` environment variable (handy for pointing at a mounted volume):
+
+```bash
+DOCKET_DB=/data/docket.db npm start
+```
+
+## Deploy
+
+This is a **stateful** app (a persistent Node server with a file-backed SQLite
+database), so it runs best on a host with a persistent disk rather than a
+serverless platform. The repo ships ready-to-use configs.
+
+### Docker (works anywhere)
+
+```bash
+docker build -t docket-mgr .
+docker run -p 3000:3000 -v docket_data:/data docket-mgr
+```
+
+The `-v docket_data:/data` volume keeps the SQLite database across restarts; the
+app auto-seeds demo data on first boot when the database is empty.
+
+### Render
+
+A `render.yaml` Blueprint is included. Create a new **Blueprint** in Render
+pointing at this repo — it provisions a Docker web service with a 1 GB
+persistent disk mounted at `/data`. (Persistent disks require a paid instance
+type; Render's free tier has no disk.)
+
+### Fly.io
+
+```bash
+fly launch --no-deploy
+fly volumes create docket_data --size 1 --region iad
+fly deploy
+```
+
+`fly.toml` wires the `docket_data` volume to `/data` and serves over HTTPS.
+
+> **Why not Vercel?** Vercel runs stateless serverless functions with no
+> persistent local disk, so file-backed SQLite writes would not survive between
+> requests. Running here would require refactoring to functions **and** swapping
+> SQLite for a hosted database (e.g. Turso/libSQL or Postgres). The hosts above
+> run the code unchanged.
+
 ## Data model
 
 | Table | Purpose |
