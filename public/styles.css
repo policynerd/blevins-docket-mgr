@@ -374,6 +374,15 @@ table.meeting-items tr:hover td.section-row, table.meeting-items .section-row:ho
 .vote-details summary { cursor: pointer; font-weight: 700; color: var(--accent-dark); }
 .vote-details .vote-list { margin: 6px 0 0; }
 
+/* Sortable grid headers + pagination */
+table.data.sortable thead th { padding: 0; }
+.sort-link { display: block; color: #fff; padding: 7px 10px; }
+.sort-link:hover { background: rgba(255,255,255,.12); text-decoration: none; }
+.sort-link.active { font-weight: 800; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 14px 0 0; }
+.pager-info { font-size: 13px; color: var(--muted); }
+.pager-disabled { color: #aebaccc0; font-size: 13px; font-weight: 600; }
+
 /* Topics / indexes */
 .topic-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
 .topic-tag { display: inline-flex; align-items: center; gap: 6px; background: #e8f0fb; border: 1px solid #cfe0f5;

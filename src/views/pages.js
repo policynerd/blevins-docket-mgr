@@ -66,20 +66,45 @@ function dashboard() {
 }
 
 // --- Legislation list --------------------------------------------------------
+const PAGE_SIZE = 25;
+
 function legislationList(query) {
-  const { q = '', type = '', status = '', body_id = '', sponsor_id = '', topic = '' } = query;
-  const rows = repo.matters.search({
+  const { q = '', type = '', status = '', body_id = '', sponsor_id = '', topic = '',
+    from = '', to = '' } = query;
+  const sort = repo.SORT_COLUMNS[query.sort] ? query.sort : 'intro_date';
+  const dir = String(query.dir).toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+  const filterArgs = {
     q, type, status,
     bodyId: body_id ? Number(body_id) : undefined,
     sponsorId: sponsor_id ? Number(sponsor_id) : undefined,
     topicId: topic ? Number(topic) : undefined,
+    from: from || undefined, to: to || undefined,
+  };
+  const total = repo.matters.count(filterArgs);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(Math.max(1, parseInt(query.page, 10) || 1), pages);
+  const rows = repo.matters.search({
+    ...filterArgs, sort, dir, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE,
   });
+
   const activeTopic = topic ? repo.topics.get(Number(topic)) : null;
   const allBodies = repo.bodies.all();
   const allPeople = repo.people.all();
 
   const opt = (value, current, label) =>
     `<option value="${escapeText(value)}"${String(value) === String(current) ? ' selected' : ''}>${escapeText(label)}</option>`;
+
+  // Preserve current filters/sort when building links.
+  const baseParams = { q, type, status, body_id, sponsor_id, topic, from, to, sort, dir };
+  const urlWith = (overrides) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...baseParams, ...overrides })) {
+      if (v !== '' && v != null) p.set(k, v);
+    }
+    const s = p.toString();
+    return '/legislation' + (s ? '?' + s : '');
+  };
 
   const filters = html`
     <form class="search-panel" method="get" action="/legislation" role="search">
@@ -101,12 +126,26 @@ function legislationList(query) {
         <label class="sp-field">Sponsor
           <select name="sponsor_id">${raw('<option value="">— Any sponsor —</option>' + allPeople.map((p) => opt(p.id, sponsor_id, p.full_name)).join(''))}</select>
         </label>
+        <label class="sp-field">Introduced from
+          <input type="date" name="from" value="${from}">
+        </label>
+        <label class="sp-field">Introduced to
+          <input type="date" name="to" value="${to}">
+        </label>
         <div class="sp-actions">
           <button type="submit">Search</button>
           <a class="btn-link" href="/legislation">Clear</a>
         </div>
       </div>
     </form>`;
+
+  // Sortable column header.
+  const th = (key, label) => {
+    const active = sort === key;
+    const nextDir = active && dir === 'asc' ? 'desc' : 'asc';
+    const arrow = active ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th><a class="sort-link${active ? ' active' : ''}" href="${urlWith({ sort: key, dir: nextDir, page: '' })}">${escapeText(label)}${arrow}</a></th>`;
+  };
 
   const tableRows = rows.length ? rows.map((m) => html`
     <tr>
@@ -119,11 +158,11 @@ function legislationList(query) {
     </tr>`).join('') : null;
 
   const table = tableRows
-    ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title / Sponsors</th><th>In control</th><th>Introduced</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>`
+    ? `<table class="data sortable"><thead><tr>${th('file_number', 'File #')}${th('type', 'Type')}${th('title', 'Title / Sponsors')}${th('body', 'In control')}${th('intro_date', 'Introduced')}${th('status', 'Status')}</tr></thead><tbody>${tableRows}</tbody></table>`
     : emptyState('No legislative files match your search.');
 
   const exportQs = new URLSearchParams(
-    Object.entries({ q, type, status, body_id, sponsor_id, topic }).filter(([, v]) => v)
+    Object.entries({ q, type, status, body_id, sponsor_id, topic, from, to }).filter(([, v]) => v)
   ).toString();
   const exportSuffix = exportQs ? '?' + exportQs : '';
 
@@ -131,17 +170,26 @@ function legislationList(query) {
     ? `<p class="topic-notice">Index: <strong>${escapeText(activeTopic.name)}</strong> · <a href="/legislation">clear</a></p>`
     : '';
 
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = (page - 1) * PAGE_SIZE + rows.length;
+  const pager = pages > 1 ? `<nav class="pager">
+      ${page > 1 ? `<a class="btn-link" href="${urlWith({ page: page - 1 })}">‹ Prev</a>` : '<span class="pager-disabled">‹ Prev</span>'}
+      <span class="pager-info">Page ${page} of ${pages}</span>
+      ${page < pages ? `<a class="btn-link" href="${urlWith({ page: page + 1 })}">Next ›</a>` : '<span class="pager-disabled">Next ›</span>'}
+    </nav>` : '';
+
   const body = html`
     ${raw(filters)}
     ${raw(topicNotice)}
     <div class="list-toolbar">
-      <p class="muted result-count">${rows.length} legislative file${rows.length === 1 ? '' : 's'}</p>
+      <p class="muted result-count">${total ? `Showing ${firstRow}–${lastRow} of ${total}` : '0'} legislative file${total === 1 ? '' : 's'}</p>
       <span class="export-links">
         <a class="btn-link" href="/legislation.csv${exportSuffix}">⬇ Export CSV</a>
         <a class="btn-link" href="/legislation.rss">🔔 RSS</a>
       </span>
     </div>
-    ${raw(table)}`;
+    ${raw(table)}
+    ${raw(pager)}`;
   return layout({ title: 'Legislation', active: '/legislation', body });
 }
 
@@ -257,10 +305,32 @@ function matterDetail(matter) {
 }
 
 // --- Calendar ----------------------------------------------------------------
-function calendar() {
+function calendar(query = {}) {
   const today = todayISO();
-  const upcoming = repo.meetings.upcoming(today, 50);
-  const past = repo.meetings.past(today, 50);
+  const view = ['upcoming', 'past', 'all'].includes(query.view) ? query.view : 'upcoming';
+  const { body_id = '', from = '', to = '' } = query;
+  const allBodies = repo.bodies.all();
+
+  const filterArgs = {
+    bodyId: body_id ? Number(body_id) : undefined,
+    from: from || undefined, to: to || undefined, view, today,
+  };
+  const total = repo.meetings.countCalendar(filterArgs);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(Math.max(1, parseInt(query.page, 10) || 1), pages);
+  const list = repo.meetings.searchCalendar({
+    ...filterArgs, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE,
+  });
+
+  const baseParams = { body_id, from, to, view };
+  const urlWith = (overrides) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...baseParams, ...overrides })) {
+      if (v !== '' && v != null) p.set(k, v);
+    }
+    const s = p.toString();
+    return '/calendar' + (s ? '?' + s : '');
+  };
 
   const docCell = (url, label) => url
     ? `<a class="doc-link" href="${escapeText(url)}">${label}</a>`
@@ -282,15 +352,51 @@ function calendar() {
       <td class="icon-col">${raw(docCell(m.video_url, 'Video'))}</td>
     </tr>`;
 
-  const tbl = (list, empty) => list.length
+  const table = list.length
     ? `<table class="data"><thead><tr><th>Name</th><th>Meeting Date</th><th>Time</th><th>Location</th><th>Status</th><th>Details</th><th>Agenda</th><th>Packet</th><th>Minutes</th><th>Video</th></tr></thead><tbody>${list.map(row).join('')}</tbody></table>`
-    : emptyState(empty);
+    : emptyState('No meetings match these filters.');
+
+  const opt = (value, current, label) =>
+    `<option value="${escapeText(value)}"${String(value) === String(current) ? ' selected' : ''}>${escapeText(label)}</option>`;
+
+  const filterForm = `
+    <form class="search-panel" method="get" action="/calendar" role="search">
+      <div class="sp-head">Calendar</div>
+      <div class="sp-grid">
+        <label class="sp-field">View
+          <select name="view">${['upcoming', 'past', 'all'].map((v) => opt(v, view, v[0].toUpperCase() + v.slice(1))).join('')}</select>
+        </label>
+        <label class="sp-field">Body
+          <select name="body_id">${'<option value="">— All bodies —</option>' + allBodies.map((b) => opt(b.id, body_id, b.name)).join('')}</select>
+        </label>
+        <label class="sp-field">From<input type="date" name="from" value="${escapeText(from)}"></label>
+        <label class="sp-field">To<input type="date" name="to" value="${escapeText(to)}"></label>
+        <div class="sp-actions">
+          <button type="submit">Apply</button>
+          <a class="btn-link" href="/calendar">Clear</a>
+        </div>
+      </div>
+    </form>`;
+
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = (page - 1) * PAGE_SIZE + list.length;
+  const pager = pages > 1 ? `<nav class="pager">
+      ${page > 1 ? `<a class="btn-link" href="${urlWith({ page: page - 1 })}">‹ Prev</a>` : '<span class="pager-disabled">‹ Prev</span>'}
+      <span class="pager-info">Page ${page} of ${pages}</span>
+      ${page < pages ? `<a class="btn-link" href="${urlWith({ page: page + 1 })}">Next ›</a>` : '<span class="pager-disabled">Next ›</span>'}
+    </nav>` : '';
 
   const body = html`
-    ${raw(card('Upcoming meetings', tbl(upcoming, 'No upcoming meetings.'),
-      { actions: '<a class="btn-link" href="/calendar.ics">📅 Subscribe (iCal)</a> &nbsp; <a class="btn-link" href="/admin/meetings/new">+ Schedule meeting</a>' }))}
-    ${raw(card('Past meetings', tbl(past, 'No past meetings on record.')))}
-  `;
+    ${raw(filterForm)}
+    <div class="list-toolbar">
+      <p class="muted result-count">${total ? `Showing ${firstRow}–${lastRow} of ${total}` : '0'} meeting${total === 1 ? '' : 's'}</p>
+      <span class="export-links">
+        <a class="btn-link" href="/calendar.ics">📅 Subscribe (iCal)</a>
+        <a class="btn-link" href="/admin/meetings/new">+ Schedule meeting</a>
+      </span>
+    </div>
+    ${raw(table)}
+    ${raw(pager)}`;
   return layout({ title: 'Calendar', active: '/calendar', body });
 }
 

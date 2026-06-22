@@ -76,7 +76,9 @@ route('GET', /^\/legislation\.csv$/, (req, res, ctx) => {
     q: q.q, type: q.type, status: q.status,
     bodyId: q.body_id ? Number(q.body_id) : undefined,
     sponsorId: q.sponsor_id ? Number(q.sponsor_id) : undefined,
-    limit: 1000,
+    topicId: q.topic ? Number(q.topic) : undefined,
+    from: q.from || undefined, to: q.to || undefined,
+    sort: q.sort, dir: q.dir, limit: 1000,
   });
   sendText(res, feeds.mattersCsv(rows), 'text/csv; charset=utf-8', { filename: 'legislation.csv' });
 });
@@ -94,7 +96,7 @@ route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   if (!m) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.matterDetail(m));
 });
-route('GET', /^\/calendar\/?$/, (req, res) => sendHtml(res, pages.calendar()));
+route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
