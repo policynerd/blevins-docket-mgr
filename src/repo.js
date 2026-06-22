@@ -25,6 +25,16 @@ const AGENDA_SECTIONS = [
 
 const TERMINAL_STATUSES = new Set(['Passed', 'Failed', 'Enacted', 'Vetoed', 'Withdrawn']);
 
+// Allowlisted sort columns for the legislation grid (key -> SQL expression).
+const SORT_COLUMNS = {
+  file_number: 'm.file_number',
+  type: 'm.type',
+  title: 'm.title',
+  body: 'b.name',
+  intro_date: 'm.intro_date',
+  status: 'm.status',
+};
+
 // ---------------------------------------------------------------------------
 // People
 // ---------------------------------------------------------------------------
@@ -99,7 +109,8 @@ const bodies = {
 // Matters (legislative files)
 // ---------------------------------------------------------------------------
 const matters = {
-  search({ q, type, status, bodyId, sponsorId, topicId, limit = 200 } = {}) {
+  // Build the shared WHERE clause + bound args for search/count.
+  _filter({ q, type, status, bodyId, sponsorId, topicId, from, to } = {}) {
     const clauses = [];
     const args = [];
     if (q) {
@@ -118,8 +129,20 @@ const matters = {
       clauses.push('m.id IN (SELECT matter_id FROM matter_topics WHERE topic_id = ?)');
       args.push(topicId);
     }
-    const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
-    args.push(limit);
+    if (from) { clauses.push('m.intro_date >= ?'); args.push(from); }
+    if (to) { clauses.push('m.intro_date <= ?'); args.push(to); }
+    return { where: clauses.length ? 'WHERE ' + clauses.join(' AND ') : '', args };
+  },
+  count(filters = {}) {
+    const { where, args } = matters._filter(filters);
+    return db.prepare(`SELECT COUNT(*) AS n FROM matters m ${where}`).get(...args).n;
+  },
+  search(filters = {}) {
+    const { where, args } = matters._filter(filters);
+    const order = SORT_COLUMNS[filters.sort] || SORT_COLUMNS.intro_date;
+    const dir = String(filters.dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const limit = filters.limit == null ? 200 : filters.limit;
+    const offset = filters.offset || 0;
     return db.prepare(`
       SELECT m.*, b.name AS body_name,
         (SELECT GROUP_CONCAT(p.full_name, ', ')
@@ -127,8 +150,8 @@ const matters = {
          WHERE ms.matter_id = m.id) AS sponsors
       FROM matters m LEFT JOIN bodies b ON b.id = m.body_id
       ${where}
-      ORDER BY m.intro_date DESC, m.id DESC
-      LIMIT ?`).all(...args);
+      ORDER BY ${order} ${dir}, m.id DESC
+      LIMIT ? OFFSET ?`).all(...args, limit, offset);
   },
   get(id) {
     return db.prepare(`SELECT m.*, b.name AS body_name
@@ -248,6 +271,34 @@ const meetings = {
       FROM meetings mt JOIN bodies b ON b.id = mt.body_id
       WHERE mt.meeting_date < ?
       ORDER BY mt.meeting_date DESC LIMIT ?`).all(fromDate, limit);
+  },
+  // Filtered, paginated calendar query. view: upcoming | past | all.
+  _calFilter({ bodyId, from, to, view, today } = {}) {
+    const clauses = [];
+    const args = [];
+    if (view === 'upcoming') { clauses.push('mt.meeting_date >= ?'); args.push(today); }
+    else if (view === 'past') { clauses.push('mt.meeting_date < ?'); args.push(today); }
+    if (bodyId) { clauses.push('mt.body_id = ?'); args.push(bodyId); }
+    if (from) { clauses.push('mt.meeting_date >= ?'); args.push(from); }
+    if (to) { clauses.push('mt.meeting_date <= ?'); args.push(to); }
+    return { where: clauses.length ? 'WHERE ' + clauses.join(' AND ') : '', args };
+  },
+  countCalendar(filters = {}) {
+    const { where, args } = meetings._calFilter(filters);
+    return db.prepare(`SELECT COUNT(*) AS n FROM meetings mt ${where}`).get(...args).n;
+  },
+  searchCalendar(filters = {}) {
+    const { where, args } = meetings._calFilter(filters);
+    const dir = filters.view === 'upcoming' ? 'ASC' : 'DESC';
+    const limit = filters.limit == null ? 25 : filters.limit;
+    const offset = filters.offset || 0;
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name,
+        (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = mt.id) AS item_count
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      ${where}
+      ORDER BY mt.meeting_date ${dir}, mt.meeting_time ${dir}
+      LIMIT ? OFFSET ?`).all(...args, limit, offset);
   },
   get(id) {
     return db.prepare(`SELECT mt.*, b.name AS body_name, b.type AS body_type
@@ -501,6 +552,6 @@ function statusBuckets() {
 }
 
 module.exports = {
-  MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES,
+  MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   people, bodies, matters, meetings, votes, reports, topics, stats, statusBuckets,
 };
