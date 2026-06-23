@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least-privilege: deploy needs only to read the repo (Fly auth is via
+# FLY_API_TOKEN, not the GITHUB_TOKEN).
+permissions:
+  contents: read
+
 concurrency:
   group: fly-deploy
   cancel-in-progress: false
