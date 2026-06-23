@@ -235,6 +235,12 @@ function run() {
     repo.topics.setForMatter(m7.id, ['Public Safety', 'Transportation']);
     repo.topics.setForMatter(m9.id, ['Budget', 'Fees']);
 
+    // --- Approval routing demo (ADU ordinance, mid-route) ----------------
+    repo.workflow.start(m3.id);
+    const m3steps = repo.workflow.forMatter(m3.id);
+    repo.workflow.act(m3steps[0].id, { status: 'Approved', notes: 'Drafted by sponsor.' });
+    repo.workflow.act(m3steps[1].id, { status: 'Approved', notes: 'Department concurs with intent.' });
+
     // --- Meetings & agendas ----------------------------------------------
     // Past council meeting (with recorded votes)
     const pastMeeting = repo.meetings.insert({

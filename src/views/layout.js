@@ -1,6 +1,6 @@
 'use strict';
 
-const { html, raw } = require('../util');
+const { html, raw, formatDate } = require('../util');
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
@@ -143,6 +143,21 @@ function emptyState(msg) {
   return `<p class="empty">${escapeText(msg)}</p>`;
 }
 
+// Vertical routing/approval tracker. `steps` come from repo.workflow.forMatter.
+function workflowStepper(steps) {
+  if (!steps || !steps.length) return emptyState('This file has not been routed yet.');
+  const badge = (st) => `<span class="wf-badge wf-b-${escapeText(String(st).toLowerCase())}">${escapeText(st)}</span>`;
+  return `<ol class="wf">${steps.map((s) => `
+    <li class="wf-step wf-${escapeText(String(s.status).toLowerCase())}">
+      <span class="wf-dot"></span>
+      <div class="wf-body">
+        <div class="wf-name">${s.seq}. ${escapeText(s.name)} ${badge(s.status)}</div>
+        <div class="sub">${escapeText(s.role || '')}${s.acted_by_name ? ' · ' + escapeText(s.acted_by_name) : ''}${s.acted_at ? ' · ' + escapeText(formatDate(s.acted_at)) : ''}</div>
+        ${s.notes ? `<div class="sub wf-notes">${escapeText(s.notes)}</div>` : ''}
+      </div>
+    </li>`).join('')}</ol>`;
+}
+
 function forbidden() {
   return layout({
     title: 'Access denied', active: '',
@@ -150,4 +165,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, card, tabs, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
+module.exports = { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };

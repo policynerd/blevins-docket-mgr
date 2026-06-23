@@ -531,6 +531,54 @@ const topics = {
 };
 
 // ---------------------------------------------------------------------------
+// Routing / approval workflow
+// ---------------------------------------------------------------------------
+const WORKFLOW_TEMPLATE = [
+  { name: 'Sponsor / Drafting', role: 'Sponsor' },
+  { name: 'Department Review', role: 'Department' },
+  { name: 'Legal Review', role: 'Legal' },
+  { name: 'Clerk Review', role: 'City Clerk' },
+  { name: 'Committee', role: 'Committee' },
+  { name: 'Full Council', role: 'City Council' },
+];
+
+const workflow = {
+  forMatter(matterId) {
+    return db.prepare(`
+      SELECT w.*, u.name AS acted_by_name
+      FROM workflow_steps w LEFT JOIN users u ON u.id = w.acted_by
+      WHERE w.matter_id = ? ORDER BY w.seq`).all(matterId);
+  },
+  get(stepId) {
+    return db.prepare('SELECT * FROM workflow_steps WHERE id = ?').get(stepId);
+  },
+  // Create the default route if this matter has none. Returns the step count.
+  start(matterId) {
+    const existing = db.prepare('SELECT COUNT(*) AS n FROM workflow_steps WHERE matter_id = ?').get(matterId).n;
+    if (existing > 0) return existing;
+    const ins = db.prepare('INSERT INTO workflow_steps (matter_id, seq, name, role, status) VALUES (?,?,?,?,?)');
+    WORKFLOW_TEMPLATE.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending'));
+    return WORKFLOW_TEMPLATE.length;
+  },
+  // The active step = first that is Pending or Returned.
+  current(matterId) {
+    return db.prepare(`SELECT * FROM workflow_steps WHERE matter_id = ?
+      AND status IN ('Pending','Returned') ORDER BY seq LIMIT 1`).get(matterId);
+  },
+  act(stepId, { status, userId, notes }) {
+    db.prepare(`UPDATE workflow_steps SET status=?, acted_by=?, acted_at=datetime('now'), notes=?
+      WHERE id=?`).run(status, userId || null, notes || null, stepId);
+  },
+  progress(matterId) {
+    const row = db.prepare(`SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) AS approved
+      FROM workflow_steps WHERE matter_id = ?`).get(matterId);
+    return { total: row.total || 0, approved: row.approved || 0 };
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -553,5 +601,6 @@ function statusBuckets() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  people, bodies, matters, meetings, votes, reports, topics, stats, statusBuckets,
+  WORKFLOW_TEMPLATE,
+  people, bodies, matters, meetings, votes, reports, topics, workflow, stats, statusBuckets,
 };
