@@ -1,0 +1,10 @@
+# Supabase CLI config for BEG Docket Manager.
+# Linked project ref: qpoupyodhhiupgalgbuf (BEGDocketManager, org "Board of Governors").
+#   supabase login
+#   supabase link --project-ref qpoupyodhhiupgalgbuf
+#   supabase db push        # applies supabase/migrations to the linked project
+project_id = "qpoupyodhhiupgalgbuf"
+
+[db]
+# Match the remote Postgres major version.
+major_version = 17
