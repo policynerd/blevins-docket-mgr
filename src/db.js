@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS matter_topics (
   topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS workflow_steps (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  acted_by INTEGER REFERENCES users(id),
+  acted_at TEXT,
+  notes TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
@@ -177,6 +189,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_matter ON reports(matter_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_meeting ON attendance(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_mtopics_matter ON matter_topics(matter_id);
 CREATE INDEX IF NOT EXISTS idx_mtopics_topic ON matter_topics(topic_id);
+CREATE INDEX IF NOT EXISTS idx_wf_matter ON workflow_steps(matter_id);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -213,7 +226,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['reports', 'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
+  const tables = ['workflow_steps', 'matter_topics', 'topics', 'attendance', 'reports', 'users',
+    'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   for (const t of tables) db.exec(`DROP TABLE IF EXISTS ${t};`);

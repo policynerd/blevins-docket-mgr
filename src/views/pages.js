@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate, formatDateTime, todayISO } = require('../util');
-const { layout, card, tabs, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const repo = require('../repo');
 
 // --- Dashboard ---------------------------------------------------------------
@@ -284,10 +284,13 @@ function matterDetail(matter) {
     ? `<table class="data"><thead><tr><th>Meeting date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${appearanceRows}</tbody></table>`
     : emptyState('This file has not appeared on an agenda.');
 
+  const wfSteps = repo.workflow.forMatter(matter.id);
+
   const tabbed = tabs([
     { id: 'history', label: 'History', count: history.length, html: historyPanel },
     { id: 'text', label: 'Text', html: textPanel },
     { id: 'docs', label: 'Reports & Attachments', count: reports.length + attachments.length, html: docsPanel },
+    { id: 'workflow', label: 'Workflow', count: wfSteps.length || null, html: workflowStepper(wfSteps) },
     { id: 'agenda', label: 'Agenda appearances', count: appearances.length, html: appearancesPanel },
   ]);
 

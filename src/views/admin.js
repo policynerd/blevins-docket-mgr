@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate, todayISO } = require('../util');
-const { layout, card, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const repo = require('../repo');
 
 function adminHome() {
@@ -99,7 +99,7 @@ function matterForm(matter, opts = {}) {
 
   let extras = '';
   if (isEdit) {
-    extras = actionRecorder(matter) + documentsPanel(matter) + attachmentForm(matter);
+    extras = workflowPanel(matter) + actionRecorder(matter) + documentsPanel(matter) + attachmentForm(matter);
   }
 
   const body = html`
@@ -137,6 +137,30 @@ function actionRecorder(matter) {
     </form>
     ${raw(histRows ? `<table class="data compact"><thead><tr><th>Date</th><th>Body</th><th>Action</th><th>Result</th></tr></thead><tbody>${histRows}</tbody></table>` : '')}`;
   return card('Record an action', form);
+}
+
+function workflowPanel(matter) {
+  const steps = repo.workflow.forMatter(matter.id);
+  if (!steps.length) {
+    const inner = `<p class="muted">Route this file through departmental review and approval.</p>
+      <form method="post" action="/admin/matters/${matter.id}/route">
+        <button type="submit" class="btn">▶ Start approval route</button>
+      </form>`;
+    return card('Approval routing', inner);
+  }
+  const current = repo.workflow.current(matter.id);
+  const actionForm = current ? `
+    <form class="form inline-form" method="post" action="/admin/workflow-steps/${current.id}/act">
+      <p><strong>Current step:</strong> ${escapeText(current.seq + '. ' + current.name)} <span class="muted">(${escapeText(current.role || '')})</span></p>
+      <label>Notes<input type="text" name="notes" placeholder="Optional decision note"></label>
+      <div class="form-actions">
+        <button type="submit" name="status" value="Approved" class="btn primary">Approve &amp; advance</button>
+        <button type="submit" name="status" value="Returned" class="btn">Return for revision</button>
+        <button type="submit" name="status" value="Skipped" class="btn">Skip step</button>
+      </div>
+    </form>`
+    : '<p class="muted">✓ All steps complete — this file has cleared the approval route.</p>';
+  return card('Approval routing', workflowStepper(steps) + actionForm);
 }
 
 function documentsPanel(matter) {
