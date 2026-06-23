@@ -44,6 +44,18 @@ const MIME = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+
 const routes = [];
 function route(method, pattern, handler) { routes.push({ method, pattern, handler }); }
 
+// --- Health check -----------------------------------------------------------
+// Public, dependency-free liveness/readiness probe for container platforms and
+// uptime monitors. Verifies the database responds.
+route('GET', /^\/healthz$/, (req, res) => {
+  try {
+    repo.stats();
+    sendJson(res, { status: 'ok', time: new Date().toISOString() });
+  } catch (e) {
+    sendJson(res, { status: 'error', error: String(e.message) }, 503);
+  }
+});
+
 // --- Auth -------------------------------------------------------------------
 function safeNext(next) {
   return (typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')) ? next : null;

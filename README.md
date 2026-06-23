@@ -101,6 +101,17 @@ fly deploy
 
 `fly.toml` wires the `docket_data` volume to `/data` and serves over HTTPS.
 
+### Operating notes (stateful SQLite)
+
+- **Health check:** `GET /healthz` returns `{"status":"ok"}` (503 if the DB is
+  unreachable). Point your platform's health check / uptime monitor at it for
+  automatic restart and alerting.
+- **Single writer:** the database is one file on one volume — run **exactly one
+  instance**. Do not scale to multiple machines against the same volume.
+- **Backups:** your data *is* `/data/docket.db`. Use your platform's volume
+  snapshots (e.g. Fly takes daily snapshots automatically) or periodically copy
+  the file. Restoring = restoring the volume.
+
 > **Why not Vercel?** Vercel runs stateless serverless functions with no
 > persistent local disk, so file-backed SQLite writes would not survive between
 > requests. Running here would require refactoring to functions **and** swapping
