@@ -3,6 +3,11 @@
 /data/*.db-shm
 /data/*.db-wal
 
+# Local environment files
+.env
+.env.*
+!.env.example
+
 # Dependencies (this project has none, but just in case)
 /node_modules
 
