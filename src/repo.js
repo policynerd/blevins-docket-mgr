@@ -579,6 +579,67 @@ const workflow = {
 };
 
 // ---------------------------------------------------------------------------
+// Organization (Divisions → Departments → Offices → Units)
+// ---------------------------------------------------------------------------
+const ORG_LEVELS = ['Division', 'Department', 'Office', 'Unit'];
+
+const org = {
+  all() {
+    return db.prepare('SELECT * FROM org_units ORDER BY sort_order, name').all();
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM org_units WHERE id = ?').get(id);
+  },
+  children(parentId) {
+    return parentId == null
+      ? db.prepare('SELECT * FROM org_units WHERE parent_id IS NULL ORDER BY sort_order, name').all()
+      : db.prepare('SELECT * FROM org_units WHERE parent_id = ? ORDER BY sort_order, name').all(parentId);
+  },
+  // Nested tree of all units ({...unit, children: [...]}).
+  tree() {
+    const rows = org.all();
+    const byId = new Map();
+    rows.forEach((r) => { r.children = []; byId.set(r.id, r); });
+    const roots = [];
+    rows.forEach((r) => {
+      if (r.parent_id && byId.has(r.parent_id)) byId.get(r.parent_id).children.push(r);
+      else roots.push(r);
+    });
+    return roots;
+  },
+  ancestors(id) {
+    const chain = [];
+    let cur = org.get(id);
+    while (cur && cur.parent_id) { cur = org.get(cur.parent_id); if (cur) chain.unshift(cur); }
+    return chain;
+  },
+  counts() {
+    const rows = db.prepare('SELECT level, COUNT(*) AS n FROM org_units GROUP BY level').all();
+    const out = {};
+    for (const lvl of ORG_LEVELS) out[lvl] = 0;
+    for (const r of rows) out[r.level] = r.n;
+    return out;
+  },
+  insert(u) {
+    return db.prepare(`INSERT INTO org_units
+      (parent_id, level, name, leader_name, leader_title, leader_email, leader_phone, description, sort_order)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      u.parent_id || null, u.level, u.name, u.leader_name || null, u.leader_title || null,
+      u.leader_email || null, u.leader_phone || null, u.description || null,
+      u.sort_order || 0).lastInsertRowid;
+  },
+  update(id, u) {
+    db.prepare(`UPDATE org_units SET parent_id=?, level=?, name=?, leader_name=?, leader_title=?,
+      leader_email=?, leader_phone=?, description=?, sort_order=? WHERE id=?`).run(
+      u.parent_id || null, u.level, u.name, u.leader_name || null, u.leader_title || null,
+      u.leader_email || null, u.leader_phone || null, u.description || null, u.sort_order || 0, id);
+  },
+  remove(id) {
+    db.prepare('DELETE FROM org_units WHERE id = ?').run(id);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -601,6 +662,6 @@ function statusBuckets() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  WORKFLOW_TEMPLATE,
-  people, bodies, matters, meetings, votes, reports, topics, workflow, stats, statusBuckets,
+  WORKFLOW_TEMPLATE, ORG_LEVELS,
+  people, bodies, matters, meetings, votes, reports, topics, workflow, org, stats, statusBuckets,
 };

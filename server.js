@@ -14,6 +14,7 @@ const auth = require('./src/auth');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
 const member = require('./src/views/member');
+const orgView = require('./src/views/org');
 const reportsView = require('./src/views/reports');
 const minutesView = require('./src/views/minutes');
 const minutesGen = require('./src/minutes');
@@ -113,6 +114,12 @@ route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
   sendHtml(res, minutesView.minutesView(mt));
 });
 route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
+route('GET', /^\/org\/?$/, (req, res) => sendHtml(res, orgView.orgDirectory()));
+route('GET', /^\/org\/(\d+)$/, (req, res, ctx) => {
+  const u = repo.org.get(Number(ctx.params[0]));
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, orgView.orgUnitDetail(u));
+});
 route('GET', /^\/people\/?$/, (req, res) => sendHtml(res, pages.peopleList()));
 route('GET', /^\/people\/(\d+)$/, (req, res, ctx) => {
   const p = repo.people.get(Number(ctx.params[0]));
@@ -128,6 +135,44 @@ route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
 
 // Admin ----------------------------------------------------------------------
 route('GET', /^\/admin\/?$/, (req, res) => sendHtml(res, admin.adminHome()));
+
+// Organization management (clerk)
+route('GET', /^\/admin\/org\/?$/, (req, res) => sendHtml(res, orgView.orgAdmin()));
+route('GET', /^\/admin\/org\/new$/, (req, res, ctx) => sendHtml(res,
+  orgView.orgForm(null, { parentId: ctx.query.parent || '', level: ctx.query.level || 'Division' })));
+route('POST', /^\/admin\/org$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.name || !b.level) return redirect(res, '/admin/org/new');
+  const id = repo.org.insert({
+    parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
+    leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
+  });
+  redirect(res, `/org/${id}`);
+});
+route('GET', /^\/admin\/org\/(\d+)\/edit$/, (req, res, ctx) => {
+  const u = repo.org.get(Number(ctx.params[0]));
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, orgView.orgForm(u));
+});
+route('POST', /^\/admin\/org\/(\d+)$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const u = repo.org.get(id);
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  repo.org.update(id, {
+    parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
+    leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
+  });
+  redirect(res, `/org/${id}`);
+});
+route('POST', /^\/admin\/org\/(\d+)\/delete$/, (req, res, ctx) => {
+  const u = repo.org.get(Number(ctx.params[0]));
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  repo.org.remove(u.id);
+  redirect(res, '/admin/org');
+});
 
 route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matterForm(null)));
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
