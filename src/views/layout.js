@@ -8,6 +8,7 @@ const NAV = [
   { href: '/calendar', label: 'Calendar' },
   { href: '/people', label: 'Council Members' },
   { href: '/bodies', label: 'Bodies & Committees' },
+  { href: '/org', label: 'Organization' },
 ];
 
 // Request-scoped current user. Handlers render synchronously after this is set
@@ -107,6 +108,7 @@ function layout({ title, active, body, subtitle, head }) {
       <div class="footer-links">
         <a href="/legislation">Legislation</a>
         <a href="/calendar">Calendar</a>
+        <a href="/org">Organization</a>
         <a href="/topics">Indexes</a>
         <a href="/api/v1">Web API</a>
         <a href="/legislation.rss">RSS</a>

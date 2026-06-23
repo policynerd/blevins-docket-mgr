@@ -241,6 +241,24 @@ function run() {
     repo.workflow.act(m3steps[0].id, { status: 'Approved', notes: 'Drafted by sponsor.' });
     repo.workflow.act(m3steps[1].id, { status: 'Approved', notes: 'Department concurs with intent.' });
 
+    // --- Organization (sample 4-tier hierarchy; replace via /admin/org) ---
+    const orgUnit = (level, name, parent, leader, title) => repo.org.insert({
+      level, name, parent_id: parent || null, leader_name: leader, leader_title: title,
+    });
+    const adminDiv = orgUnit('Division', 'Administrative Services Division', null, 'Eleanor Pace', 'Division Director');
+    const finDept = orgUnit('Department', 'Department of Finance', adminDiv, 'Marcus Hale', 'Finance Director');
+    const finBudgetOffice = orgUnit('Office', 'Office of Budget & Management', finDept, 'Lena Ortiz', 'Budget Officer');
+    orgUnit('Unit', 'Capital Budgeting Unit', finBudgetOffice, 'Sam Reed', 'Unit Supervisor');
+    orgUnit('Unit', 'Procurement Unit', finBudgetOffice, 'Dana Kim', 'Unit Supervisor');
+    const clerkDept = orgUnit('Department', 'Office of the City Clerk', adminDiv, 'Eleanor Pace', 'City Clerk');
+    const recordsOffice = orgUnit('Office', 'Records & Legislative Office', clerkDept, 'Owen Fields', 'Records Manager');
+    orgUnit('Unit', 'Agenda & Minutes Unit', recordsOffice, 'Priya Shah', 'Lead Clerk');
+
+    const pubWorksDiv = orgUnit('Division', 'Public Works Division', null, 'Gloria Mensah', 'Division Director');
+    const transDept = orgUnit('Department', 'Department of Transportation', pubWorksDiv, 'Victor Lang', 'Director of Transportation');
+    const trafficOffice = orgUnit('Office', 'Office of Traffic Operations', transDept, 'Nadia Brooks', 'Traffic Engineer');
+    orgUnit('Unit', 'Signals & Signs Unit', trafficOffice, 'Carl Devine', 'Unit Supervisor');
+
     // --- Meetings & agendas ----------------------------------------------
     // Past council meeting (with recorded votes)
     const pastMeeting = repo.meetings.insert({
