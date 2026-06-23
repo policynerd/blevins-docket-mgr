@@ -10,6 +10,10 @@
     "reset": "node --experimental-sqlite --no-warnings src/seed.js --reset",
     "test": "node --experimental-sqlite --no-warnings --test"
   },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.2"
+  },
   "engines": {
     "node": ">=22.5.0"
   },
