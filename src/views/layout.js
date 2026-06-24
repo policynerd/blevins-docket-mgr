@@ -1,12 +1,13 @@
 'use strict';
 
 const { html, raw, formatDate } = require('../util');
+const { ORG } = require('../org');
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
   { href: '/legislation', label: 'Legislation' },
   { href: '/calendar', label: 'Calendar' },
-  { href: '/people', label: 'Council Members' },
+  { href: '/people', label: ORG.membersLabel },
   { href: '/bodies', label: 'Bodies & Committees' },
   { href: '/org', label: 'Organization' },
 ];
@@ -60,7 +61,7 @@ function layout({ title, active, body, subtitle, head }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeText(title ? title + ' · ' : '')}Legislative Information Center</title>
+  <title>${escapeText(title ? title + ' · ' : '')}${escapeText(ORG.tagline)}</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
   <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
@@ -69,7 +70,7 @@ function layout({ title, active, body, subtitle, head }) {
 <body>
   <div class="gov-utility">
     <div class="wrap util-inner">
-      <span class="util-left">City of Westbrook</span>
+      <span class="util-left">${escapeText(ORG.name)}</span>
       <span class="util-right">
         <a href="/api/v1">Developers / API</a>
         <a href="/legislation.rss">RSS</a>
@@ -80,10 +81,10 @@ function layout({ title, active, body, subtitle, head }) {
   <header class="gov-banner">
     <div class="wrap banner-inner">
       <a class="brand" href="/">
-        <span class="brand-seal" aria-hidden="true">★</span>
+        <span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>
         <span class="brand-text">
-          <strong>City of Westbrook</strong>
-          <small>Legislative Information Center</small>
+          <strong>${escapeText(ORG.name)}</strong>
+          <small>${escapeText(ORG.tagline)}</small>
         </span>
       </a>
       <form class="banner-search" action="/legislation" method="get" role="search">
@@ -102,7 +103,7 @@ function layout({ title, active, body, subtitle, head }) {
   <footer class="site-footer">
     <div class="wrap footer-inner">
       <div>
-        <strong>City of Westbrook — Legislative Information Center</strong>
+        <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
         <p>Public records of ordinances, resolutions, meetings, and votes.</p>
       </div>
       <div class="footer-links">

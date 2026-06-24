@@ -1,9 +1,12 @@
 'use strict';
 
-// Seeds the database with a fictional municipality so the app demonstrates the
+// Seeds the database with a sample governing board so the app demonstrates the
 // full legislative lifecycle: files, sponsors, history, meetings, agendas, votes.
+// All names/content are placeholder sample data — replace with your own via the
+// Clerk Workspace, or override identity/labels through the ORG_* env vars.
 const { db, init, reset } = require('./db');
 const repo = require('./repo');
+const { ORG, orgEmail } = require('./org');
 
 function daysFromNow(n) {
   const d = new Date();
@@ -26,35 +29,38 @@ function run() {
   try {
     // --- People -----------------------------------------------------------
     const P = {};
+    const C = ORG.chairTitle;        // Chair
+    const VC = ORG.viceChairTitle;   // Vice Chair
+    const M = ORG.memberTitle;       // Governor
     const peopleSeed = [
-      ['Marlena Ortiz', 'Council President', 'District 1', 'Independent', 'mortiz@city.gov'],
-      ['Daniel Cho', 'Councilmember', 'District 2', 'Civic Party', 'dcho@city.gov'],
-      ['Priya Nair', 'Councilmember', 'District 3', 'Independent', 'pnair@city.gov'],
-      ['Walter Briggs', 'Councilmember', 'District 4', 'Reform', 'wbriggs@city.gov'],
-      ['Sofia Almeida', 'Councilmember', 'District 5', 'Civic Party', 'salmeida@city.gov'],
-      ['Theo Jackson', 'Councilmember', 'District 6', 'Independent', 'tjackson@city.gov'],
-      ['Grace Lindqvist', 'Councilmember', 'At-Large', 'Reform', 'glindqvist@city.gov'],
-      ['Hector Alvarez', 'Mayor', 'Citywide', 'Civic Party', 'mayor@city.gov'],
-      ['Eleanor Pace', 'City Clerk', 'Administration', '', 'clerk@city.gov'],
+      ['Marlena Ortiz', C, 'Seat 1', 'Independent', orgEmail('mortiz')],
+      ['Daniel Cho', M, 'Seat 2', 'Civic Party', orgEmail('dcho')],
+      ['Priya Nair', M, 'Seat 3', 'Independent', orgEmail('pnair')],
+      ['Walter Briggs', M, 'Seat 4', 'Reform', orgEmail('wbriggs')],
+      ['Sofia Almeida', M, 'Seat 5', 'Civic Party', orgEmail('salmeida')],
+      ['Theo Jackson', M, 'Seat 6', 'Independent', orgEmail('tjackson')],
+      ['Grace Lindqvist', M, 'At-Large', 'Reform', orgEmail('glindqvist')],
+      ['Hector Alvarez', VC, 'At-Large', 'Civic Party', orgEmail('halvarez')],
+      ['Eleanor Pace', ORG.clerkTitle, 'Administration', '', orgEmail('clerk')],
     ];
     for (const [name, title, district, party, email] of peopleSeed) {
       P[name] = repo.people.insert({
         full_name: name, title, district, party, email,
         phone: '(555) 010-' + String(1000 + Object.keys(P).length).slice(1),
-        bio: `${name} serves the City as ${title}${district ? ' representing ' + district : ''}.`,
+        bio: `${name} serves the ${ORG.name} as ${title}${district ? ' (' + district + ')' : ''}.`,
       });
     }
 
     // --- Bodies -----------------------------------------------------------
     const B = {};
     B.council = repo.bodies.insert({
-      name: 'City Council', type: 'Primary Legislative Body',
-      description: 'The legislative authority of the City, responsible for adopting ordinances, resolutions, and the annual budget.',
-      meeting_location: 'Council Chambers, City Hall', meets: '1st & 3rd Tuesdays, 6:00 PM',
+      name: ORG.primaryBody, type: ORG.primaryBodyType,
+      description: `The governing authority of the ${ORG.name}, responsible for adopting ordinances, resolutions, and the annual budget.`,
+      meeting_location: ORG.meetingLocation, meets: '1st & 3rd Tuesdays, 6:00 PM',
     });
     B.finance = repo.bodies.insert({
       name: 'Finance Committee', type: 'Standing Committee',
-      description: 'Reviews appropriations, contracts, and fiscal policy before referral to the full Council.',
+      description: `Reviews appropriations, contracts, and fiscal policy before referral to the full ${ORG.primaryBody}.`,
       meeting_location: 'Committee Room A', meets: '2nd Mondays, 4:00 PM',
     });
     B.safety = repo.bodies.insert({
@@ -65,7 +71,7 @@ function run() {
     B.planning = repo.bodies.insert({
       name: 'Planning Commission', type: 'Commission',
       description: 'Advises on land use, zoning, and the comprehensive plan.',
-      meeting_location: 'Council Chambers, City Hall', meets: '4th Thursdays, 6:30 PM',
+      meeting_location: ORG.meetingLocation, meets: '4th Thursdays, 6:30 PM',
     });
 
     // --- Memberships ------------------------------------------------------
@@ -110,13 +116,13 @@ function run() {
       title: 'An Ordinance establishing a Climate Resilience and Tree Canopy Program',
       status: 'Enacted', body_id: B.council, intro_date: daysFromNow(-48),
       summary: 'Creates a citywide program to expand the urban tree canopy to 40% by 2035 and establishes a dedicated resilience fund.',
-      full_text: 'BE IT ORDAINED by the City Council:\n\nSection 1. Purpose. The City hereby establishes the Climate Resilience and Tree Canopy Program...\n\nSection 2. Canopy Goal. The City shall pursue a tree canopy coverage target of forty percent (40%) by the year 2035...\n\nSection 3. Resilience Fund. There is hereby created a dedicated fund...',
+      full_text: `BE IT ORDAINED by the ${ORG.primaryBody}:\n\nSection 1. Purpose. There is hereby established the Climate Resilience and Tree Canopy Program...\n\nSection 2. Canopy Goal. A tree canopy coverage target of forty percent (40%) shall be pursued by the year 2035...\n\nSection 3. Resilience Fund. There is hereby created a dedicated fund...`,
       sponsors: [{ name: 'Sofia Almeida', type: 'Primary' }, { name: 'Priya Nair' }],
       history: [
         { date: daysFromNow(-48), body: B.council, action: 'Introduced and referred to Finance Committee' },
         { date: daysFromNow(-34), body: B.finance, action: 'Recommended for adoption', result: 'Pass' },
         { date: daysFromNow(-20), body: B.council, action: 'Adopted on second reading', result: 'Pass' },
-        { date: daysFromNow(-18), body: B.council, action: 'Signed by the Mayor' },
+        { date: daysFromNow(-18), body: B.council, action: `Signed by the ${C}` },
       ],
       attachments: [{ name: 'Staff report — canopy analysis.pdf', url: '#' }, { name: 'Fiscal note.pdf', url: '#' }],
     });
@@ -174,8 +180,8 @@ function run() {
       type: 'Appointment',
       title: 'Appointment of Rosa Méndez to the Planning Commission',
       status: 'On Agenda', body_id: B.council, intro_date: daysFromNow(-4),
-      summary: 'Mayoral appointment of Rosa Méndez to fill a vacancy on the Planning Commission for a three-year term.',
-      sponsors: [{ name: 'Hector Alvarez', type: 'Primary' }],
+      summary: `Appointment of Rosa Méndez, nominated by the ${C}, to fill a vacancy on the Planning Commission for a three-year term.`,
+      sponsors: [{ name: 'Marlena Ortiz', type: 'Primary' }],
       history: [{ date: daysFromNow(-4), body: B.council, action: 'Received and filed' }],
     });
 
@@ -250,7 +256,7 @@ function run() {
     const finBudgetOffice = orgUnit('Office', 'Office of Budget & Management', finDept, 'Lena Ortiz', 'Budget Officer');
     orgUnit('Unit', 'Capital Budgeting Unit', finBudgetOffice, 'Sam Reed', 'Unit Supervisor');
     orgUnit('Unit', 'Procurement Unit', finBudgetOffice, 'Dana Kim', 'Unit Supervisor');
-    const clerkDept = orgUnit('Department', 'Office of the City Clerk', adminDiv, 'Eleanor Pace', 'City Clerk');
+    const clerkDept = orgUnit('Department', ORG.clerkOffice, adminDiv, 'Eleanor Pace', ORG.clerkTitle);
     const recordsOffice = orgUnit('Office', 'Records & Legislative Office', clerkDept, 'Owen Fields', 'Records Manager');
     orgUnit('Unit', 'Agenda & Minutes Unit', recordsOffice, 'Priya Shah', 'Lead Clerk');
 
@@ -263,7 +269,7 @@ function run() {
     // Past council meeting (with recorded votes)
     const pastMeeting = repo.meetings.insert({
       body_id: B.council, meeting_date: daysFromNow(-2), meeting_time: '6:00 PM',
-      location: 'Council Chambers, City Hall', status: 'Final',
+      location: ORG.meetingLocation, status: 'Final',
       minutes_url: '#', video_url: '#',
     });
     repo.meetings.addItem({ meeting_id: pastMeeting, section: 'Call to Order', agenda_number: '1', title: 'Call to Order & Roll Call' });
@@ -296,7 +302,7 @@ function run() {
     // Upcoming council meeting (agenda posted, no votes yet)
     const nextMeeting = repo.meetings.insert({
       body_id: B.council, meeting_date: daysFromNow(7), meeting_time: '6:00 PM',
-      location: 'Council Chambers, City Hall', status: 'Scheduled', agenda_url: '#',
+      location: ORG.meetingLocation, status: 'Scheduled', agenda_url: '#',
     });
     repo.meetings.addItem({ meeting_id: nextMeeting, section: 'Call to Order', agenda_number: '1', title: 'Call to Order & Roll Call' });
     repo.meetings.addItem({ meeting_id: nextMeeting, section: 'Public Comment', agenda_number: '3', title: 'Public Comment' });
@@ -314,7 +320,7 @@ function run() {
     // Planning commission meeting (past)
     const planMeeting = repo.meetings.insert({
       body_id: B.planning, meeting_date: daysFromNow(-1), meeting_time: '6:30 PM',
-      location: 'Council Chambers, City Hall', status: 'Final', minutes_url: '#',
+      location: ORG.meetingLocation, status: 'Final', minutes_url: '#',
     });
     repo.meetings.addItem({
       meeting_id: planMeeting, matter_id: m3.id, section: 'Public Hearings',
