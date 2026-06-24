@@ -68,6 +68,34 @@ The database location defaults to `./data/docket.db`. Override it with the
 DOCKET_DB=/data/docket.db npm start
 ```
 
+## Configuration
+
+All settings are optional environment variables — see [`.env.example`](.env.example)
+for the full list. The two groups you'll most likely set:
+
+**Branding / identity.** Every UI label is derived from `ORG_*` variables, so you
+can rebrand the app to your organization without editing code. Defaults describe
+a Board of Governors:
+
+| Variable | Default | Controls |
+| --- | --- | --- |
+| `ORG_NAME` | Board of Governors | Name in the banner, footer, and `<title>` |
+| `ORG_TAGLINE` | Legislative Information Center | Sub-line / page title suffix |
+| `ORG_PRIMARY_BODY` | Board of Governors | The primary legislative body |
+| `ORG_MEMBERS_LABEL` | Board Members | Nav + members-listing label |
+| `ORG_CHAIR_TITLE` / `ORG_VICE_CHAIR_TITLE` / `ORG_MEMBER_TITLE` | Chair / Vice Chair / Governor | Member titles |
+| `ORG_CLERK_TITLE` / `ORG_CLERK_OFFICE` | Clerk of the Board / Office of the Clerk of the Board | Clerk identity |
+| `ORG_MEETING_LOCATION` | Boardroom | Default meeting location |
+| `ORG_EMAIL_DOMAIN` | board.gov | Domain for seeded account emails |
+
+**First-boot account seeding.** Sample people/bodies/matters auto-seed when the
+database is empty, but *login accounts* are created only if you pick one:
+
+- **Production:** set `ADMIN_EMAIL` + `ADMIN_PASSWORD` (≥ 12 chars) for a single
+  clerk/admin account.
+- **Local/eval:** set `ENABLE_DEMO_SEED=true` for the demo clerk + board-member
+  logins.
+
 ## Deploy
 
 This is a **stateful** app (a persistent Node server with a file-backed SQLite
@@ -82,7 +110,9 @@ docker run -p 3000:3000 -v docket_data:/data docket-mgr
 ```
 
 The `-v docket_data:/data` volume keeps the SQLite database across restarts; the
-app auto-seeds demo data on first boot when the database is empty.
+app auto-seeds sample data on first boot when the database is empty. Set
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` (or `ENABLE_DEMO_SEED=true`) so login accounts are
+created too — see [Configuration](#configuration).
 
 ### Render
 
@@ -126,7 +156,7 @@ fly deploy
 | `matter_sponsors` | Primary/co-sponsors per file |
 | `matter_history` | Workflow actions (introduced, referred, adopted, …) |
 | `attachments` | Documents linked to a file |
-| `bodies` / `body_members` | Council, committees, commissions & membership |
+| `bodies` / `body_members` | Board, committees, commissions & membership |
 | `people` | Elected officials and appointees |
 | `meetings` / `agenda_items` | Calendar, agendas & agenda sections |
 | `votes` | Per-member roll-call votes on agenda items |
