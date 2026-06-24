@@ -6,6 +6,7 @@
 // subset the word-processor sanitizer allows, so the clerk can refine it.
 const repo = require('./repo');
 const { formatDate, formatDateTime, escapeHtml } = require('./util');
+const { ORG } = require('./org');
 
 function generate(meetingId) {
   const m = repo.meetings.get(meetingId);
@@ -71,7 +72,7 @@ function generate(meetingId) {
     }
   }
 
-  out.push('<hr><p>Respectfully submitted by the Office of the City Clerk.</p>');
+  out.push(`<hr><p>Respectfully submitted by the ${escapeHtml(ORG.clerkOffice)}.</p>`);
   return out.join('\n');
 }
 

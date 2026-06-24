@@ -4,6 +4,7 @@
 // and in-memory sessions keyed by an httpOnly cookie. No external dependencies.
 const crypto = require('node:crypto');
 const { db } = require('./db');
+const { ORG, orgEmail } = require('./org');
 
 const COOKIE = 'docket_sid';
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 12;
@@ -117,17 +118,17 @@ function ensureSeedAccounts({ allowDemo = process.env.ENABLE_DEMO_SEED === 'true
     throw new Error('No users exist. Set ADMIN_EMAIL and ADMIN_PASSWORD, or set ENABLE_DEMO_SEED=true for a local/demo instance.');
   }
 
-  const clerkPerson = db.prepare("SELECT * FROM people WHERE title = 'City Clerk'").get();
+  const clerkPerson = db.prepare('SELECT * FROM people WHERE title = ?').get(ORG.clerkTitle);
   const clerk = hashPassword('clerk1234');
-  insert.run(clerkPerson ? clerkPerson.id : null, clerkPerson ? clerkPerson.full_name : 'City Clerk',
-    'clerk@city.gov', 'clerk', clerk.hash, clerk.salt);
+  insert.run(clerkPerson ? clerkPerson.id : null, clerkPerson ? clerkPerson.full_name : ORG.clerkTitle,
+    orgEmail('clerk'), 'clerk', clerk.hash, clerk.salt);
 
   // Board members get member logins (email already on the person record).
   const members = db.prepare(
-    "SELECT * FROM people WHERE email LIKE '%@city.gov' AND title != 'City Clerk'").all();
+    'SELECT * FROM people WHERE email LIKE ? AND title != ?').all('%@' + ORG.emailDomain, ORG.clerkTitle);
   for (const p of members) {
     if (!p.email) continue;
-    const role = p.title === 'Mayor' ? 'staff' : 'member';
+    const role = p.title === ORG.chairTitle ? 'staff' : 'member';
     const pw = hashPassword('member1234');
     try { insert.run(p.id, p.full_name, p.email, role, pw.hash, pw.salt); } catch (_) { /* dup */ }
   }

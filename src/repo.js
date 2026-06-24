@@ -1,6 +1,7 @@
 'use strict';
 
 const { db } = require('./db');
+const { ORG } = require('./org');
 
 // ---------------------------------------------------------------------------
 // Reference data used across the app (mirrors Legistar-style vocabularies)
@@ -537,9 +538,9 @@ const WORKFLOW_TEMPLATE = [
   { name: 'Sponsor / Drafting', role: 'Sponsor' },
   { name: 'Department Review', role: 'Department' },
   { name: 'Legal Review', role: 'Legal' },
-  { name: 'Clerk Review', role: 'City Clerk' },
+  { name: 'Clerk Review', role: ORG.clerkTitle },
   { name: 'Committee', role: 'Committee' },
-  { name: 'Full Council', role: 'City Council' },
+  { name: `Full ${ORG.primaryBody}`, role: ORG.primaryBody },
 ];
 
 const workflow = {

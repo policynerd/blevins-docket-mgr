@@ -2,6 +2,7 @@
 
 const { html, raw, formatDate, formatDateTime, todayISO } = require('../util');
 const { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { ORG } = require('../org');
 const repo = require('../repo');
 
 // --- Dashboard ---------------------------------------------------------------
@@ -570,7 +571,7 @@ function peopleList() {
       </span>
     </a>`);
   const body = html`<div class="person-grid">${raw(cards.join(''))}</div>`;
-  return layout({ title: 'Council Members', active: '/people',
+  return layout({ title: ORG.membersLabel, active: '/people',
     subtitle: 'Elected officials and appointees of record.', body });
 }
 
@@ -593,7 +594,7 @@ function personDetail(person) {
     </tr>`).join('') : null;
 
   const body = html`
-    <p class="crumbs"><a href="/people">Council Members</a> / ${person.full_name}</p>
+    <p class="crumbs"><a href="/people">${ORG.membersLabel}</a> / ${person.full_name}</p>
     <div class="person-head">
       <span class="avatar lg">${initials(person.full_name)}</span>
       <div>

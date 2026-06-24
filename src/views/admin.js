@@ -2,6 +2,7 @@
 
 const { html, raw, formatDate, todayISO } = require('../util');
 const { layout, card, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { ORG } = require('../org');
 const repo = require('../repo');
 
 function adminHome() {
@@ -206,7 +207,7 @@ function meetingForm() {
         <label>Date<input type="date" name="meeting_date" value="${todayISO()}" required></label>
         <label>Time<input type="text" name="meeting_time" placeholder="6:00 PM"></label>
       </div>
-      <label>Location<input type="text" name="location" placeholder="Council Chambers, City Hall"></label>
+      <label>Location<input type="text" name="location" placeholder="${escapeText(ORG.meetingLocation)}"></label>
       <div class="form-row">
         <label>Agenda URL<input type="url" name="agenda_url" placeholder="https://…"></label>
         <label>Video URL<input type="url" name="video_url" placeholder="https://…"></label>
