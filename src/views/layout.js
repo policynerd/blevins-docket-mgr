@@ -9,6 +9,7 @@ const NAV = [
   { href: '/calendar', label: 'Calendar' },
   { href: '/people', label: ORG.membersLabel },
   { href: '/bodies', label: 'Bodies & Committees' },
+  { href: '/policies', label: 'Policies' },
   { href: '/org', label: 'Organization' },
 ];
 

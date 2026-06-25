@@ -20,6 +20,7 @@ const minutesView = require('./src/views/minutes');
 const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const govern = require('./src/views/govern');
+const policiesView = require('./src/views/policies');
 const sso = require('./src/sso');
 const importer = require('./src/import');
 const org = require('./src/org');
@@ -176,6 +177,14 @@ route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
   sendHtml(res, minutesView.minutesView(mt));
 });
 route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
+
+// Policies (public reads published; drafts visible to clerk only) -----------
+route('GET', /^\/policies\/?$/, (req, res, ctx) => sendHtml(res, policiesView.policiesList(ctx.user)));
+route('GET', /^\/policies\/(\d+)$/, (req, res, ctx) => {
+  const p = repo.policies.get(Number(ctx.params[0]));
+  if (!p || (p.status === 'Draft' && !auth.hasRole(ctx.user, 'clerk'))) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, policiesView.policyDetail(p));
+});
 route('GET', /^\/org\/?$/, (req, res) => sendHtml(res, orgView.orgDirectory()));
 route('GET', /^\/org\/(\d+)$/, (req, res, ctx) => {
   const u = repo.org.get(Number(ctx.params[0]));
@@ -202,6 +211,44 @@ route('GET', /^\/admin\/?$/, (req, res) => sendHtml(res, admin.adminHome()));
 route('POST', /^\/admin\/purge$/, (req, res) => {
   repo.purgeDomainData();
   redirect(res, '/admin');
+});
+
+// Policies CRUD (clerk) ------------------------------------------------------
+route('GET', /^\/admin\/policies\/?$/, (req, res) => sendHtml(res, policiesView.policiesAdmin()));
+route('GET', /^\/admin\/policies\/new$/, (req, res) => sendHtml(res, policiesView.policyForm(null)));
+route('POST', /^\/admin\/policies$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.title) return sendHtml(res, policiesView.policyForm(null), 400);
+  const id = repo.policies.insert({
+    policy_number: b.policy_number || null, title: b.title, category: b.category || null,
+    status: b.status || 'Draft', effective_date: b.effective_date || null,
+    body_html: sanitizeHtml(b.body_html), matter_id: b.matter_id ? Number(b.matter_id) : null,
+    author_id: ctx.user ? ctx.user.id : null,
+  });
+  redirect(res, `/policies/${id}`);
+});
+route('GET', /^\/admin\/policies\/(\d+)\/edit$/, (req, res, ctx) => {
+  const p = repo.policies.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, policiesView.policyForm(p));
+});
+route('POST', /^\/admin\/policies\/(\d+)$/, (req, res, ctx) => {
+  const p = repo.policies.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  if (!b.title) return sendHtml(res, policiesView.policyForm(p), 400);
+  repo.policies.update(p.id, {
+    policy_number: b.policy_number || null, title: b.title, category: b.category || null,
+    status: b.status || 'Draft', effective_date: b.effective_date || null,
+    body_html: sanitizeHtml(b.body_html), matter_id: b.matter_id ? Number(b.matter_id) : null,
+  });
+  redirect(res, `/policies/${p.id}`);
+});
+route('POST', /^\/admin\/policies\/(\d+)\/delete$/, (req, res, ctx) => {
+  const p = repo.policies.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  repo.policies.remove(p.id);
+  redirect(res, '/admin/policies');
 });
 
 // Roster import (CSV bulk "data populate" / direct-seat bootstrap) — clerk.
