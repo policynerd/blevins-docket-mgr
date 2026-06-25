@@ -52,16 +52,18 @@ function importRoster(text) {
       }
       if (loginRole && !email) { r.errors.push(`Line ${line}: login_role given but no email.`); return; }
 
-      // Resolve / create the person (needed for a seat; created when we have a name).
+      // A person record is created only when seating onto a committee — that's
+      // what makes someone a board/committee member (and lists them publicly).
+      // Login-only rows (e.g. staff) get a user account but no directory entry.
       let person = email ? personByEmail(email) : null;
-      if (!person && name) {
-        person = repo.people.get(repo.people.insert({ full_name: name, email: email || null }));
-        r.peopleCreated++;
-      }
 
       // Seat onto a committee (create the body if it doesn't exist yet).
       if (committee) {
-        if (!person) { r.errors.push(`Line ${line}: a name is required to seat someone on "${committee}".`); return; }
+        if (!person) {
+          if (!name) { r.errors.push(`Line ${line}: a name is required to seat someone on "${committee}".`); return; }
+          person = repo.people.get(repo.people.insert({ full_name: name, email: email || null }));
+          r.peopleCreated++;
+        }
         let body = bodyByName(committee);
         if (!body) {
           body = repo.bodies.get(repo.bodies.insert({ name: committee, type: 'Standing Committee' }));
