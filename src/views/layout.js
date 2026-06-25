@@ -54,9 +54,12 @@ function typeBadge(type) {
   return raw(`<span class="badge type ${cls}">${escapeText(type)}</span>`);
 }
 
+// Escapes for both text content AND double/single-quoted attribute values
+// (escaping quotes is harmless in text context but required in attributes).
 function escapeText(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function layout({ title, active, body, subtitle, head }) {
