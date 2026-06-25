@@ -261,6 +261,17 @@ CREATE TABLE IF NOT EXISTS budget_lines (
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
+-- A governor's office staff: aides/staff listed under a board member (person).
+CREATE TABLE IF NOT EXISTS office_staff (
+  id INTEGER PRIMARY KEY,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  title TEXT,
+  email TEXT,
+  phone TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
@@ -276,6 +287,7 @@ CREATE INDEX IF NOT EXISTS idx_mmotions_status ON member_motions(status);
 CREATE INDEX IF NOT EXISTS idx_mmotions_body ON member_motions(body_id);
 CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status);
 CREATE INDEX IF NOT EXISTS idx_budget_lines_budget ON budget_lines(budget_id);
+CREATE INDEX IF NOT EXISTS idx_office_staff_person ON office_staff(person_id);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -300,6 +312,9 @@ const COLUMN_MIGRATIONS = {
     sso_subject: 'TEXT',          // stable Entra object id (oid) for SSO accounts
     auth_provider: 'TEXT',        // 'local' | 'entra'
   },
+  people: {
+    office_name: 'TEXT',          // e.g. "Office of Governor Smith"
+  },
 };
 
 function migrate() {
@@ -318,8 +333,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['budget_lines', 'budgets', 'policies', 'member_motions', 'settings', 'org_units',
-    'workflow_steps', 'matter_topics',
+  const tables = ['office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+    'org_units', 'workflow_steps', 'matter_topics',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];

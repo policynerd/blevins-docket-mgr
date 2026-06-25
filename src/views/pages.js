@@ -4,6 +4,7 @@ const { html, raw, formatDate, formatDateTime, todayISO } = require('../util');
 const { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const { ORG } = require('../org');
 const { money } = require('./budget');
+const auth = require('../auth');
 const repo = require('../repo');
 
 // --- Dashboard ---------------------------------------------------------------
@@ -583,11 +584,53 @@ function peopleList() {
     subtitle: 'Elected officials and appointees of record.', body });
 }
 
-function personDetail(person) {
+// A board member's office + staff roster (read for all; manage for clerks).
+function officeSection(person, isClerk) {
+  const staff = repo.people.officeStaff(person.id);
+  const officeName = person.office_name || `Office of ${person.full_name}`;
+  const staffList = staff.length
+    ? `<ul class="plain office-staff">${staff.map((s) => html`<li><strong>${s.name}</strong>${s.title ? ' — ' + s.title : ''}${s.email ? raw(` · <a href="mailto:${escapeText(s.email)}">${escapeText(s.email)}</a>`) : ''}${s.phone ? ' · ' + s.phone : ''}</li>`).join('')}</ul>`
+    : emptyState('No staff listed.');
+
+  let manage = '';
+  if (isClerk) {
+    const rename = `
+      <form class="form inline-form" method="post" action="/admin/people/${person.id}/office">
+        <label>Office name<input type="text" name="office_name" value="${escapeText(person.office_name || '')}" placeholder="${escapeText('Office of ' + person.full_name)}"></label>
+        <button type="submit" class="btn-link">Rename office</button>
+      </form>`;
+    const editRows = staff.map((s) => `
+      <form class="form line-edit" method="post" action="/admin/office-staff/${s.id}">
+        <input type="text" name="name" value="${escapeText(s.name)}" required aria-label="Name">
+        <input type="text" name="title" value="${escapeText(s.title || '')}" placeholder="Title" aria-label="Title">
+        <input type="email" name="email" value="${escapeText(s.email || '')}" placeholder="Email" aria-label="Email">
+        <input type="text" name="phone" value="${escapeText(s.phone || '')}" placeholder="Phone" aria-label="Phone">
+        <button type="submit" class="btn-link">Save</button>
+        <button type="submit" formaction="/admin/office-staff/${s.id}/delete" class="btn-link danger" onclick="return confirm('Remove this staff member?')">Remove</button>
+      </form>`).join('');
+    const add = `
+      <form class="form inline-form" method="post" action="/admin/people/${person.id}/staff">
+        <div class="form-row">
+          <label>Name<input type="text" name="name" required></label>
+          <label>Title<input type="text" name="title" placeholder="Chief of Staff"></label>
+        </div>
+        <div class="form-row">
+          <label>Email<input type="email" name="email"></label>
+          <label>Phone<input type="text" name="phone"></label>
+        </div>
+        <button type="submit" class="btn">Add staff</button>
+      </form>`;
+    manage = `<div class="office-manage"><h3 class="wp-label">Manage office</h3>${rename}${editRows}${add}</div>`;
+  }
+  return card(officeName, staffList + manage);
+}
+
+function personDetail(person, user) {
   const memberships = repo.people.memberships(person.id);
   const sponsored = repo.people.sponsored(person.id);
   const voteRecord = repo.votes.byPerson(person.id);
   const voteSummary = repo.votes.personSummary(person.id);
+  const officeCardHtml = officeSection(person, auth.hasRole(user, 'clerk'));
 
   const memRows = memberships.length
     ? `<ul class="plain">${memberships.map((m) => html`<li><a href="/bodies/${m.body_id}">${m.body_name}</a> — ${m.role}${m.voting ? '' : ' (non-voting)'}</li>`).join('')}</ul>`
@@ -617,6 +660,7 @@ function personDetail(person) {
     </div>
     ${person.bio ? raw(card('Biography', `<p>${escapeText(person.bio)}</p>`)) : ''}
     ${raw(card('Memberships', memRows))}
+    ${raw(officeCardHtml)}
     ${raw(card('Sponsored legislation',
       sponsoredRows
         ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th></tr></thead><tbody>${sponsoredRows}</tbody></table>`
