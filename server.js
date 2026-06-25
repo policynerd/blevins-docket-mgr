@@ -212,7 +212,7 @@ route('GET', /^\/people\/?$/, (req, res) => sendHtml(res, pages.peopleList()));
 route('GET', /^\/people\/(\d+)$/, (req, res, ctx) => {
   const p = repo.people.get(Number(ctx.params[0]));
   if (!p) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.personDetail(p));
+  sendHtml(res, pages.personDetail(p, ctx.user));
 });
 route('GET', /^\/bodies\/?$/, (req, res) => sendHtml(res, pages.bodiesList()));
 route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
@@ -295,6 +295,41 @@ route('POST', /^\/admin\/policies\/(\d+)\/delete$/, (req, res, ctx) => {
   if (!p) return sendHtml(res, pages.notFound(), 404);
   repo.policies.remove(p.id);
   redirect(res, '/admin/policies');
+});
+
+// Governor offices & staff (clerk) -------------------------------------------
+route('POST', /^\/admin\/people\/(\d+)\/office$/, (req, res, ctx) => {
+  const p = repo.people.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  repo.people.setOffice(p.id, ctx.body.office_name);
+  redirect(res, `/people/${p.id}`);
+});
+route('POST', /^\/admin\/people\/(\d+)\/staff$/, (req, res, ctx) => {
+  const p = repo.people.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.name) {
+    repo.people.addStaff({
+      person_id: p.id, name: ctx.body.name, title: ctx.body.title,
+      email: ctx.body.email, phone: ctx.body.phone,
+    });
+  }
+  redirect(res, `/people/${p.id}`);
+});
+route('POST', /^\/admin\/office-staff\/(\d+)$/, (req, res, ctx) => {
+  const s = repo.people.getStaff(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.name) {
+    repo.people.updateStaff(s.id, {
+      name: ctx.body.name, title: ctx.body.title, email: ctx.body.email, phone: ctx.body.phone,
+    });
+  }
+  redirect(res, `/people/${s.person_id}`);
+});
+route('POST', /^\/admin\/office-staff\/(\d+)\/delete$/, (req, res, ctx) => {
+  const s = repo.people.getStaff(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  repo.people.removeStaff(s.id);
+  redirect(res, `/people/${s.person_id}`);
 });
 
 // Budget management (clerk) --------------------------------------------------

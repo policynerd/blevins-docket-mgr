@@ -67,6 +67,31 @@ const people = {
       p.email ?? null, p.phone ?? null, p.website ?? null, p.photo_url ?? null,
       p.bio ?? null, p.active == null ? 1 : p.active).lastInsertRowid;
   },
+  // --- Office & staff (a board member's office) ---
+  setOffice(personId, name) {
+    db.prepare('UPDATE people SET office_name = ? WHERE id = ?').run(name || null, personId);
+  },
+  officeStaff(personId) {
+    return db.prepare('SELECT * FROM office_staff WHERE person_id = ? ORDER BY sort_order, id')
+      .all(personId);
+  },
+  getStaff(id) {
+    return db.prepare('SELECT * FROM office_staff WHERE id = ?').get(id);
+  },
+  addStaff(s) {
+    const max = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM office_staff WHERE person_id = ?')
+      .get(s.person_id).m;
+    return db.prepare(`INSERT INTO office_staff (person_id, name, title, email, phone, sort_order)
+      VALUES (?,?,?,?,?,?)`).run(s.person_id, s.name, s.title || null, s.email || null,
+      s.phone || null, max + 1).lastInsertRowid;
+  },
+  updateStaff(id, s) {
+    db.prepare('UPDATE office_staff SET name=?, title=?, email=?, phone=? WHERE id=?')
+      .run(s.name, s.title || null, s.email || null, s.phone || null, id);
+  },
+  removeStaff(id) {
+    db.prepare('DELETE FROM office_staff WHERE id = ?').run(id);
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -946,9 +971,10 @@ function statusBuckets() {
 // signed-in clerk can clear demo/sample data without losing their login or
 // branding. Used by the admin "Clear all data" action.
 function purgeDomainData() {
-  const tables = ['budget_lines', 'budgets', 'policies', 'member_motions', 'votes', 'attendance',
-    'agenda_items', 'meetings', 'matter_topics', 'topics', 'matter_history', 'matter_sponsors',
-    'attachments', 'reports', 'workflow_steps', 'matters', 'body_members', 'bodies', 'org_units', 'people'];
+  const tables = ['office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'votes',
+    'attendance', 'agenda_items', 'meetings', 'matter_topics', 'topics', 'matter_history',
+    'matter_sponsors', 'attachments', 'reports', 'workflow_steps', 'matters', 'body_members',
+    'bodies', 'org_units', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   db.exec('SAVEPOINT sp_purge');
   try {
