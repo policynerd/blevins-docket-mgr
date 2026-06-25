@@ -772,6 +772,47 @@ const memberMotions = {
 };
 
 // ---------------------------------------------------------------------------
+// Policies (adopted governance documents / bylaws)
+// ---------------------------------------------------------------------------
+const POLICY_STATUSES = ['Draft', 'Active', 'Under Review', 'Superseded'];
+
+const policies = {
+  // Public listing = everything except Draft, grouped sensibly.
+  published() {
+    return db.prepare(`SELECT * FROM policies WHERE status != 'Draft'
+      ORDER BY category IS NULL, category, policy_number, title`).all();
+  },
+  all() {
+    return db.prepare(`SELECT * FROM policies
+      ORDER BY category IS NULL, category, policy_number, title`).all();
+  },
+  get(id) {
+    return db.prepare(`SELECT p.*, u.name AS author_name, m.file_number AS matter_file_number
+      FROM policies p
+      LEFT JOIN users u ON u.id = p.author_id
+      LEFT JOIN matters m ON m.id = p.matter_id
+      WHERE p.id = ?`).get(id);
+  },
+  insert(p) {
+    return db.prepare(`INSERT INTO policies
+      (policy_number, title, category, status, effective_date, body_html, matter_id, author_id)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
+      p.policy_number ?? null, p.title, p.category ?? null, p.status || 'Draft',
+      p.effective_date ?? null, p.body_html ?? null, p.matter_id ?? null,
+      p.author_id ?? null).lastInsertRowid;
+  },
+  update(id, p) {
+    db.prepare(`UPDATE policies SET policy_number=?, title=?, category=?, status=?,
+      effective_date=?, body_html=?, matter_id=?, updated_at=datetime('now') WHERE id=?`).run(
+      p.policy_number ?? null, p.title, p.category ?? null, p.status || 'Draft',
+      p.effective_date ?? null, p.body_html ?? null, p.matter_id ?? null, id);
+  },
+  remove(id) {
+    db.prepare('DELETE FROM policies WHERE id = ?').run(id);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -797,7 +838,7 @@ function statusBuckets() {
 // signed-in clerk can clear demo/sample data without losing their login or
 // branding. Used by the admin "Clear all data" action.
 function purgeDomainData() {
-  const tables = ['member_motions', 'votes', 'attendance', 'agenda_items', 'meetings',
+  const tables = ['policies', 'member_motions', 'votes', 'attendance', 'agenda_items', 'meetings',
     'matter_topics', 'topics', 'matter_history', 'matter_sponsors', 'attachments', 'reports',
     'workflow_steps', 'matters', 'body_members', 'bodies', 'org_units', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
@@ -816,7 +857,7 @@ function purgeDomainData() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  ORG_LEVELS, MEMBER_MOTION_STATUSES, workflowTemplate,
+  ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  stats, statusBuckets, purgeDomainData,
+  policies, stats, statusBuckets, purgeDomainData,
 };

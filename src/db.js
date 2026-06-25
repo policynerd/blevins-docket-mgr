@@ -224,6 +224,22 @@ CREATE TABLE IF NOT EXISTS member_motions (
   decision_notes TEXT
 );
 
+-- Adopted governance policies / bylaws (reference documents, authored in the
+-- word processor). Published (non-Draft) policies are shown publicly.
+CREATE TABLE IF NOT EXISTS policies (
+  id INTEGER PRIMARY KEY,
+  policy_number TEXT,
+  title TEXT NOT NULL,
+  category TEXT,
+  status TEXT NOT NULL DEFAULT 'Draft',   -- Draft | Active | Under Review | Superseded
+  effective_date TEXT,
+  body_html TEXT,
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  author_id INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
@@ -237,6 +253,7 @@ CREATE INDEX IF NOT EXISTS idx_wf_matter ON workflow_steps(matter_id);
 CREATE INDEX IF NOT EXISTS idx_org_parent ON org_units(parent_id);
 CREATE INDEX IF NOT EXISTS idx_mmotions_status ON member_motions(status);
 CREATE INDEX IF NOT EXISTS idx_mmotions_body ON member_motions(body_id);
+CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -277,7 +294,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['member_motions', 'settings', 'org_units', 'workflow_steps', 'matter_topics',
+  const tables = ['policies', 'member_motions', 'settings', 'org_units', 'workflow_steps', 'matter_topics',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
