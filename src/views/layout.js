@@ -35,10 +35,33 @@ function brandHead() {
   return `<style>:root{--accent:${c};--accent-dark:color-mix(in srgb, ${c}, #000 28%);}</style>`;
 }
 
+const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
+
+// Favicon: an explicit favicon URL, else the logo URL, else an auto-generated
+// inline SVG (rounded square in the brand color with the seal glyph) so the tab
+// icon always reflects the current branding without uploading a file.
+function faviconLink() {
+  const fav = String(ORG.faviconUrl || '');
+  const logo = String(ORG.logoUrl || '');
+  let href;
+  if (HTTPS_URL.test(fav)) href = fav;
+  else if (HTTPS_URL.test(logo)) href = logo;
+  else {
+    const color = /^#[0-9a-fA-F]{3,8}$/.test(ORG.primaryColor || '') ? ORG.primaryColor : '#15569e';
+    const glyph = escapeText(String(ORG.seal || '★').slice(0, 2));
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
+      + `<rect width="64" height="64" rx="12" fill="${color}"/>`
+      + `<text x="32" y="46" font-size="38" text-anchor="middle" fill="#ffffff" `
+      + `font-family="Georgia,'Times New Roman',serif">${glyph}</text></svg>`;
+    href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+  return `<link rel="icon" href="${href}">`;
+}
+
 // Banner mark: a logo image when an https logo URL is configured, else the seal glyph.
 function brandMark() {
   const url = String(ORG.logoUrl || '');
-  if (/^https:\/\/[^"'<>\s]+$/.test(url)) {
+  if (HTTPS_URL.test(url)) {
     return `<img class="brand-logo" src="${url}" alt="${escapeText(ORG.name)} logo">`;
   }
   return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
@@ -81,6 +104,7 @@ function layout({ title, active, body, subtitle, head }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeText(title ? title + ' · ' : '')}${escapeText(ORG.tagline)}</title>
   <link rel="stylesheet" href="/styles.css">
+  ${faviconLink()}
   <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
   <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
   ${brandHead()}

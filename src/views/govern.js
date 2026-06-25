@@ -246,7 +246,10 @@ function brandingPage({ saved = false } = {}) {
           ${raw(field('logoUrl', 'Logo URL', 'shown instead of the seal', 'url'))}
           ${raw(field('primaryColor', 'Primary color', '', 'color'))}
         </div>
-        ${raw(field('seal', 'Seal glyph', 'used when no logo set'))}
+        <div class="form-row">
+          ${raw(field('faviconUrl', 'Favicon URL', 'tab icon; defaults to logo/seal', 'url'))}
+          ${raw(field('seal', 'Seal glyph', 'used when no logo set'))}
+        </div>
       </fieldset>
       <fieldset><legend>Bodies &amp; roles</legend>
         <div class="form-row">

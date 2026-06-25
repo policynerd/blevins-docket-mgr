@@ -14,6 +14,7 @@ const FIELDS = {
   tagline: { env: 'ORG_TAGLINE', def: 'Legislative Information Center' },
   seal: { env: 'ORG_SEAL', def: '★' },
   logoUrl: { env: 'ORG_LOGO_URL', def: '' },
+  faviconUrl: { env: 'ORG_FAVICON_URL', def: '' },
   primaryColor: { env: 'ORG_PRIMARY_COLOR', def: '#15569e' },
   primaryBody: { env: 'ORG_PRIMARY_BODY', def: 'Board of Governors' },
   primaryBodyType: { env: 'ORG_PRIMARY_BODY_TYPE', def: 'Governing Board' },
@@ -28,7 +29,7 @@ const FIELDS = {
 };
 
 // Fields surfaced in the Branding admin form (others stay env/default only).
-const EDITABLE = ['name', 'tagline', 'logoUrl', 'primaryColor', 'primaryBody',
+const EDITABLE = ['name', 'tagline', 'logoUrl', 'faviconUrl', 'primaryColor', 'primaryBody',
   'primaryBodyType', 'membersLabel', 'chairTitle', 'viceChairTitle', 'memberTitle',
   'clerkTitle', 'clerkOffice', 'meetingLocation', 'emailDomain'];
 
