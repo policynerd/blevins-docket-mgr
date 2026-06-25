@@ -197,6 +197,12 @@ route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
 // Admin ----------------------------------------------------------------------
 route('GET', /^\/admin\/?$/, (req, res) => sendHtml(res, admin.adminHome()));
 
+// Danger zone: wipe all domain data (clerk only; keeps users + settings).
+route('POST', /^\/admin\/purge$/, (req, res) => {
+  repo.purgeDomainData();
+  redirect(res, '/admin');
+});
+
 // Organization management (clerk)
 route('GET', /^\/admin\/org\/?$/, (req, res) => sendHtml(res, orgView.orgAdmin()));
 route('GET', /^\/admin\/org\/new$/, (req, res, ctx) => sendHtml(res,

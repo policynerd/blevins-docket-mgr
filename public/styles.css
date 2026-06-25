@@ -466,6 +466,10 @@ form.inline { display: inline; }
 .section-title { margin: 22px 0 10px; font-size: 15px; color: var(--accent-dark);
   border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 
+/* Danger-zone button (destructive admin actions) */
+.btn.danger-btn { background: #b4232a; border-color: #7d1a1f; }
+.btn.danger-btn:hover { background: #7d1a1f; }
+
 /* Member-motion (Nominate -> Approve -> Seat) cards */
 .motion-card { border: 1px solid var(--line); border-left: 3px solid var(--accent);
   border-radius: 4px; padding: 12px 14px; margin-bottom: 12px; background: var(--card); }
