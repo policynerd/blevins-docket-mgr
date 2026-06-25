@@ -19,14 +19,29 @@ function setUser(u) { _user = u; }
 
 const RANK = { public: 0, member: 1, staff: 2, clerk: 3 };
 function navFor(user) {
-  const items = NAV.slice();
-  if (user && (RANK[user.role] || 0) >= RANK.member) {
-    items.push({ href: '/member', label: 'Member Portal' });
-  }
-  if (user && (RANK[user.role] || 0) >= RANK.clerk) {
-    items.push({ href: '/admin', label: 'Clerk Workspace' });
-  }
+  // Re-resolve the live members label (branding may have changed it).
+  const items = NAV.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : n));
+  const rank = user ? (RANK[user.role] || 0) : 0;
+  if (rank >= RANK.member) items.push({ href: '/member', label: 'Member Portal' });
+  if (rank >= RANK.staff) items.push({ href: '/govern/members', label: 'Membership' });
+  if (rank >= RANK.clerk) items.push({ href: '/admin', label: 'Clerk Workspace' });
   return items;
+}
+
+// Brand color override (validated hex only) applied live via CSS variables.
+function brandHead() {
+  const c = String(ORG.primaryColor || '');
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(c)) return '';
+  return `<style>:root{--accent:${c};--accent-dark:color-mix(in srgb, ${c}, #000 28%);}</style>`;
+}
+
+// Banner mark: a logo image when an https logo URL is configured, else the seal glyph.
+function brandMark() {
+  const url = String(ORG.logoUrl || '');
+  if (/^https:\/\/[^"'<>\s]+$/.test(url)) {
+    return `<img class="brand-logo" src="${url}" alt="${escapeText(ORG.name)} logo">`;
+  }
+  return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
 }
 
 function statusBadge(status) {
@@ -65,6 +80,7 @@ function layout({ title, active, body, subtitle, head }) {
   <link rel="stylesheet" href="/styles.css">
   <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
   <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
+  ${brandHead()}
   ${head || ''}
 </head>
 <body>
@@ -81,7 +97,7 @@ function layout({ title, active, body, subtitle, head }) {
   <header class="gov-banner">
     <div class="wrap banner-inner">
       <a class="brand" href="/">
-        <span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>
+        ${brandMark()}
         <span class="brand-text">
           <strong>${escapeText(ORG.name)}</strong>
           <small>${escapeText(ORG.tagline)}</small>

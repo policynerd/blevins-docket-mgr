@@ -447,3 +447,28 @@ table.data.sortable thead th { padding: 0; }
   .vote-row { grid-template-columns: 1fr; }
   .util-left { display: none; }
 }
+
+/* Branding logo in the banner */
+.brand-logo { height: 38px; width: auto; display: block; }
+
+/* SSO sign-in button + separator on the login page */
+.sso-btn { display: block; text-align: center; margin-bottom: 8px; }
+.sso-or { text-align: center; margin: 8px 0 14px; }
+
+/* Inline forms (e.g. roster actions) */
+form.inline { display: inline; }
+.reason-inp { font-size: 12px; padding: 3px 6px; width: 150px; margin-right: 6px; }
+.btn-link.danger { color: #b4232a; }
+.row-inactive td { opacity: .6; }
+.badge.st-inactive { background: #eee; color: #666; border-color: #ddd; }
+.form-ok { background: #e6f4ea; border: 1px solid #b7dfc3; color: #1d6b38;
+  padding: 8px 12px; border-radius: 4px; margin-bottom: 14px; }
+.section-title { margin: 22px 0 10px; font-size: 15px; color: var(--accent-dark);
+  border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+
+/* Member-motion (Nominate -> Approve -> Seat) cards */
+.motion-card { border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: 12px 14px; margin-bottom: 12px; background: var(--card); }
+.motion-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.motion-trail { list-style: none; padding: 0; margin: 8px 0; font-size: 12px; color: #555; }
+.motion-trail li { padding: 1px 0; }

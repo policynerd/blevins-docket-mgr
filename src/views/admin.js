@@ -21,7 +21,10 @@ function adminHome() {
     <div class="admin-actions">
       <a class="btn" href="/admin/matters/new">+ New legislative file</a>
       <a class="btn" href="/admin/meetings/new">+ Schedule meeting</a>
+      <a class="btn" href="/govern/members">Board membership</a>
+      <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
       <a class="btn" href="/admin/org">Manage organization</a>
+      <a class="btn" href="/admin/branding">Branding</a>
     </div>
     <div class="stat-grid small">
       <div class="stat"><span class="stat-n">${s.matters}</span><span class="stat-l">Files</span></div>

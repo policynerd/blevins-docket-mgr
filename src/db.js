@@ -193,6 +193,37 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   notes TEXT
 );
 
+-- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Board-membership change requests routed through Nominate -> Approve -> Seat.
+CREATE TABLE IF NOT EXISTS member_motions (
+  id INTEGER PRIMARY KEY,
+  action TEXT NOT NULL,                        -- 'seat' | 'remove'
+  body_id INTEGER REFERENCES bodies(id),
+  person_id INTEGER REFERENCES people(id),     -- existing person (seat-existing or remove)
+  member_id INTEGER REFERENCES body_members(id) ON DELETE SET NULL, -- membership removed (remove)
+  nominee_name TEXT,                           -- new person to seat (seat-new)
+  nominee_title TEXT,
+  nominee_email TEXT,
+  nominee_district TEXT,
+  seat_role TEXT DEFAULT 'Member',
+  status TEXT NOT NULL DEFAULT 'Nominated',    -- Nominated|Approved|Completed|Rejected
+  reason TEXT,
+  nominated_by INTEGER REFERENCES users(id),
+  nominated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  approved_by INTEGER REFERENCES users(id),
+  approved_at TEXT,
+  completed_by INTEGER REFERENCES users(id),
+  completed_at TEXT,
+  result_person_id INTEGER REFERENCES people(id),
+  decision_notes TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
@@ -204,6 +235,8 @@ CREATE INDEX IF NOT EXISTS idx_mtopics_matter ON matter_topics(matter_id);
 CREATE INDEX IF NOT EXISTS idx_mtopics_topic ON matter_topics(topic_id);
 CREATE INDEX IF NOT EXISTS idx_wf_matter ON workflow_steps(matter_id);
 CREATE INDEX IF NOT EXISTS idx_org_parent ON org_units(parent_id);
+CREATE INDEX IF NOT EXISTS idx_mmotions_status ON member_motions(status);
+CREATE INDEX IF NOT EXISTS idx_mmotions_body ON member_motions(body_id);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -221,6 +254,10 @@ const COLUMN_MIGRATIONS = {
   meetings: {
     minutes_html: 'TEXT',
     minutes_status: "TEXT NOT NULL DEFAULT 'none'",
+  },
+  users: {
+    sso_subject: 'TEXT',          // stable Entra object id (oid) for SSO accounts
+    auth_provider: 'TEXT',        // 'local' | 'entra'
   },
 };
 
@@ -240,7 +277,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['org_units', 'workflow_steps', 'matter_topics', 'topics', 'attendance', 'reports',
+  const tables = ['member_motions', 'settings', 'org_units', 'workflow_steps', 'matter_topics',
+    'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');

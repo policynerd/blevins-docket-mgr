@@ -104,6 +104,44 @@ const bodies = {
     return db.prepare(`INSERT INTO body_members (body_id, person_id, role, voting)
       VALUES (?,?,?,?)`).run(bodyId, personId, role, voting).lastInsertRowid;
   },
+  memberById(memberId) {
+    return db.prepare(`
+      SELECT bm.*, p.full_name, b.name AS body_name
+      FROM body_members bm JOIN people p ON p.id = bm.person_id
+      JOIN bodies b ON b.id = bm.body_id WHERE bm.id = ?`).get(memberId);
+  },
+  removeMember(memberId) {
+    db.prepare('DELETE FROM body_members WHERE id = ?').run(memberId);
+  },
+  update(id, b) {
+    db.prepare(`UPDATE bodies SET name=?, type=?, description=?, meeting_location=?, meets=?, active=?
+      WHERE id=?`).run(
+      b.name, b.type ?? null, b.description ?? null, b.meeting_location ?? null,
+      b.meets ?? null, b.active == null ? 1 : b.active, id);
+  },
+  setActive(id, active) {
+    db.prepare('UPDATE bodies SET active=? WHERE id=?').run(active ? 1 : 0, id);
+  },
+  // Count rows that would block a hard delete (FK references without cascade).
+  references(id) {
+    const n = (sql) => db.prepare(sql).get(id).n;
+    return {
+      meetings: n('SELECT COUNT(*) AS n FROM meetings WHERE body_id = ?'),
+      matters: n('SELECT COUNT(*) AS n FROM matters WHERE body_id = ?'),
+      history: n('SELECT COUNT(*) AS n FROM matter_history WHERE body_id = ?'),
+    };
+  },
+  // Permanently delete a body and its memberships. Caller must confirm there are
+  // no meetings/matters/history references first (see references()).
+  remove(id) {
+    db.exec('SAVEPOINT sp_body_del');
+    try {
+      db.prepare('DELETE FROM body_members WHERE body_id = ?').run(id);
+      db.prepare('DELETE FROM member_motions WHERE body_id = ?').run(id);
+      db.prepare('DELETE FROM bodies WHERE id = ?').run(id);
+      db.exec('RELEASE sp_body_del');
+    } catch (e) { db.exec('ROLLBACK TO sp_body_del'); db.exec('RELEASE sp_body_del'); throw e; }
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -534,14 +572,18 @@ const topics = {
 // ---------------------------------------------------------------------------
 // Routing / approval workflow
 // ---------------------------------------------------------------------------
-const WORKFLOW_TEMPLATE = [
-  { name: 'Sponsor / Drafting', role: 'Sponsor' },
-  { name: 'Department Review', role: 'Department' },
-  { name: 'Legal Review', role: 'Legal' },
-  { name: 'Clerk Review', role: ORG.clerkTitle },
-  { name: 'Committee', role: 'Committee' },
-  { name: `Full ${ORG.primaryBody}`, role: ORG.primaryBody },
-];
+// Built fresh each time so live branding changes (ORG.primaryBody / clerkTitle)
+// are reflected in newly-started routes.
+function workflowTemplate() {
+  return [
+    { name: 'Sponsor / Drafting', role: 'Sponsor' },
+    { name: 'Department Review', role: 'Department' },
+    { name: 'Legal Review', role: 'Legal' },
+    { name: 'Clerk Review', role: ORG.clerkTitle },
+    { name: 'Committee', role: 'Committee' },
+    { name: `Full ${ORG.primaryBody}`, role: ORG.primaryBody },
+  ];
+}
 
 const workflow = {
   forMatter(matterId) {
@@ -558,8 +600,9 @@ const workflow = {
     const existing = db.prepare('SELECT COUNT(*) AS n FROM workflow_steps WHERE matter_id = ?').get(matterId).n;
     if (existing > 0) return existing;
     const ins = db.prepare('INSERT INTO workflow_steps (matter_id, seq, name, role, status) VALUES (?,?,?,?,?)');
-    WORKFLOW_TEMPLATE.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending'));
-    return WORKFLOW_TEMPLATE.length;
+    const template = workflowTemplate();
+    template.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending'));
+    return template.length;
   },
   // The active step = first that is Pending or Returned.
   current(matterId) {
@@ -641,6 +684,94 @@ const org = {
 };
 
 // ---------------------------------------------------------------------------
+// Member motions (board membership changes: Nominate -> Approve -> Seat)
+// ---------------------------------------------------------------------------
+const MEMBER_MOTION_STATUSES = ['Nominated', 'Approved', 'Completed', 'Rejected'];
+
+const memberMotions = {
+  _select: `
+    SELECT mm.*, b.name AS body_name,
+      p.full_name AS person_name,
+      nu.name AS nominated_by_name, au.name AS approved_by_name, cu.name AS completed_by_name
+    FROM member_motions mm
+    LEFT JOIN bodies b ON b.id = mm.body_id
+    LEFT JOIN people p ON p.id = mm.person_id
+    LEFT JOIN users nu ON nu.id = mm.nominated_by
+    LEFT JOIN users au ON au.id = mm.approved_by
+    LEFT JOIN users cu ON cu.id = mm.completed_by`,
+  get(id) {
+    return db.prepare(`${memberMotions._select} WHERE mm.id = ?`).get(id);
+  },
+  all() {
+    return db.prepare(`${memberMotions._select}
+      ORDER BY CASE mm.status WHEN 'Nominated' THEN 0 WHEN 'Approved' THEN 1 ELSE 2 END,
+        mm.nominated_at DESC, mm.id DESC`).all();
+  },
+  pending() {
+    return db.prepare(`${memberMotions._select}
+      WHERE mm.status IN ('Nominated','Approved')
+      ORDER BY mm.nominated_at ASC`).all();
+  },
+  // Display label for the subject of a motion (existing person or nominee name).
+  subjectName(m) {
+    return m.person_name || m.nominee_name || '(unnamed)';
+  },
+  nominate(m) {
+    return db.prepare(`INSERT INTO member_motions
+      (action, body_id, person_id, member_id, nominee_name, nominee_title, nominee_email,
+       nominee_district, seat_role, reason, nominated_by, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?, 'Nominated')`).run(
+      m.action, m.body_id ?? null, m.person_id ?? null, m.member_id ?? null,
+      m.nominee_name ?? null, m.nominee_title ?? null, m.nominee_email ?? null,
+      m.nominee_district ?? null, m.seat_role ?? 'Member', m.reason ?? null,
+      m.nominated_by ?? null).lastInsertRowid;
+  },
+  approve(id, userId, notes) {
+    db.prepare(`UPDATE member_motions
+      SET status='Approved', approved_by=?, approved_at=datetime('now'), decision_notes=?
+      WHERE id=? AND status='Nominated'`).run(userId ?? null, notes ?? null, id);
+  },
+  reject(id, userId, notes) {
+    db.prepare(`UPDATE member_motions
+      SET status='Rejected', approved_by=?, approved_at=datetime('now'), decision_notes=?
+      WHERE id=? AND status IN ('Nominated','Approved')`).run(userId ?? null, notes ?? null, id);
+  },
+  // Execute an approved motion: apply the roster change in one transaction and
+  // mark it Completed. Returns the affected person id.
+  complete(id, userId) {
+    const m = memberMotions.get(id);
+    if (!m || m.status !== 'Approved') throw new Error('Motion is not approved.');
+    db.exec('SAVEPOINT sp_mm');
+    try {
+      let personId = m.person_id;
+      if (m.action === 'seat') {
+        if (!personId) {
+          personId = people.insert({
+            full_name: m.nominee_name, title: m.nominee_title || ORG.memberTitle,
+            district: m.nominee_district, email: m.nominee_email,
+          });
+        }
+        // Avoid duplicate membership on the same body.
+        const dup = db.prepare(
+          'SELECT id FROM body_members WHERE body_id = ? AND person_id = ?').get(m.body_id, personId);
+        if (!dup) bodies.addMember(m.body_id, personId, m.seat_role || 'Member');
+      } else if (m.action === 'remove') {
+        if (m.member_id) db.prepare('DELETE FROM body_members WHERE id = ?').run(m.member_id);
+        else if (m.body_id && personId) {
+          db.prepare('DELETE FROM body_members WHERE body_id = ? AND person_id = ?')
+            .run(m.body_id, personId);
+        }
+      }
+      db.prepare(`UPDATE member_motions
+        SET status='Completed', completed_by=?, completed_at=datetime('now'), result_person_id=?
+        WHERE id=?`).run(userId ?? null, personId ?? null, id);
+      db.exec('RELEASE sp_mm');
+      return personId;
+    } catch (e) { db.exec('ROLLBACK TO sp_mm'); db.exec('RELEASE sp_mm'); throw e; }
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -663,6 +794,7 @@ function statusBuckets() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  WORKFLOW_TEMPLATE, ORG_LEVELS,
-  people, bodies, matters, meetings, votes, reports, topics, workflow, org, stats, statusBuckets,
+  ORG_LEVELS, MEMBER_MOTION_STATUSES, workflowTemplate,
+  people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
+  stats, statusBuckets,
 };

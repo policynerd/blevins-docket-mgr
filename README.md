@@ -88,13 +88,35 @@ a Board of Governors:
 | `ORG_MEETING_LOCATION` | Boardroom | Default meeting location |
 | `ORG_EMAIL_DOMAIN` | board.gov | Domain for seeded account emails |
 
-**First-boot account seeding.** Sample people/bodies/matters auto-seed when the
-database is empty, but *login accounts* are created only if you pick one:
+Branding can also be edited live in the app at **`/admin/branding`** (Clerk);
+saved values are stored in the database and override the env defaults, including
+a logo URL and primary color.
 
-- **Production:** set `ADMIN_EMAIL` + `ADMIN_PASSWORD` (≥ 12 chars) for a single
-  clerk/admin account.
-- **Local/eval:** set `ENABLE_DEMO_SEED=true` for the demo clerk + board-member
-  logins.
+**First-boot seeding.** Production starts **empty**. Set `ADMIN_EMAIL` +
+`ADMIN_PASSWORD` (≥ 12 chars) to bootstrap a single clerk/admin login, then
+build real data in the app. Sample data **and** demo logins are created only
+when `ENABLE_DEMO_SEED=true` (local/eval).
+
+**Single sign-on (Microsoft Entra ID).** Set `ENTRA_TENANT_ID`,
+`ENTRA_CLIENT_ID`, and `ENTRA_CLIENT_SECRET` to add a “Sign in with Microsoft”
+button (OIDC authorization-code flow, id_token verified against Entra’s JWKS).
+SSO users are matched to a local account by subject then email; otherwise
+sign-in is denied unless `SSO_AUTO_PROVISION_ROLE` is set. Local password login
+still works for the bootstrap admin. The redirect URI is
+`https://<your-host>/auth/sso/callback`.
+
+## Administration
+
+The Clerk Workspace (`/admin`) and a staff-level Membership area (`/govern`)
+provide:
+
+- **Bodies & committees** (`/admin/bodies`) — create, edit, deactivate, or delete
+  (delete is refused while meetings/files reference a body).
+- **Board membership** (`/govern/members`) — adding or removing a member follows
+  **Nominate → Approve → Seat**: the Clerk nominates, a *different* staff member
+  (e.g. the Chair) approves, then the Clerk executes the roster change. Every
+  step records who acted and when.
+- **Branding** (`/admin/branding`) — live identity/theme editing (see above).
 
 ## Deploy
 

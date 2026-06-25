@@ -19,6 +19,9 @@ const reportsView = require('./src/views/reports');
 const minutesView = require('./src/views/minutes');
 const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
+const govern = require('./src/views/govern');
+const sso = require('./src/sso');
+const org = require('./src/org');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
 const {
@@ -26,12 +29,16 @@ const {
 } = require('./src/util');
 
 init();
+// Apply any saved in-app branding overrides on top of env/defaults.
+org.refresh();
 
-// Auto-seed an empty database on first run so the app is never blank.
-if (repo.stats().people === 0) {
+// Sample data is only seeded for explicit demo instances; production starts
+// empty and is populated through the admin tools.
+if (process.env.ENABLE_DEMO_SEED === 'true' && repo.stats().people === 0) {
   try { require('./src/seed').run(); } catch (e) { console.error('Seed failed:', e.message); }
 }
-// Seed login accounts (clerk + board members) once people exist.
+// Seed login accounts: the ADMIN_* bootstrap admin (always, if configured) and
+// demo logins (only when ENABLE_DEMO_SEED=true). Throws are logged, not fatal.
 try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed failed:', e.message); }
 
 const PORT = process.env.PORT || 3000;
@@ -76,6 +83,48 @@ route('POST', /^\/logout$/, (req, res) => {
   auth.logout(auth.sidFromReq(req));
   auth.clearSessionCookie(res);
   redirect(res, '/');
+});
+
+// --- Microsoft Entra ID SSO (OIDC authorization-code flow) ------------------
+route('GET', /^\/auth\/sso\/login$/, async (req, res, ctx) => {
+  if (!sso.isConfigured()) {
+    return sendHtml(res, authView.loginPage({ error: 'Single sign-on is not configured on this server.' }), 503);
+  }
+  try {
+    const { state, nonce } = sso.rememberState(safeNext(ctx.query.next));
+    const url = await sso.authorizeUrl({ baseUrl: baseUrl(req), state, nonce });
+    redirect(res, url, 302);
+  } catch (e) {
+    console.error('SSO login error:', e);
+    sendHtml(res, authView.loginPage({ error: 'Could not start single sign-on. Try again.' }), 502);
+  }
+});
+
+route('GET', /^\/auth\/sso\/callback$/, async (req, res, ctx) => {
+  const q = ctx.query;
+  if (q.error) {
+    return sendHtml(res, authView.loginPage({ error: `Sign-in was cancelled or failed (${String(q.error)}).` }), 401);
+  }
+  const saved = q.state ? sso.consumeState(q.state) : null;
+  if (!q.code || !saved) {
+    return sendHtml(res, authView.loginPage({ error: 'Sign-in session expired. Please try again.' }), 400);
+  }
+  try {
+    const tokens = await sso.exchangeCode({ code: q.code, baseUrl: baseUrl(req) });
+    const claims = await sso.verifyIdToken(tokens.id_token, { nonce: saved.nonce });
+    const result = auth.ssoSignIn(sso.identityFromClaims(claims));
+    if (result.error) {
+      return sendHtml(res, authView.loginPage({
+        error: 'Your Microsoft account is not authorized for this site. Ask the Clerk to add you.',
+      }), 403);
+    }
+    auth.setSessionCookie(res, result.sid);
+    const role = result.user ? result.user.role : 'member';
+    redirect(res, safeNext(saved.next) || (role === 'clerk' ? '/admin' : '/member'));
+  } catch (e) {
+    console.error('SSO callback error:', e);
+    sendHtml(res, authView.loginPage({ error: 'Single sign-on failed to verify your identity.' }), 502);
+  }
 });
 
 // Public portal --------------------------------------------------------------
@@ -184,6 +233,108 @@ route('POST', /^\/admin\/org\/(\d+)\/delete$/, (req, res, ctx) => {
   if (!u) return sendHtml(res, pages.notFound(), 404);
   repo.org.remove(u.id);
   redirect(res, '/admin/org');
+});
+
+// Bodies & committees CRUD (clerk) -------------------------------------------
+route('GET', /^\/admin\/bodies\/?$/, (req, res) => sendHtml(res, govern.bodiesAdmin()));
+route('GET', /^\/admin\/bodies\/new$/, (req, res) => sendHtml(res, govern.bodyForm(null)));
+route('POST', /^\/admin\/bodies$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.name) return sendHtml(res, govern.bodyForm(null), 400);
+  const id = repo.bodies.insert({
+    name: b.name, type: b.type || null, description: b.description || null,
+    meeting_location: b.meeting_location || null, meets: b.meets || null,
+  });
+  redirect(res, `/bodies/${id}`);
+});
+route('GET', /^\/admin\/bodies\/(\d+)\/edit$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, govern.bodyForm(b));
+});
+route('POST', /^\/admin\/bodies\/(\d+)$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  const f = ctx.body;
+  if (!f.name) return sendHtml(res, govern.bodyForm(b), 400);
+  repo.bodies.update(b.id, {
+    name: f.name, type: f.type || null, description: f.description || null,
+    meeting_location: f.meeting_location || null, meets: f.meets || null, active: b.active,
+  });
+  redirect(res, `/bodies/${b.id}`);
+});
+route('POST', /^\/admin\/bodies\/(\d+)\/active$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  repo.bodies.setActive(b.id, String(ctx.body.active) === '1');
+  redirect(res, '/admin/bodies');
+});
+route('POST', /^\/admin\/bodies\/(\d+)\/delete$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  const refs = repo.bodies.references(b.id);
+  // Refuse hard delete while meetings/matters/history reference the body.
+  if (refs.meetings + refs.matters + refs.history === 0) repo.bodies.remove(b.id);
+  redirect(res, '/admin/bodies');
+});
+
+// Branding / in-app identity (clerk) -----------------------------------------
+route('GET', /^\/admin\/branding\/?$/, (req, res, ctx) => sendHtml(res,
+  govern.brandingPage({ saved: ctx.query.saved === '1' })));
+route('POST', /^\/admin\/branding$/, (req, res, ctx) => {
+  org.update(ctx.body);
+  redirect(res, '/admin/branding?saved=1');
+});
+
+// Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
+route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
+route('POST', /^\/govern\/members\/nominate$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  const b = ctx.body;
+  const bodyId = b.body_id ? Number(b.body_id) : null;
+  if (!bodyId || !repo.bodies.get(bodyId)) return redirect(res, '/govern/members');
+  if (b.action === 'remove') {
+    repo.memberMotions.nominate({
+      action: 'remove', body_id: bodyId,
+      person_id: b.person_id ? Number(b.person_id) : null,
+      member_id: b.member_id ? Number(b.member_id) : null,
+      reason: b.reason || null, nominated_by: ctx.user.id,
+    });
+  } else {
+    const personId = b.person_id ? Number(b.person_id) : null;
+    if (!personId && !String(b.nominee_name || '').trim()) return redirect(res, '/govern/members');
+    repo.memberMotions.nominate({
+      action: 'seat', body_id: bodyId, person_id: personId,
+      nominee_name: personId ? null : b.nominee_name, nominee_title: b.nominee_title || null,
+      nominee_email: b.nominee_email || null, nominee_district: b.nominee_district || null,
+      seat_role: b.seat_role || 'Member', reason: b.reason || null, nominated_by: ctx.user.id,
+    });
+  }
+  redirect(res, '/govern/members');
+});
+route('POST', /^\/govern\/member-motions\/(\d+)\/approve$/, (req, res, ctx) => {
+  const m = repo.memberMotions.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  // Separation of duties: the approver must differ from the nominator.
+  if (m.nominated_by && ctx.user && ctx.user.id === m.nominated_by) return sendHtml(res, forbidden(), 403);
+  repo.memberMotions.approve(m.id, ctx.user ? ctx.user.id : null, ctx.body.notes || null);
+  redirect(res, '/govern/members');
+});
+route('POST', /^\/govern\/member-motions\/(\d+)\/reject$/, (req, res, ctx) => {
+  const m = repo.memberMotions.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  repo.memberMotions.reject(m.id, ctx.user ? ctx.user.id : null, ctx.body.notes || null);
+  redirect(res, '/govern/members');
+});
+route('POST', /^\/govern\/member-motions\/(\d+)\/complete$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  const m = repo.memberMotions.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  if (m.status === 'Approved') {
+    try { repo.memberMotions.complete(m.id, ctx.user.id); }
+    catch (e) { console.error('Seat motion failed:', e.message); }
+  }
+  redirect(res, '/govern/members');
 });
 
 route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matterForm(null)));
@@ -506,6 +657,7 @@ route('GET', /^\/api\/v1\/people\/(\d+)$/, (req, res, ctx) => api.person(res, ct
 function gate(req, res, pathname, user) {
   let need = null;
   if (pathname.startsWith('/admin')) need = 'clerk';
+  else if (pathname.startsWith('/govern')) need = 'staff';
   else if (pathname.startsWith('/member')) need = 'member';
   if (!need) return true;
   if (auth.hasRole(user, need)) return true;
