@@ -240,6 +240,27 @@ CREATE TABLE IF NOT EXISTS policies (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Budget: a fiscal-year budget with categorized line items. Legislative items
+-- (matters) carry a fiscal_impact that can be tied to a line and rolls up.
+CREATE TABLE IF NOT EXISTS budgets (
+  id INTEGER PRIMARY KEY,
+  fiscal_year TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Draft',   -- Draft | Adopted | Closed
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS budget_lines (
+  id INTEGER PRIMARY KEY,
+  budget_id INTEGER NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+  category TEXT,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'Expense',   -- Expense | Revenue
+  amount REAL NOT NULL DEFAULT 0,         -- budgeted amount
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
@@ -254,6 +275,7 @@ CREATE INDEX IF NOT EXISTS idx_org_parent ON org_units(parent_id);
 CREATE INDEX IF NOT EXISTS idx_mmotions_status ON member_motions(status);
 CREATE INDEX IF NOT EXISTS idx_mmotions_body ON member_motions(body_id);
 CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status);
+CREATE INDEX IF NOT EXISTS idx_budget_lines_budget ON budget_lines(budget_id);
 `;
 
 // Additive column migrations for databases created before a column existed
@@ -267,6 +289,8 @@ const COLUMN_MIGRATIONS = {
   },
   matters: {
     body_html: 'TEXT',
+    fiscal_impact: 'REAL',                         // dollar impact of this item
+    budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
   },
   meetings: {
     minutes_html: 'TEXT',
@@ -294,7 +318,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['policies', 'member_motions', 'settings', 'org_units', 'workflow_steps', 'matter_topics',
+  const tables = ['budget_lines', 'budgets', 'policies', 'member_motions', 'settings', 'org_units',
+    'workflow_steps', 'matter_topics',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];

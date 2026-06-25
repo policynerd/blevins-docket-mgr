@@ -21,6 +21,7 @@ const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const govern = require('./src/views/govern');
 const policiesView = require('./src/views/policies');
+const budgetView = require('./src/views/budget');
 const usersView = require('./src/views/users');
 const legal = require('./src/views/legal');
 const sso = require('./src/sso');
@@ -186,6 +187,14 @@ route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
 route('GET', /^\/terms\/?$/, (req, res) => sendHtml(res, legal.termsPage()));
 route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()));
 
+// Budget (public read; clerk manages via /admin routes below) ----------------
+route('GET', /^\/budget\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetList(ctx.user)));
+route('GET', /^\/budget\/(\d+)$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, budgetView.budgetDetail(b, ctx.user));
+});
+
 // Policies (public reads published; drafts visible to clerk only) -----------
 route('GET', /^\/policies\/?$/, (req, res, ctx) => sendHtml(res, policiesView.policiesList(ctx.user)));
 route('GET', /^\/policies\/(\d+)$/, (req, res, ctx) => {
@@ -286,6 +295,54 @@ route('POST', /^\/admin\/policies\/(\d+)\/delete$/, (req, res, ctx) => {
   if (!p) return sendHtml(res, pages.notFound(), 404);
   repo.policies.remove(p.id);
   redirect(res, '/admin/policies');
+});
+
+// Budget management (clerk) --------------------------------------------------
+route('POST', /^\/admin\/budget$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.fiscal_year) return redirect(res, '/budget');
+  const id = repo.budget.create({ fiscal_year: b.fiscal_year, status: b.status, notes: b.notes });
+  redirect(res, `/budget/${id}`);
+});
+route('POST', /^\/admin\/budget\/(\d+)$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  const f = ctx.body;
+  if (f.fiscal_year) repo.budget.update(b.id, { fiscal_year: f.fiscal_year, status: f.status, notes: f.notes });
+  redirect(res, `/budget/${b.id}`);
+});
+route('POST', /^\/admin\/budget\/(\d+)\/delete$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  repo.budget.remove(b.id);
+  redirect(res, '/budget');
+});
+route('POST', /^\/admin\/budget\/(\d+)\/lines$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.name) {
+    repo.budget.addLine({
+      budget_id: b.id, category: ctx.body.category, name: ctx.body.name,
+      kind: ctx.body.kind, amount: ctx.body.amount,
+    });
+  }
+  redirect(res, `/budget/${b.id}`);
+});
+route('POST', /^\/admin\/budget-lines\/(\d+)$/, (req, res, ctx) => {
+  const l = repo.budget.getLine(Number(ctx.params[0]));
+  if (!l) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.name) {
+    repo.budget.updateLine(l.id, {
+      category: ctx.body.category, name: ctx.body.name, kind: ctx.body.kind, amount: ctx.body.amount,
+    });
+  }
+  redirect(res, `/budget/${l.budget_id}`);
+});
+route('POST', /^\/admin\/budget-lines\/(\d+)\/delete$/, (req, res, ctx) => {
+  const l = repo.budget.getLine(Number(ctx.params[0]));
+  if (!l) return sendHtml(res, pages.notFound(), 404);
+  repo.budget.removeLine(l.id);
+  redirect(res, `/budget/${l.budget_id}`);
 });
 
 // Roster import (CSV bulk "data populate" / direct-seat bootstrap) — ADMIN.
@@ -454,6 +511,7 @@ route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   });
   applySponsors(id, b.sponsor_id);
   repo.topics.setForMatter(id, parseTopics(b.topics));
+  repo.matters.setFiscal(id, { fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null });
   redirect(res, `/legislation/${encodeURIComponent(fileNumber)}`);
 });
 
@@ -475,6 +533,7 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
   repo.matters.clearSponsors(id);
   applySponsors(id, b.sponsor_id);
   repo.topics.setForMatter(id, parseTopics(b.topics));
+  repo.matters.setFiscal(id, { fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null });
   redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
 });
 

@@ -491,3 +491,20 @@ form.inline { display: inline; }
 .motion-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .motion-trail { list-style: none; padding: 0; margin: 8px 0; font-size: 12px; color: #555; }
 .motion-trail li { padding: 1px 0; }
+
+/* Budget */
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.budget-summary { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 10px; }
+.budget-summary .bs-n { display: block; font-size: 22px; font-weight: 800; color: var(--accent-dark); }
+.budget-summary .bs-l { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.budget-bar { height: 8px; background: #eef1f5; border-radius: 5px; overflow: hidden; }
+.budget-bar span { display: block; height: 100%; background: var(--accent); }
+.budget-bar span.over { background: #b4232a; }
+.budget-table .cat-row th { background: #eef3f9; color: var(--accent-dark); text-align: left;
+  font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; }
+.budget-table .subtotal td { font-weight: 600; background: #fafbfd; }
+.budget-table .grand td { font-weight: 800; color: var(--accent-dark); border-top: 2px solid var(--accent-dark); }
+.line-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0;
+  border-bottom: 1px solid var(--line); }
+.line-edit input[type=text] { min-width: 120px; }
+.line-edit input[type=number] { width: 120px; }

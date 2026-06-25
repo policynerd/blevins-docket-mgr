@@ -26,6 +26,7 @@ function adminHome(user) {
       <a class="btn" href="/govern/members">Board membership</a>
       <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
       <a class="btn" href="/admin/policies">Policies</a>
+      <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
       ${isAdmin ? raw(`
       <a class="btn" href="/admin/users">Users &amp; roles</a>
@@ -66,6 +67,7 @@ function matterForm(matter, opts = {}) {
   const isEdit = !!matter;
   const allBodies = repo.bodies.all().map((b) => ({ value: b.id, label: b.name }));
   const allPeople = repo.people.all();
+  const budgetLines = repo.budget.lineOptions();
   const sponsors = isEdit ? repo.matters.sponsors(matter.id).map((s) => s.id) : [];
   const action = isEdit ? `/admin/matters/${matter.id}` : '/admin/matters';
 
@@ -103,6 +105,17 @@ function matterForm(matter, opts = {}) {
       <label>Index terms (comma-separated)
         <input type="text" name="topics" value="${isEdit ? repo.topics.forMatter(matter.id).map((t) => t.name).join(', ') : ''}" placeholder="Zoning, Budget, Public Safety">
       </label>
+      <fieldset>
+        <legend>Fiscal impact</legend>
+        <div class="form-row">
+          <label>Amount ($)
+            <input type="number" step="0.01" name="fiscal_impact" value="${matter && matter.fiscal_impact != null ? matter.fiscal_impact : ''}" placeholder="0.00">
+          </label>
+          <label>Budget line
+            <select name="budget_line_id">${raw(selectOptions(budgetLines, matter && matter.budget_line_id, { includeBlank: '— none —' }))}</select>
+          </label>
+        </div>
+      </fieldset>
       <fieldset>
         <legend>Sponsors</legend>
         <div class="chk-grid">${raw(sponsorChecks)}</div>
