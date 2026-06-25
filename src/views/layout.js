@@ -10,6 +10,7 @@ const NAV = [
   { href: '/people', label: ORG.membersLabel },
   { href: '/bodies', label: 'Bodies & Committees' },
   { href: '/policies', label: 'Policies' },
+  { href: '/budget', label: 'Budget' },
   { href: '/org', label: 'Organization' },
 ];
 

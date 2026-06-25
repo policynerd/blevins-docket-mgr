@@ -3,6 +3,7 @@
 const { html, raw, formatDate, formatDateTime, todayISO } = require('../util');
 const { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const { ORG } = require('../org');
+const { money } = require('./budget');
 const repo = require('../repo');
 
 // --- Dashboard ---------------------------------------------------------------
@@ -242,6 +243,12 @@ function matterDetail(matter) {
 
   const onAgenda = appearances.length ? formatDate(appearances[0].meeting_date) : null;
 
+  const fiscalLine = matter.budget_line_id ? repo.budget.getLine(matter.budget_line_id) : null;
+  const fiscalRow = (matter.fiscal_impact != null && matter.fiscal_impact !== '')
+    ? raw(`<dt>Fiscal impact</dt><dd>${money(matter.fiscal_impact)}${fiscalLine
+        ? ` · <a href="/budget/${fiscalLine.budget_id}">${escapeText(fiscalLine.fiscal_year)} budget — ${escapeText((fiscalLine.category ? fiscalLine.category + ' / ' : '') + fiscalLine.name)}</a>` : ''}</dd>`)
+    : '';
+
   const meta = html`
     <dl class="meta record-header">
       <dt>File #</dt><dd>${matter.file_number}</dd>
@@ -256,6 +263,7 @@ function matterDetail(matter) {
       <dt>Title</dt><dd>${matter.title}</dd>
       <dt>Sponsors</dt><dd class="chips">${sponsorHtml}</dd>
       <dt>Indexes</dt><dd class="chips">${topicChips}</dd>
+      ${fiscalRow}
     </dl>`;
 
   // Tab panels (History default, mirroring the conventional record layout).

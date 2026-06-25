@@ -529,6 +529,81 @@ matters.setBodyHtml = function (id, bodyHtml) {
     .run(bodyHtml || null, id);
 };
 
+// Fiscal impact of a matter, optionally tied to a budget line (rolls up there).
+matters.setFiscal = function (id, { fiscal_impact, budget_line_id } = {}) {
+  const amt = (fiscal_impact == null || fiscal_impact === '') ? null : Number(fiscal_impact);
+  db.prepare(`UPDATE matters SET fiscal_impact=?, budget_line_id=?, updated_at=datetime('now') WHERE id=?`)
+    .run(Number.isFinite(amt) ? amt : null, budget_line_id || null, id);
+};
+
+// ---------------------------------------------------------------------------
+// Budget (fiscal-year line-item budget; matters' fiscal_impact rolls up)
+// ---------------------------------------------------------------------------
+const BUDGET_STATUSES = ['Draft', 'Adopted', 'Closed'];
+const BUDGET_KINDS = ['Expense', 'Revenue'];
+
+const budget = {
+  all() {
+    return db.prepare(`SELECT b.*,
+      (SELECT COUNT(*) FROM budget_lines bl WHERE bl.budget_id = b.id) AS line_count,
+      (SELECT COALESCE(SUM(amount),0) FROM budget_lines bl WHERE bl.budget_id = b.id) AS budgeted
+      FROM budgets b ORDER BY b.fiscal_year DESC, b.id DESC`).all();
+  },
+  get(id) { return db.prepare('SELECT * FROM budgets WHERE id = ?').get(id); },
+  create(b) {
+    return db.prepare('INSERT INTO budgets (fiscal_year, status, notes) VALUES (?,?,?)')
+      .run(b.fiscal_year, b.status || 'Draft', b.notes || null).lastInsertRowid;
+  },
+  update(id, b) {
+    db.prepare('UPDATE budgets SET fiscal_year=?, status=?, notes=? WHERE id=?')
+      .run(b.fiscal_year, b.status || 'Draft', b.notes || null, id);
+  },
+  remove(id) { db.prepare('DELETE FROM budgets WHERE id = ?').run(id); }, // cascades lines
+  // Lines with committed rollup (sum of linked matters' fiscal_impact).
+  lines(budgetId) {
+    return db.prepare(`SELECT bl.*,
+      COALESCE((SELECT SUM(m.fiscal_impact) FROM matters m WHERE m.budget_line_id = bl.id), 0) AS committed,
+      (SELECT COUNT(*) FROM matters m WHERE m.budget_line_id = bl.id) AS item_count
+      FROM budget_lines bl WHERE bl.budget_id = ?
+      ORDER BY bl.category IS NULL, bl.category, bl.sort_order, bl.id`).all(budgetId);
+  },
+  getLine(id) {
+    return db.prepare(`SELECT bl.*, b.fiscal_year FROM budget_lines bl
+      JOIN budgets b ON b.id = bl.budget_id WHERE bl.id = ?`).get(id);
+  },
+  addLine(l) {
+    const max = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM budget_lines WHERE budget_id = ?')
+      .get(l.budget_id).m;
+    return db.prepare(`INSERT INTO budget_lines (budget_id, category, name, kind, amount, notes, sort_order)
+      VALUES (?,?,?,?,?,?,?)`).run(l.budget_id, l.category || null, l.name, l.kind || 'Expense',
+      Number(l.amount) || 0, l.notes || null, l.sort_order || (max + 1)).lastInsertRowid;
+  },
+  updateLine(id, l) {
+    db.prepare('UPDATE budget_lines SET category=?, name=?, kind=?, amount=?, notes=? WHERE id=?')
+      .run(l.category || null, l.name, l.kind || 'Expense', Number(l.amount) || 0, l.notes || null, id);
+  },
+  removeLine(id) { db.prepare('DELETE FROM budget_lines WHERE id = ?').run(id); },
+  // Selectable lines for the matter fiscal-impact field (open budgets only).
+  lineOptions() {
+    return db.prepare(`SELECT bl.id AS value,
+      (b.fiscal_year || ' · ' || COALESCE(bl.category || ' — ', '') || bl.name) AS label
+      FROM budget_lines bl JOIN budgets b ON b.id = bl.budget_id
+      WHERE b.status != 'Closed'
+      ORDER BY b.fiscal_year DESC, bl.category, bl.name`).all();
+  },
+  summary(budgetId) {
+    const lines = budget.lines(budgetId);
+    let budgeted = 0; let committed = 0;
+    for (const l of lines) { budgeted += l.amount; committed += l.committed; }
+    return { budgeted, committed, remaining: budgeted - committed, lineCount: lines.length };
+  },
+  // Matters linked to a line (for drill-down).
+  lineMatters(lineId) {
+    return db.prepare(`SELECT m.id, m.file_number, m.title, m.status, m.fiscal_impact
+      FROM matters m WHERE m.budget_line_id = ? ORDER BY m.intro_date DESC, m.id DESC`).all(lineId);
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Topics / indexes
 // ---------------------------------------------------------------------------
@@ -871,9 +946,9 @@ function statusBuckets() {
 // signed-in clerk can clear demo/sample data without losing their login or
 // branding. Used by the admin "Clear all data" action.
 function purgeDomainData() {
-  const tables = ['policies', 'member_motions', 'votes', 'attendance', 'agenda_items', 'meetings',
-    'matter_topics', 'topics', 'matter_history', 'matter_sponsors', 'attachments', 'reports',
-    'workflow_steps', 'matters', 'body_members', 'bodies', 'org_units', 'people'];
+  const tables = ['budget_lines', 'budgets', 'policies', 'member_motions', 'votes', 'attendance',
+    'agenda_items', 'meetings', 'matter_topics', 'topics', 'matter_history', 'matter_sponsors',
+    'attachments', 'reports', 'workflow_steps', 'matters', 'body_members', 'bodies', 'org_units', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   db.exec('SAVEPOINT sp_purge');
   try {
@@ -890,7 +965,8 @@ function purgeDomainData() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES, workflowTemplate,
+  ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
+  BUDGET_STATUSES, BUDGET_KINDS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, stats, statusBuckets, purgeDomainData,
 };
