@@ -121,7 +121,7 @@ function sidFromReq(req) {
   return parseCookies(req)[COOKIE];
 }
 
-const ROLE_RANK = { public: 0, member: 1, staff: 2, clerk: 3 };
+const ROLE_RANK = { public: 0, member: 1, staff: 2, clerk: 3, admin: 4 };
 
 function hasRole(user, min) {
   return !!user && (ROLE_RANK[user.role] || 0) >= (ROLE_RANK[min] || 0);
@@ -136,8 +136,20 @@ function createBootstrapAdmin(insert) {
   }
   const name = process.env.ADMIN_NAME || 'Administrator';
   const pw = hashPassword(password);
-  insert.run(null, name, email, 'clerk', pw.hash, pw.salt);
+  insert.run(null, name, email, 'admin', pw.hash, pw.salt);
   return true;
+}
+
+// Ensure the configured ADMIN_EMAIL account is a global admin. Promotes an
+// existing (e.g. SSO-provisioned or pre-admin-role) account on boot so the
+// designated operator always has admin access. No-op if unset/not found.
+function ensureAdminRole() {
+  const email = process.env.ADMIN_EMAIL;
+  if (!email) return;
+  const u = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+  if (u && u.role !== 'admin') {
+    db.prepare("UPDATE users SET role = 'admin', active = 1 WHERE id = ?").run(u.id);
+  }
 }
 
 // Seed accounts if none exist. Production credentials must be explicit;
@@ -173,5 +185,5 @@ module.exports = {
   COOKIE, SESSION_MAX_AGE_MS,
   hashPassword, verifyPassword, login, logout, currentUser, createSession,
   setSessionCookie, clearSessionCookie, sidFromReq, hasRole, getUser,
-  findUserByEmail, findUserBySsoSubject, ssoSignIn, ensureSeedAccounts, ROLE_RANK,
+  findUserByEmail, findUserBySsoSubject, ssoSignIn, ensureSeedAccounts, ensureAdminRole, ROLE_RANK,
 };

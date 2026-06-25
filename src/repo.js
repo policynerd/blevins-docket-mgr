@@ -813,6 +813,39 @@ const policies = {
 };
 
 // ---------------------------------------------------------------------------
+// Users & roles (login accounts)
+// ---------------------------------------------------------------------------
+const USER_ROLES = ['member', 'staff', 'clerk', 'admin'];
+
+const users = {
+  all() {
+    return db.prepare(`SELECT u.*, p.full_name AS person_name
+      FROM users u LEFT JOIN people p ON p.id = u.person_id
+      ORDER BY CASE u.role WHEN 'admin' THEN 0 WHEN 'clerk' THEN 1 WHEN 'staff' THEN 2 ELSE 3 END,
+        u.name`).all();
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  },
+  byEmail(email) {
+    return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+  },
+  setRole(id, role) {
+    if (!USER_ROLES.includes(role)) return;
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+  },
+  setActive(id, active) {
+    db.prepare('UPDATE users SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
+  },
+  // Pre-provision an SSO login by email (matched on first Microsoft sign-in).
+  create({ name, email, role }) {
+    if (!USER_ROLES.includes(role)) role = 'member';
+    return db.prepare(`INSERT INTO users (person_id, name, email, role, auth_provider)
+      VALUES (NULL, ?, ?, ?, 'entra')`).run(name || email, email, role).lastInsertRowid;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 function stats() {
@@ -857,7 +890,7 @@ function purgeDomainData() {
 
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
-  ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, workflowTemplate,
+  ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, stats, statusBuckets, purgeDomainData,
+  policies, users, stats, statusBuckets, purgeDomainData,
 };

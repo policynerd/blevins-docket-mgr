@@ -3,10 +3,12 @@
 const { html, raw, formatDate, todayISO } = require('../util');
 const { layout, card, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const { ORG } = require('../org');
+const auth = require('../auth');
 const repo = require('../repo');
 
-function adminHome() {
+function adminHome(user) {
   const s = repo.stats();
+  const isAdmin = auth.hasRole(user, 'admin');
   const recent = repo.matters.search({ limit: 10 });
   const recentRows = recent.map((m) => html`
     <tr>
@@ -22,11 +24,13 @@ function adminHome() {
       <a class="btn" href="/admin/matters/new">+ New legislative file</a>
       <a class="btn" href="/admin/meetings/new">+ Schedule meeting</a>
       <a class="btn" href="/govern/members">Board membership</a>
-      <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/admin/org">Manage organization</a>
-      <a class="btn" href="/admin/branding">Branding</a>
+      ${isAdmin ? raw(`
+      <a class="btn" href="/admin/users">Users &amp; roles</a>
+      <a class="btn" href="/admin/import">Import roster (CSV)</a>
+      <a class="btn" href="/admin/branding">Branding</a>`) : ''}
     </div>
     <div class="stat-grid small">
       <div class="stat"><span class="stat-n">${s.matters}</span><span class="stat-l">Files</span></div>
@@ -37,11 +41,11 @@ function adminHome() {
     ${raw(card('Run a meeting live', require('./live').liveLauncher()))}
     ${raw(card('Manage legislation',
       `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th></th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`))}
-    ${raw(card('Danger zone', `
+    ${isAdmin ? raw(card('Danger zone', `
       <p class="muted">Permanently delete <strong>all</strong> people, bodies, legislation, meetings, votes, and org units. Your user logins and branding settings are kept. Use this once to clear the demo/sample data.</p>
       <form method="post" action="/admin/purge" onsubmit="return confirm('Permanently delete ALL legislative data (people, bodies, files, meetings, votes)? This cannot be undone.');">
         <button type="submit" class="btn danger-btn">Clear all data</button>
-      </form>`))}
+      </form>`)) : ''}
   `;
   return layout({ title: 'Clerk Workspace', active: '/admin',
     subtitle: 'Create files, draft documents, build agendas, run live voting, and capture results.', body });
