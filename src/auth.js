@@ -31,12 +31,47 @@ function getUser(id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
+// Create a session for an already-authenticated user id; returns the cookie sid.
+function createSession(userId) {
+  const sid = crypto.randomBytes(24).toString('hex');
+  sessions.set(sid, { userId, created: Date.now() });
+  return sid;
+}
+
 function login(email, password) {
   const user = findUserByEmail(email);
   if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) return null;
-  const sid = crypto.randomBytes(24).toString('hex');
-  sessions.set(sid, { userId: user.id, created: Date.now() });
-  return sid;
+  return createSession(user.id);
+}
+
+function findUserBySsoSubject(subject) {
+  return db.prepare('SELECT * FROM users WHERE sso_subject = ? AND active = 1').get(subject);
+}
+
+// Resolve an external (SSO) identity to a local session.
+// 1) match a previously-linked sso_subject; 2) link by matching email;
+// 3) optionally auto-provision when SSO_AUTO_PROVISION_ROLE is set.
+// Returns { sid } on success or { error } when the identity isn't authorized.
+function ssoSignIn({ subject, email, name }) {
+  if (subject) {
+    const linked = findUserBySsoSubject(subject);
+    if (linked) return { sid: createSession(linked.id), user: linked };
+  }
+  if (email) {
+    const byEmail = findUserByEmail(email);
+    if (byEmail) {
+      db.prepare('UPDATE users SET sso_subject = ?, auth_provider = ? WHERE id = ?')
+        .run(subject || null, 'entra', byEmail.id);
+      return { sid: createSession(byEmail.id), user: byEmail };
+    }
+  }
+  const role = process.env.SSO_AUTO_PROVISION_ROLE;
+  if (role && email && ROLE_RANK[role] != null) {
+    const info = db.prepare(`INSERT INTO users (person_id, name, email, role, sso_subject, auth_provider)
+      VALUES (?,?,?,?,?,?)`).run(null, name || email, email, role, subject || null, 'entra');
+    return { sid: createSession(info.lastInsertRowid), user: getUser(info.lastInsertRowid) };
+  }
+  return { error: 'not_authorized' };
 }
 
 function logout(sid) {
@@ -136,7 +171,7 @@ function ensureSeedAccounts({ allowDemo = process.env.ENABLE_DEMO_SEED === 'true
 
 module.exports = {
   COOKIE, SESSION_MAX_AGE_MS,
-  hashPassword, verifyPassword, login, logout, currentUser,
+  hashPassword, verifyPassword, login, logout, currentUser, createSession,
   setSessionCookie, clearSessionCookie, sidFromReq, hasRole, getUser,
-  findUserByEmail, ensureSeedAccounts, ROLE_RANK,
+  findUserByEmail, findUserBySsoSubject, ssoSignIn, ensureSeedAccounts, ROLE_RANK,
 };
