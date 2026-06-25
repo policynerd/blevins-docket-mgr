@@ -21,6 +21,7 @@ const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const govern = require('./src/views/govern');
 const policiesView = require('./src/views/policies');
+const legal = require('./src/views/legal');
 const sso = require('./src/sso');
 const importer = require('./src/import');
 const org = require('./src/org');
@@ -177,6 +178,10 @@ route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
   sendHtml(res, minutesView.minutesView(mt));
 });
 route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
+
+// Legal (public) -------------------------------------------------------------
+route('GET', /^\/terms\/?$/, (req, res) => sendHtml(res, legal.termsPage()));
+route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()));
 
 // Policies (public reads published; drafts visible to clerk only) -----------
 route('GET', /^\/policies\/?$/, (req, res, ctx) => sendHtml(res, policiesView.policiesList(ctx.user)));

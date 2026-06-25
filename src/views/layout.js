@@ -153,12 +153,16 @@ function layout({ title, active, body, subtitle, head }) {
       <div class="footer-links">
         <a href="/legislation">Legislation</a>
         <a href="/calendar">Calendar</a>
+        <a href="/policies">Policies</a>
         <a href="/org">Organization</a>
-        <a href="/topics">Indexes</a>
         <a href="/api/v1">Web API</a>
-        <a href="/legislation.rss">RSS</a>
-        <a href="/calendar.ics">iCalendar</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
       </div>
+    </div>
+    <div class="footer-legal wrap">
+      © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
+      · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
     </div>
   </footer>
 </body>
