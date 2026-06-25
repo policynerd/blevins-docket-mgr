@@ -792,9 +792,31 @@ function statusBuckets() {
     'SELECT status, COUNT(*) AS n FROM matters GROUP BY status ORDER BY n DESC').all();
 }
 
+// Permanently delete all domain data (people, bodies, legislation, meetings,
+// votes, motions, org units, …) while KEEPING user accounts and settings, so a
+// signed-in clerk can clear demo/sample data without losing their login or
+// branding. Used by the admin "Clear all data" action.
+function purgeDomainData() {
+  const tables = ['member_motions', 'votes', 'attendance', 'agenda_items', 'meetings',
+    'matter_topics', 'topics', 'matter_history', 'matter_sponsors', 'attachments', 'reports',
+    'workflow_steps', 'matters', 'body_members', 'bodies', 'org_units', 'people'];
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec('SAVEPOINT sp_purge');
+  try {
+    for (const t of tables) db.prepare(`DELETE FROM ${t}`).run();
+    db.prepare('UPDATE users SET person_id = NULL').run(); // people are gone
+    db.exec('RELEASE sp_purge');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_purge'); db.exec('RELEASE sp_purge');
+    db.exec('PRAGMA foreign_keys = ON;');
+    throw e;
+  }
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  stats, statusBuckets,
+  stats, statusBuckets, purgeDomainData,
 };

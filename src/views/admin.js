@@ -35,6 +35,11 @@ function adminHome() {
     ${raw(card('Run a meeting live', require('./live').liveLauncher()))}
     ${raw(card('Manage legislation',
       `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th></th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`))}
+    ${raw(card('Danger zone', `
+      <p class="muted">Permanently delete <strong>all</strong> people, bodies, legislation, meetings, votes, and org units. Your user logins and branding settings are kept. Use this once to clear the demo/sample data.</p>
+      <form method="post" action="/admin/purge" onsubmit="return confirm('Permanently delete ALL legislative data (people, bodies, files, meetings, votes)? This cannot be undone.');">
+        <button type="submit" class="btn danger-btn">Clear all data</button>
+      </form>`))}
   `;
   return layout({ title: 'Clerk Workspace', active: '/admin',
     subtitle: 'Create files, draft documents, build agendas, run live voting, and capture results.', body });
