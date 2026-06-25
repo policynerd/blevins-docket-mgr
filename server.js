@@ -21,6 +21,7 @@ const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const govern = require('./src/views/govern');
 const policiesView = require('./src/views/policies');
+const usersView = require('./src/views/users');
 const legal = require('./src/views/legal');
 const sso = require('./src/sso');
 const importer = require('./src/import');
@@ -43,6 +44,8 @@ if (process.env.ENABLE_DEMO_SEED === 'true' && repo.stats().people === 0) {
 // Seed login accounts: the ADMIN_* bootstrap admin (always, if configured) and
 // demo logins (only when ENABLE_DEMO_SEED=true). Throws are logged, not fatal.
 try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed failed:', e.message); }
+// Ensure the configured ADMIN_EMAIL is a global admin (promotes existing accounts).
+try { auth.ensureAdminRole(); } catch (e) { console.error('Admin role check failed:', e.message); }
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -210,12 +213,41 @@ route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
 });
 
 // Admin ----------------------------------------------------------------------
-route('GET', /^\/admin\/?$/, (req, res) => sendHtml(res, admin.adminHome()));
+route('GET', /^\/admin\/?$/, (req, res, ctx) => sendHtml(res, admin.adminHome(ctx.user)));
 
-// Danger zone: wipe all domain data (clerk only; keeps users + settings).
-route('POST', /^\/admin\/purge$/, (req, res) => {
+// Danger zone: wipe all domain data (ADMIN only; keeps users + settings).
+route('POST', /^\/admin\/purge$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
   repo.purgeDomainData();
   redirect(res, '/admin');
+});
+
+// Users & roles management (ADMIN only) --------------------------------------
+route('GET', /^\/admin\/users\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, usersView.usersAdmin(ctx.user));
+});
+route('POST', /^\/admin\/users$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const b = ctx.body;
+  if (b.email && !repo.users.byEmail(b.email)) {
+    repo.users.create({ name: b.name, email: b.email, role: b.role });
+  }
+  redirect(res, '/admin/users');
+});
+route('POST', /^\/admin\/users\/(\d+)\/role$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const u = repo.users.get(Number(ctx.params[0]));
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  if (!ctx.user || ctx.user.id !== u.id) repo.users.setRole(u.id, ctx.body.role); // can't change own role
+  redirect(res, '/admin/users');
+});
+route('POST', /^\/admin\/users\/(\d+)\/active$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const u = repo.users.get(Number(ctx.params[0]));
+  if (!u) return sendHtml(res, pages.notFound(), 404);
+  if (!ctx.user || ctx.user.id !== u.id) repo.users.setActive(u.id, String(ctx.body.active) === '1'); // can't disable self
+  redirect(res, '/admin/users');
 });
 
 // Policies CRUD (clerk) ------------------------------------------------------
@@ -256,9 +288,13 @@ route('POST', /^\/admin\/policies\/(\d+)\/delete$/, (req, res, ctx) => {
   redirect(res, '/admin/policies');
 });
 
-// Roster import (CSV bulk "data populate" / direct-seat bootstrap) — clerk.
-route('GET', /^\/admin\/import\/?$/, (req, res) => sendHtml(res, govern.importPage()));
+// Roster import (CSV bulk "data populate" / direct-seat bootstrap) — ADMIN.
+route('GET', /^\/admin\/import\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, govern.importPage());
+});
 route('POST', /^\/admin\/import$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
   const result = importer.importRoster(ctx.body.csv || '');
   sendHtml(res, govern.importPage({ result }));
 });
@@ -345,9 +381,12 @@ route('POST', /^\/admin\/bodies\/(\d+)\/delete$/, (req, res, ctx) => {
 });
 
 // Branding / in-app identity (clerk) -----------------------------------------
-route('GET', /^\/admin\/branding\/?$/, (req, res, ctx) => sendHtml(res,
-  govern.brandingPage({ saved: ctx.query.saved === '1' })));
+route('GET', /^\/admin\/branding\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, govern.brandingPage({ saved: ctx.query.saved === '1' }));
+});
 route('POST', /^\/admin\/branding$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
   org.update(ctx.body);
   redirect(res, '/admin/branding?saved=1');
 });
@@ -728,6 +767,15 @@ function gate(req, res, pathname, user) {
   if (!need) return true;
   if (auth.hasRole(user, need)) return true;
   if (!user) { redirect(res, '/login?next=' + encodeURIComponent(pathname)); return false; }
+  sendHtml(res, forbidden(), 403);
+  return false;
+}
+
+// Finer-grained guard for routes that need more than the path-prefix gate
+// (e.g. system-admin features under the clerk-gated /admin area). Returns false
+// and writes a 403 when the user lacks the role.
+function need(ctx, res, role) {
+  if (auth.hasRole(ctx.user, role)) return true;
   sendHtml(res, forbidden(), 403);
   return false;
 }

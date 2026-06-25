@@ -13,7 +13,7 @@ const { db } = require('./db');
 const repo = require('./repo');
 const { parseCsv } = require('./csv');
 
-const VALID_ROLES = ['public', 'member', 'staff', 'clerk'];
+const VALID_ROLES = ['public', 'member', 'staff', 'clerk', 'admin'];
 
 function personByEmail(email) {
   return db.prepare('SELECT * FROM people WHERE lower(email) = lower(?)').get(email);
