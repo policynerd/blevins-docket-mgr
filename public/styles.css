@@ -133,16 +133,21 @@ table.data.compact td, table.data.compact th { padding: 5px 8px; }
 .st-draft, .st-withdrawn, .st-tabled { background: #eef1f5; color: var(--muted); }
 
 /* Buttons */
-.btn { display: inline-block; background: linear-gradient(180deg, #1b5fa0, var(--accent)); color: #fff;
-  padding: 7px 15px; border-radius: 3px; border: 1px solid var(--accent-dark); cursor: pointer;
-  font-size: 13px; font-weight: 600; }
+.btn { display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #1b5fa0, var(--accent)); color: #fff;
+  padding: 8px 16px; border-radius: 4px; border: 1px solid var(--accent-dark); cursor: pointer;
+  font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+  width: auto; max-width: max-content; text-align: center; }
 .btn:hover { background: var(--accent-dark); text-decoration: none; }
 .btn.primary { background: linear-gradient(180deg, #f4b400, #e0a200); color: #1f2937; border-color: #c98f00; }
 .btn.primary:hover { background: #ffc41f; }
 .btn-link { color: var(--accent); font-size: 13px; font-weight: 600; }
-.admin-actions, .detail-head, .person-head { display: flex; gap: 12px; align-items: center; }
-.admin-actions { margin-bottom: 18px; }
-.head-actions { display: flex; gap: 8px; }
+.detail-head, .person-head { display: flex; gap: 12px; align-items: center; }
+/* Action button rows wrap cleanly and don't stretch their buttons. */
+.admin-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+.admin-actions .btn, .head-actions .btn, .form-actions .btn { flex: 0 0 auto; }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.form-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .detail-head { justify-content: space-between; align-items: flex-start; margin: 6px 0 14px; }
 .detail-head h1 { margin: 0; color: var(--accent-dark); max-width: 780px; }
 
@@ -436,6 +441,9 @@ table.data.sortable thead th { padding: 0; }
 .footer-links { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .site-footer a { color: #cfe0f2; }
 .site-footer a:hover { color: #fff; }
+.footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.15);
+  font-size: 12px; color: #b9cde2; }
+.footer-legal a { color: #cfe0f2; }
 
 @media (max-width: 900px) {
   .stat-grid, .stat-grid.small { grid-template-columns: repeat(2, 1fr); }
