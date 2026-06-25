@@ -21,6 +21,7 @@ const minutesGen = require('./src/minutes');
 const authView = require('./src/views/auth');
 const govern = require('./src/views/govern');
 const sso = require('./src/sso');
+const importer = require('./src/import');
 const org = require('./src/org');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -201,6 +202,13 @@ route('GET', /^\/admin\/?$/, (req, res) => sendHtml(res, admin.adminHome()));
 route('POST', /^\/admin\/purge$/, (req, res) => {
   repo.purgeDomainData();
   redirect(res, '/admin');
+});
+
+// Roster import (CSV bulk "data populate" / direct-seat bootstrap) — clerk.
+route('GET', /^\/admin\/import\/?$/, (req, res) => sendHtml(res, govern.importPage()));
+route('POST', /^\/admin\/import$/, (req, res, ctx) => {
+  const result = importer.importRoster(ctx.body.csv || '');
+  sendHtml(res, govern.importPage({ result }));
 });
 
 // Organization management (clerk)

@@ -466,6 +466,13 @@ form.inline { display: inline; }
 .section-title { margin: 22px 0 10px; font-size: 15px; color: var(--accent-dark);
   border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 
+/* Roster import */
+.import-stats { margin: 6px 0 12px; padding-left: 18px; }
+.import-example { background: #f4f6f9; border: 1px solid var(--line); border-radius: 4px;
+  padding: 10px; font-size: 12px; overflow-x: auto; white-space: pre; }
+.import-help summary { cursor: pointer; font-weight: 600; color: var(--accent-dark); margin-top: 10px; }
+.import-help code { background: #eef3f9; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+
 /* Danger-zone button (destructive admin actions) */
 .btn.danger-btn { background: #b4232a; border-color: #7d1a1f; }
 .btn.danger-btn:hover { background: #7d1a1f; }
