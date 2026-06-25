@@ -284,4 +284,66 @@ function brandingPage({ saved = false } = {}) {
   return layout({ title: 'Branding', active: '/admin', body });
 }
 
-module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage };
+// ===========================================================================
+// Roster import (CSV "data populate" / direct-seat bootstrap) — clerk
+// ===========================================================================
+function importPage({ result = null } = {}) {
+  const example = `name,email,login_role,committee,committee_role
+Benjamin Blevins,benjamin.blevins@blevinsholdings.com,clerk,,
+Jane Smith,jane.smith@blevinsholdings.com,staff,Board of Governors,Chair
+Jane Smith,jane.smith@blevinsholdings.com,,Committee on Appropriations and Budget,Member
+John Doe,john.doe@blevinsholdings.com,member,Committee on Enterprise Operations,Member`;
+
+  let summary = '';
+  if (result) {
+    const errs = result.errors.length
+      ? `<div class="form-error"><strong>${result.errors.length} issue(s) (these rows were skipped):</strong>
+         <ul>${result.errors.map((e) => `<li>${escapeText(e)}</li>`).join('')}</ul></div>`
+      : '';
+    summary = `<div class="import-result">
+      ${result.errors.length ? '' : '<p class="form-ok">Import complete.</p>'}
+      <ul class="import-stats">
+        <li>Rows processed: <strong>${result.rows}</strong></li>
+        <li>People created: <strong>${result.peopleCreated}</strong></li>
+        <li>Committee seats added: <strong>${result.seats}</strong></li>
+        <li>Committees created: <strong>${result.committeesCreated}</strong></li>
+        <li>Logins created: <strong>${result.usersCreated}</strong>, updated: <strong>${result.usersUpdated}</strong></li>
+      </ul>${errs}
+    </div>`;
+  }
+
+  const form = html`
+    <form class="form" method="post" action="/admin/import">
+      <p class="muted">Bulk-create members, seat them on committees, and provision logins.
+        Seating here is <strong>direct</strong> (it skips Nominate→Approve→Seat), so use it for initial setup.</p>
+      <label>Choose a CSV file
+        <input type="file" id="csvfile" accept=".csv,text/csv">
+      </label>
+      <label>CSV data (filled from the file above, or paste/edit directly)
+        <textarea id="csvtext" name="csv" rows="10" required placeholder="${escapeText(example)}"></textarea>
+      </label>
+      <div class="form-actions"><button type="submit" class="btn primary">Import</button></div>
+    </form>
+    <details class="import-help">
+      <summary>CSV format &amp; example</summary>
+      <p>A header row, then one row <em>per person per committee</em> (repeat a person to place them on several). Columns:</p>
+      <ul>
+        <li><code>name</code> — full name</li>
+        <li><code>email</code> — email (used for the SSO login match and contact)</li>
+        <li><code>login_role</code> — blank for no login, or <code>member</code> / <code>staff</code> / <code>clerk</code> (staff can approve membership changes; clerk = full admin)</li>
+        <li><code>committee</code> — committee/body to place them on (created if it doesn't exist)</li>
+        <li><code>committee_role</code> — Chair / Vice Chair / Member (default Member)</li>
+      </ul>
+      <pre class="import-example">${escapeText(example)}</pre>
+    </details>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Import roster</p>
+    <h1>Import roster (CSV)</h1>
+    ${result ? raw(summary) : ''}
+    ${raw(card('Bulk import', form))}
+    <script src="/assets/csv-fill.js" defer></script>`;
+  return layout({ title: 'Import roster', active: '/admin', body });
+}
+
+module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage };
