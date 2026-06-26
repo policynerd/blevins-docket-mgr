@@ -29,20 +29,26 @@ function policiesList(user) {
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat).push(p);
   }
-  const sections = [...groups.entries()].map(([cat, items]) => `
-    <h2 class="section-title">${escapeText(cat)}</h2>
-    <table class="data"><thead><tr><th>No.</th><th>Title</th><th>Status</th><th>Effective</th></tr></thead>
-    <tbody>${items.map((p) => html`
+  const bodyRows = [...groups.entries()].map(([cat, items]) => `
+    <tr class="cat-row"><th colspan="4">${escapeText(cat)}</th></tr>
+    ${items.map((p) => html`
       <tr>
-        <td>${p.policy_number || ''}</td>
+        <td class="pol-no">${p.policy_number || ''}</td>
         <td><a href="/policies/${p.id}">${p.title}</a></td>
         <td>${statusBadge(p.status)}</td>
-        <td>${raw(formatDate(p.effective_date))}</td>
-      </tr>`).join('')}</tbody></table>`).join('');
+        <td>${p.effective_date ? raw(formatDate(p.effective_date)) : raw('<span class="muted">—</span>')}</td>
+      </tr>`).join('')}`).join('');
 
+  const table = rows.length
+    ? `<table class="data policy-table">
+        <thead><tr><th>No.</th><th>Title</th><th>Status</th><th>Effective</th></tr></thead>
+        <tbody>${bodyRows}</tbody></table>`
+    : emptyState('No policies have been published yet.');
+
+  const count = `${rows.length} ${rows.length === 1 ? 'policy' : 'policies'}`;
   const body = html`
     ${isClerk ? raw('<div class="admin-actions"><a class="btn" href="/admin/policies">Manage policies</a></div>') : ''}
-    ${rows.length ? raw(sections) : raw(emptyState('No policies have been published yet.'))}`;
+    ${raw(card(count, table))}`;
   return layout({ title: 'Policies', active: '/policies',
     subtitle: 'Adopted governance policies and bylaws of record.', body });
 }

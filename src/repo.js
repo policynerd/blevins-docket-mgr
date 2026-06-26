@@ -631,9 +631,17 @@ const budget = {
   },
   summary(budgetId) {
     const lines = budget.lines(budgetId);
-    let budgeted = 0; let committed = 0;
-    for (const l of lines) { budgeted += l.amount; committed += l.committed; }
-    return { budgeted, committed, remaining: budgeted - committed, lineCount: lines.length };
+    const s = {
+      expBudgeted: 0, expCommitted: 0, revBudgeted: 0, revCommitted: 0,
+      lineCount: lines.length, hasRevenue: false,
+    };
+    for (const l of lines) {
+      if (l.kind === 'Revenue') { s.revBudgeted += l.amount; s.revCommitted += l.committed; s.hasRevenue = true; }
+      else { s.expBudgeted += l.amount; s.expCommitted += l.committed; }
+    }
+    s.expRemaining = s.expBudgeted - s.expCommitted;
+    s.revRemaining = s.revBudgeted - s.revCommitted;
+    return s;
   },
   // Matters linked to a line (for drill-down).
   lineMatters(lineId) {
