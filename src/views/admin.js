@@ -221,31 +221,72 @@ function attachmentForm(matter) {
   return card('Attachments', form);
 }
 
-// --- Meeting form ------------------------------------------------------------
-function meetingForm() {
+// --- Meeting form (new + edit) ----------------------------------------------
+function meetingForm(meeting) {
+  const isEdit = !!meeting;
   const allBodies = repo.bodies.all().map((b) => ({ value: b.id, label: b.name }));
+  const action = isEdit ? `/admin/meetings/${meeting.id}` : '/admin/meetings';
+  const statuses = ['Scheduled', 'In Progress', 'Adjourned', 'Final', 'Cancelled'];
   const form = html`
-    <form class="form" method="post" action="/admin/meetings">
+    <form class="form" method="post" action="${action}">
       <div class="form-row">
-        <label>Body<select name="body_id" required>${raw(selectOptions(allBodies, '', { includeBlank: 'Select…' }))}</select></label>
-        <label>Status<select name="status">${raw(selectOptions(['Scheduled', 'In Progress', 'Adjourned', 'Final', 'Cancelled'], 'Scheduled'))}</select></label>
+        <label>Body<select name="body_id" required>${raw(selectOptions(allBodies, meeting && meeting.body_id, { includeBlank: 'Select…' }))}</select></label>
+        <label>Status<select name="status">${raw(selectOptions(statuses, meeting ? meeting.status : 'Scheduled'))}</select></label>
       </div>
       <div class="form-row">
-        <label>Date<input type="date" name="meeting_date" value="${todayISO()}" required></label>
-        <label>Time<input type="text" name="meeting_time" placeholder="6:00 PM"></label>
+        <label>Date<input type="date" name="meeting_date" value="${meeting ? meeting.meeting_date : todayISO()}" required></label>
+        <label>Time<input type="text" name="meeting_time" value="${meeting && meeting.meeting_time ? meeting.meeting_time : ''}" placeholder="6:00 PM"></label>
       </div>
-      <label>Location<input type="text" name="location" placeholder="${escapeText(ORG.meetingLocation)}"></label>
+      <label>Location<input type="text" name="location" value="${meeting && meeting.location ? meeting.location : ''}" placeholder="${escapeText(ORG.meetingLocation)}"></label>
       <div class="form-row">
-        <label>Agenda URL<input type="url" name="agenda_url" placeholder="https://…"></label>
-        <label>Video URL<input type="url" name="video_url" placeholder="https://…"></label>
+        <label>Agenda URL<input type="url" name="agenda_url" value="${meeting && meeting.agenda_url ? meeting.agenda_url : ''}" placeholder="https://…"></label>
+        <label>Video URL<input type="url" name="video_url" value="${meeting && meeting.video_url ? meeting.video_url : ''}" placeholder="https://…"></label>
       </div>
-      <button type="submit" class="btn primary">Schedule meeting</button>
+      <label>Notes<input type="text" name="notes" value="${meeting && meeting.notes ? meeting.notes : ''}"></label>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">${isEdit ? 'Save meeting' : 'Schedule meeting'}</button>
+        ${isEdit ? raw(`<a class="btn-link" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>`) : ''}
+      </div>
     </form>`;
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Schedule meeting</p>
-    <h1>Schedule meeting</h1>
+    <p class="crumbs"><a href="/admin">Admin</a> / ${isEdit ? 'Edit meeting' : 'Schedule meeting'}</p>
+    <h1>${isEdit ? 'Edit meeting' : 'Schedule meeting'}</h1>
     ${raw(card('Meeting details', form))}`;
-  return layout({ title: 'Schedule meeting', active: '/admin', body });
+  return layout({ title: isEdit ? 'Edit meeting' : 'Schedule meeting', active: '/admin', body });
+}
+
+// --- Person form (edit a board member / official) ---------------------------
+function personForm(person) {
+  const parties = ['', 'Independent', 'Civic Party', 'Reform', 'Nonpartisan'];
+  const form = html`
+    <form class="form" method="post" action="/admin/people/${person.id}">
+      <div class="form-row">
+        <label>Full name<input type="text" name="full_name" required value="${person.full_name}"></label>
+        <label>Title<input type="text" name="title" value="${person.title || ''}" placeholder="${escapeText(ORG.memberTitle)}"></label>
+      </div>
+      <div class="form-row">
+        <label>District / seat<input type="text" name="district" value="${person.district || ''}" placeholder="Seat 1"></label>
+        <label>Party / affiliation<input type="text" name="party" value="${person.party || ''}" list="party-list">
+          <datalist id="party-list">${raw(parties.filter(Boolean).map((p) => `<option value="${escapeText(p)}">`).join(''))}</datalist>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Email<input type="email" name="email" value="${person.email || ''}"></label>
+        <label>Phone<input type="text" name="phone" value="${person.phone || ''}"></label>
+      </div>
+      <label>Website<input type="url" name="website" value="${person.website || ''}" placeholder="https://…"></label>
+      <label>Biography<textarea name="bio" rows="4">${person.bio || ''}</textarea></label>
+      <label class="chk"><input type="checkbox" name="active" value="1" ${person.active ? raw('checked') : ''}> Active</label>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Save profile</button>
+        <a class="btn-link" href="/people/${person.id}">Cancel</a>
+      </div>
+    </form>`;
+  const body = html`
+    <p class="crumbs"><a href="/people/${person.id}">${person.full_name}</a> / Edit</p>
+    <h1>Edit ${person.full_name}</h1>
+    ${raw(card('Profile', form))}`;
+  return layout({ title: 'Edit ' + person.full_name, active: '/people', body });
 }
 
 // --- Agenda manager (add items + record votes) ------------------------------
@@ -281,6 +322,7 @@ function agendaManager(meeting) {
     <div class="detail-head">
       <h1>Agenda — ${meeting.body_name}</h1>
       <span class="head-actions">
+        <a class="btn" href="/admin/meetings/${meeting.id}/edit">✎ Edit</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/live">● Run live</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/minutes">🧾 Minutes</a>
         <a class="btn" href="/meetings/${meeting.id}/packet">📄 Packet</a>
@@ -337,5 +379,5 @@ function voteBlock(meeting, it) {
 }
 
 module.exports = {
-  adminHome, matterForm, meetingForm, agendaManager,
+  adminHome, matterForm, meetingForm, personForm, agendaManager,
 };

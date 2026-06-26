@@ -75,7 +75,7 @@ function safeNext(next) {
   return (typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')) ? next : null;
 }
 route('GET', /^\/login$/, (req, res, ctx) => {
-  if (ctx.user) return redirect(res, ctx.user.role === 'clerk' ? '/admin' : '/member');
+  if (ctx.user) return redirect(res, auth.hasRole(ctx.user, 'clerk') ? '/admin' : '/member');
   sendHtml(res, authView.loginPage({ next: safeNext(ctx.query.next) || '' }));
 });
 route('POST', /^\/login$/, (req, res, ctx) => {
@@ -84,7 +84,7 @@ route('POST', /^\/login$/, (req, res, ctx) => {
   if (!sid) return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
   auth.setSessionCookie(res, sid);
   const user = auth.findUserByEmail(email);
-  redirect(res, safeNext(next) || (user && user.role === 'clerk' ? '/admin' : '/member'));
+  redirect(res, safeNext(next) || (auth.hasRole(user, 'clerk') ? '/admin' : '/member'));
 });
 route('POST', /^\/logout$/, (req, res) => {
   auth.logout(auth.sidFromReq(req));
@@ -126,8 +126,7 @@ route('GET', /^\/auth\/sso\/callback$/, async (req, res, ctx) => {
       }), 403);
     }
     auth.setSessionCookie(res, result.sid);
-    const role = result.user ? result.user.role : 'member';
-    redirect(res, safeNext(saved.next) || (role === 'clerk' ? '/admin' : '/member'));
+    redirect(res, safeNext(saved.next) || (auth.hasRole(result.user, 'clerk') ? '/admin' : '/member'));
   } catch (e) {
     console.error('SSO callback error:', e);
     sendHtml(res, authView.loginPage({ error: 'Single sign-on failed to verify your identity.' }), 502);
@@ -295,6 +294,25 @@ route('POST', /^\/admin\/policies\/(\d+)\/delete$/, (req, res, ctx) => {
   if (!p) return sendHtml(res, pages.notFound(), 404);
   repo.policies.remove(p.id);
   redirect(res, '/admin/policies');
+});
+
+// Edit a person / board member profile (clerk) -------------------------------
+route('GET', /^\/admin\/people\/(\d+)\/edit$/, (req, res, ctx) => {
+  const p = repo.people.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, admin.personForm(p));
+});
+route('POST', /^\/admin\/people\/(\d+)$/, (req, res, ctx) => {
+  const p = repo.people.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  if (!b.full_name) return sendHtml(res, admin.personForm(p), 400);
+  repo.people.update(p.id, {
+    full_name: b.full_name, title: b.title || null, district: b.district || null,
+    party: b.party || null, email: b.email || null, phone: b.phone || null,
+    website: b.website || null, bio: b.bio || null, active: b.active ? 1 : 0,
+  });
+  redirect(res, `/people/${p.id}`);
 });
 
 // Governor offices & staff (clerk) -------------------------------------------
@@ -631,6 +649,22 @@ route('POST', /^\/admin\/meetings$/, (req, res, ctx) => {
     agenda_url: b.agenda_url, video_url: b.video_url,
   });
   redirect(res, `/admin/meetings/${id}/agenda`);
+});
+route('GET', /^\/admin\/meetings\/(\d+)\/edit$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, admin.meetingForm(mt));
+});
+route('POST', /^\/admin\/meetings\/(\d+)$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  if (!b.body_id || !b.meeting_date) return sendHtml(res, admin.meetingForm(mt), 400);
+  repo.meetings.update(mt.id, {
+    body_id: Number(b.body_id), meeting_date: b.meeting_date, meeting_time: b.meeting_time,
+    location: b.location, status: b.status, agenda_url: b.agenda_url, video_url: b.video_url, notes: b.notes,
+  });
+  redirect(res, `/admin/meetings/${mt.id}/agenda`);
 });
 
 route('GET', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {

@@ -656,6 +656,7 @@ function personDetail(person, user) {
           ${person.phone ? raw(` · ${escapeText(person.phone)}`) : ''}
           ${person.website ? raw(` · <a href="${escapeText(person.website)}">website</a>`) : ''}
         </p>
+        ${auth.hasRole(user, 'clerk') ? raw(`<p><a class="btn-link" href="/admin/people/${person.id}/edit">✎ Edit profile</a></p>`) : ''}
       </div>
     </div>
     ${person.bio ? raw(card('Biography', `<p>${escapeText(person.bio)}</p>`)) : ''}
