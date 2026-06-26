@@ -67,6 +67,12 @@ const people = {
       p.email ?? null, p.phone ?? null, p.website ?? null, p.photo_url ?? null,
       p.bio ?? null, p.active == null ? 1 : p.active).lastInsertRowid;
   },
+  update(id, p) {
+    db.prepare(`UPDATE people SET full_name=?, title=?, district=?, party=?, email=?, phone=?,
+      website=?, bio=?, active=? WHERE id=?`).run(
+      p.full_name, p.title ?? null, p.district ?? null, p.party ?? null, p.email ?? null,
+      p.phone ?? null, p.website ?? null, p.bio ?? null, p.active == null ? 1 : p.active, id);
+  },
   // --- Office & staff (a board member's office) ---
   setOffice(personId, name) {
     db.prepare('UPDATE people SET office_name = ? WHERE id = ?').run(name || null, personId);
@@ -383,6 +389,13 @@ const meetings = {
       mt.body_id, mt.meeting_date, mt.meeting_time || null, mt.location || null,
       mt.status || 'Scheduled', mt.agenda_url || null, mt.minutes_url || null,
       mt.video_url || null, mt.notes || null).lastInsertRowid;
+  },
+  update(id, mt) {
+    db.prepare(`UPDATE meetings SET body_id=?, meeting_date=?, meeting_time=?, location=?, status=?,
+      agenda_url=?, video_url=?, minutes_url=?, notes=? WHERE id=?`).run(
+      mt.body_id, mt.meeting_date, mt.meeting_time || null, mt.location || null,
+      mt.status || 'Scheduled', mt.agenda_url || null, mt.video_url || null,
+      mt.minutes_url || null, mt.notes || null, id);
   },
   addItem(it) {
     const maxOrder = db.prepare(
