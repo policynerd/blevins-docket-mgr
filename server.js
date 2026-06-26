@@ -727,6 +727,12 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
   }
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
+route('POST', /^\/admin\/agenda-items\/(\d+)\/delete$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  repo.meetings.removeItem(item.id);
+  redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
+});
 
 // Reports / word processor (clerk) -------------------------------------------
 route('GET', /^\/reports\/(\d+)$/, (req, res, ctx) => {
