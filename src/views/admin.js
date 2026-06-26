@@ -31,7 +31,8 @@ function adminHome(user) {
       ${isAdmin ? raw(`
       <a class="btn" href="/admin/users">Users &amp; roles</a>
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
-      <a class="btn" href="/admin/branding">Branding</a>`) : ''}
+      <a class="btn" href="/admin/branding">Branding</a>
+      <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
     </div>
     <div class="stat-grid small">
       <div class="stat"><span class="stat-n">${s.matters}</span><span class="stat-l">Files</span></div>

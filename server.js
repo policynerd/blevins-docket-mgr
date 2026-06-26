@@ -501,6 +501,27 @@ route('POST', /^\/admin\/branding$/, (req, res, ctx) => {
   redirect(res, '/admin/branding?saved=1');
 });
 
+// Editable legal pages — Terms & Privacy (admin) -----------------------------
+function blankHtml(s) {
+  return String(s || '').replace(/<[^>]*>/g, '').replace(/&nbsp;|&amp;|\s/g, '').length === 0;
+}
+route('GET', /^\/admin\/legal\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, legal.legalForm({ saved: ctx.query.saved === '1' }));
+});
+route('POST', /^\/admin\/legal$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  if (ctx.body.terms_html !== undefined) {
+    const t = sanitizeHtml(ctx.body.terms_html);
+    legal.setContent('terms', blankHtml(t) ? '' : t);
+  }
+  if (ctx.body.privacy_html !== undefined) {
+    const p = sanitizeHtml(ctx.body.privacy_html);
+    legal.setContent('privacy', blankHtml(p) ? '' : p);
+  }
+  redirect(res, '/admin/legal?saved=1');
+});
+
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
 route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
 route('POST', /^\/govern\/members\/nominate$/, (req, res, ctx) => {
