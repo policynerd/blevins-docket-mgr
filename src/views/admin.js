@@ -374,7 +374,11 @@ function voteBlock(meeting, it) {
       <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
       <span class="ai-num">${escapeText(it.agenda_number || '')}</span>
       <strong>${titleLine}</strong>
-      ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}</div>
+      ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}
+      <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
+        onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
+        <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>
+      </form></div>
     ${voteForm}
   </div>`;
 }

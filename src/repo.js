@@ -420,6 +420,9 @@ const meetings = {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
   },
+  removeItem(itemId) {
+    db.prepare('DELETE FROM agenda_items WHERE id = ?').run(itemId); // votes cascade
+  },
   setMotion(itemId, { mover_id, seconder_id, motion_text }) {
     db.prepare('UPDATE agenda_items SET mover_id=?, seconder_id=?, motion_text=? WHERE id=?')
       .run(mover_id || null, seconder_id || null, motion_text || null, itemId);
