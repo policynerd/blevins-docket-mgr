@@ -1090,7 +1090,7 @@ const server = http.createServer(async (req, res) => {
   sendHtml(res, pages.notFound(), 404);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Legislative Docket Manager running at http://localhost:${PORT}`);
   console.log(`  Public portal : http://localhost:${PORT}/`);
   console.log(`  Admin / clerk : http://localhost:${PORT}/admin`);
