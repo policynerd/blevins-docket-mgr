@@ -62,16 +62,19 @@
   }
 
   function motionForm(a) {
-    var rosterOpts = '<option value="">—</option>' + a.roster.map(function (m) {
-      return '<option value="' + esc(m.person_id) + '">' + esc(m.name) + '</option>';
-    }).join('');
+    var rosterOpts = function (currentId) {
+      return '<option value="">—</option>' + a.roster.map(function (m) {
+        var sel = String(m.person_id) === String(currentId) ? ' selected' : '';
+        return '<option value="' + esc(m.person_id) + '"' + sel + '>' + esc(m.name) + '</option>';
+      }).join('');
+    };
     var threshOpts = Object.keys(THRESHOLD_LABELS).map(function (v) {
       return '<option value="' + v + '"' + (a.threshold === v ? ' selected' : '') + '>' + esc(THRESHOLD_LABELS[v]) + '</option>';
     }).join('');
     return '<details class="la-motion-form"><summary>Set motion / threshold</summary>' +
       '<div class="la-motion-fields">' +
-      '<label>Mover <select data-mf-mover>' + rosterOpts + '</select></label>' +
-      '<label>Seconder <select data-mf-seconder>' + rosterOpts + '</select></label>' +
+      '<label>Mover <select data-mf-mover>' + rosterOpts(a.mover_id) + '</select></label>' +
+      '<label>Seconder <select data-mf-seconder>' + rosterOpts(a.seconder_id) + '</select></label>' +
       '<label>Threshold <select data-mf-threshold>' + threshOpts + '</select></label>' +
       '<label>Motion text <input type="text" data-mf-text value="' + esc(a.motion_text || '') + '" placeholder="I move to…"></label>' +
       '<button class="btn" data-mf-save="' + a.id + '">Save motion</button>' +

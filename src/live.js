@@ -59,6 +59,8 @@ function snapshot(meetingId) {
       file_number: open.file_number || null,
       title: open.matter_id ? open.matter_title : open.title,
       motion_text: open.motion_text || null,
+      mover_id: open.mover_id || null,
+      seconder_id: open.seconder_id || null,
       mover: nameOf(open.mover_id),
       seconder: nameOf(open.seconder_id),
       tally,

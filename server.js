@@ -737,6 +737,7 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/delete$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendHtml(res, pages.notFound(), 404);
   repo.meetings.removeItem(item.id);
+  live.pushUpdate(item.meeting_id);
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
 
