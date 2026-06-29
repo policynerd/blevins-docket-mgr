@@ -656,11 +656,7 @@ function personDetail(person, user) {
   const sponsored = repo.people.sponsored(person.id);
   const voteRecord = repo.votes.byPerson(person.id);
   const voteSummary = repo.votes.personSummary(person.id);
-  const officeCardHtml = officeSection(person, auth.hasRole(user, 'clerk'));
-
-  const memRows = memberships.length
-    ? `<ul class="plain">${memberships.map((m) => html`<li><a href="/bodies/${m.body_id}">${m.body_name}</a> — ${m.role}${m.voting ? '' : ' (non-voting)'}</li>`).join('')}</ul>`
-    : emptyState('No current memberships.');
+  const isClerk = auth.hasRole(user, 'clerk');
 
   const sponsoredRows = sponsored.length ? sponsored.map((m) => html`
     <tr>
@@ -668,7 +664,36 @@ function personDetail(person, user) {
       <td>${typeBadge(m.type)}</td>
       <td class="title-cell">${m.title}</td>
       <td>${statusBadge(m.status)}</td>
+      <td>${raw(formatDate(m.intro_date))}</td>
     </tr>`).join('') : null;
+
+  const sponsoredPanel = sponsoredRows
+    ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Introduced</th></tr></thead><tbody>${sponsoredRows}</tbody></table>`
+    : emptyState('No sponsored legislation.');
+
+  const memPanel = memberships.length
+    ? `<table class="data"><thead><tr><th>Body</th><th>Role</th><th>Voting</th></tr></thead><tbody>${
+        memberships.map((m) => html`
+          <tr>
+            <td><a href="/bodies/${m.body_id}">${m.body_name}</a></td>
+            <td>${m.role}</td>
+            <td>${m.voting ? 'Voting' : 'Non-voting'}</td>
+          </tr>`).join('')}</tbody></table>`
+    : emptyState('No current memberships.');
+
+  const bioPanel = person.bio
+    ? `<p>${escapeText(person.bio)}</p>`
+    : emptyState('No biography on file.');
+
+  const officePanel = officeSection(person, isClerk);
+
+  const tabItems = [
+    { id: 'sponsored', label: 'Sponsored', count: sponsored.length, html: sponsoredPanel },
+    { id: 'voting', label: 'Voting record', count: voteRecord.length, html: votingRecordHtml(voteRecord, voteSummary) },
+    { id: 'memberships', label: 'Memberships', count: memberships.length, html: memPanel },
+    { id: 'bio', label: 'Biography', html: bioPanel },
+    { id: 'office', label: 'Office & Staff', html: officePanel },
+  ];
 
   const body = html`
     <p class="crumbs"><a href="/people">${ORG.membersLabel}</a> / ${person.full_name}</p>
@@ -682,17 +707,11 @@ function personDetail(person, user) {
           ${person.phone ? raw(` · ${escapeText(person.phone)}`) : ''}
           ${person.website ? raw(` · <a href="${escapeText(person.website)}">website</a>`) : ''}
         </p>
-        ${auth.hasRole(user, 'clerk') ? raw(`<p><a class="btn-link" href="/admin/people/${person.id}/edit">✎ Edit profile</a></p>`) : ''}
+        ${isClerk ? raw(`<p><a class="btn-link" href="/admin/people/${person.id}/edit">✎ Edit profile</a></p>`) : ''}
       </div>
     </div>
-    ${person.bio ? raw(card('Biography', `<p>${escapeText(person.bio)}</p>`)) : ''}
-    ${raw(card('Memberships', memRows))}
-    ${raw(officeCardHtml)}
-    ${raw(card('Sponsored legislation',
-      sponsoredRows
-        ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th></tr></thead><tbody>${sponsoredRows}</tbody></table>`
-        : emptyState('No sponsored legislation.')))}
-    ${raw(card('Voting record', votingRecordHtml(voteRecord, voteSummary)))}
+    ${raw(tabs(tabItems))}
+    <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: person.full_name, active: '/people', body });
 }
@@ -717,7 +736,8 @@ function bodiesList() {
 
 function bodyDetail(b) {
   const members = repo.bodies.members(b.id);
-  const meetings = repo.bodies.upcomingMeetings(b.id, 12);
+  const meetings = repo.bodies.upcomingMeetings(b.id, 24);
+  const legislation = repo.bodies.legislation(b.id);
 
   const memberRows = members.length ? members.map((m) => html`
     <tr>
@@ -727,26 +747,69 @@ function bodyDetail(b) {
       <td>${m.voting ? 'Voting' : 'Non-voting'}</td>
     </tr>`).join('') : null;
 
+  const membersPanel = memberRows
+    ? `<table class="data"><thead><tr><th>Name</th><th>Role</th><th>District</th><th>Voting</th></tr></thead><tbody>${memberRows}</tbody></table>`
+    : emptyState('No members assigned.');
+
+  const docCell = (url, label) => url
+    ? `<a class="doc-link" href="${escapeText(url)}">${label}</a>`
+    : '<span class="doc-na">—</span>';
+
   const meetingRows = meetings.length ? meetings.map((mt) => html`
     <tr>
       <td>${raw(formatDate(mt.meeting_date))}</td>
-      <td><a href="/meetings/${mt.id}">${raw(formatDateTime('', mt.meeting_time) || 'Meeting')}</a></td>
+      <td>${mt.meeting_time || ''}</td>
       <td>${statusBadge(mt.status)}</td>
+      <td class="icon-col"><a href="/meetings/${mt.id}">Details</a></td>
+      <td class="icon-col">${raw(docCell(mt.agenda_url, 'Agenda'))}</td>
+      <td class="icon-col">${raw(`<a class="doc-link" href="/meetings/${mt.id}/packet">Packet</a>`)}</td>
+      <td class="icon-col">${raw(mt.minutes_status === 'published'
+        ? `<a class="doc-link" href="/meetings/${mt.id}/minutes">Minutes</a>`
+        : docCell(mt.minutes_url, 'Minutes'))}</td>
     </tr>`).join('') : null;
+
+  const meetingsPanel = meetingRows
+    ? `<table class="data"><thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Details</th><th>Agenda</th><th>Packet</th><th>Minutes</th></tr></thead><tbody>${meetingRows}</tbody></table>`
+    : emptyState('No meetings on record.');
+
+  const legRows = legislation.length ? legislation.map((m) => html`
+    <tr>
+      <td><a href="/legislation/${encodeURIComponent(m.file_number)}">${m.file_number}</a></td>
+      <td>${typeBadge(m.type)}</td>
+      <td class="title-cell">${m.title}</td>
+      <td>${statusBadge(m.status)}</td>
+      <td>${raw(formatDate(m.intro_date))}</td>
+    </tr>`).join('') : null;
+
+  const legPanel = legRows
+    ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Introduced</th></tr></thead><tbody>${legRows}</tbody></table>`
+    : emptyState('No legislation in control of this body.');
+
+  const tabbed = tabs([
+    { id: 'members', label: 'Members', count: members.length, html: membersPanel },
+    { id: 'meetings', label: 'Meetings', count: meetings.length, html: meetingsPanel },
+    { id: 'legislation', label: 'Legislation', count: legislation.length, html: legPanel },
+  ]);
+
+  const meta = html`
+    <dl class="meta record-header">
+      <dt>Name</dt><dd>${b.name}</dd>
+      <dt>Type</dt><dd>${b.type || '—'}</dd>
+      <dt>Meeting schedule</dt><dd>${b.meets || '—'}</dd>
+      <dt>Location</dt><dd>${b.meeting_location || '—'}</dd>
+      <dt>Members</dt><dd>${members.length} (${members.filter((m) => m.voting).length} voting)</dd>
+      <dt>Status</dt><dd>${b.active ? 'Active' : 'Inactive'}</dd>
+    </dl>`;
 
   const body = html`
     <p class="crumbs"><a href="/bodies">Bodies & Committees</a> / ${b.name}</p>
-    <h1>${b.name}</h1>
-    <p class="muted">${[b.type, b.meets].filter(Boolean).join(' · ')}</p>
-    ${b.description ? raw(`<p>${escapeText(b.description)}</p>`) : ''}
-    ${raw(card('Members',
-      memberRows
-        ? `<table class="data"><thead><tr><th>Name</th><th>Role</th><th>District</th><th>Voting</th></tr></thead><tbody>${memberRows}</tbody></table>`
-        : emptyState('No members assigned.')))}
-    ${raw(card('Meetings',
-      meetingRows
-        ? `<table class="data"><thead><tr><th>Date</th><th></th><th>Status</th></tr></thead><tbody>${meetingRows}</tbody></table>`
-        : emptyState('No meetings on record.')))}
+    <div class="detail-head">
+      <h1>${b.name}</h1>
+    </div>
+    ${b.description ? raw(`<p class="body-desc">${escapeText(b.description)}</p>`) : ''}
+    ${raw(card('Body details', meta))}
+    ${raw(tabbed)}
+    <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: b.name, active: '/bodies', body });
 }
