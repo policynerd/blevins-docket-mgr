@@ -42,7 +42,7 @@ jobs:
                         ~/.sonar
                     key: ${{ runner.os }}-sonar-java17
                     restore-keys: ${{ runner.os }}-sonar-java17
-            -   name: Provision sonar-scanner without embedded JRE
+            -   name: Provision sonar-scanner with Java 17
                 run: |
                     SCANNER_VERSION="4.4.0.2170"
                     SCANNER_DIR="$HOME/.sonar/native-sonar-scanner/sonar-scanner-${SCANNER_VERSION}-linux"
@@ -53,6 +53,7 @@ jobs:
                       unzip -q /tmp/sonar-scanner.zip -d "$HOME/.sonar/native-sonar-scanner/"
                     fi
                     rm -rf "$SCANNER_DIR/jre"
+                    ln -sfn "$JAVA_HOME" "$SCANNER_DIR/jre"
                     chmod +x "$SCANNER_DIR/bin/sonar-scanner"
             -   name: Run Analysis
                 uses: codescan-io/codescan-scanner-action@5b2e8c5683ef6a5adc8fa3b7950bb07debccce12
