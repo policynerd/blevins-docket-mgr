@@ -211,11 +211,43 @@ function workflowStepper(steps) {
     </li>`).join('')}</ol>`;
 }
 
+// Standalone centered layout for auth pages — no nav, just brand + content + slim footer.
+function authLayout(title, body) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeText(title ? title + ' · ' : '')}${escapeText(ORG.tagline)}</title>
+  <link rel="stylesheet" href="/styles.css">
+  ${faviconLink()}
+  ${brandHead()}
+</head>
+<body class="auth-page">
+  <div class="auth-shell">
+    <a class="auth-brand" href="/">
+      ${brandMark()}
+      <span class="auth-brand-text">
+        <strong>${escapeText(ORG.name)}</strong>
+        <small>${escapeText(ORG.tagline)}</small>
+      </span>
+    </a>
+    ${body}
+    <footer class="auth-foot">
+      © ${new Date().getFullYear()} ${escapeText(ORG.name)} ·
+      <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> ·
+      <a href="/">Public portal</a>
+    </footer>
+  </div>
+</body>
+</html>`;
+}
+
 function forbidden() {
   return layout({
     title: 'Access denied', active: '',
-    body: '<div class="hero"><h1>403 — Access denied</h1><p>You don’t have permission to view this page. <a style="color:#fff;text-decoration:underline" href="/login">Sign in</a> with an authorized account.</p></div>',
+    body: '<div class="hero"><h1>403 — Access denied</h1><p>You don\'t have permission to view this page. <a style="color:#fff;text-decoration:underline" href="/login">Sign in</a> with an authorized account.</p></div>',
   });
 }
 
-module.exports = { layout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
+module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
