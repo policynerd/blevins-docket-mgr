@@ -153,6 +153,12 @@ const bodies = {
   setActive(id, active) {
     db.prepare('UPDATE bodies SET active=? WHERE id=?').run(active ? 1 : 0, id);
   },
+  legislation(bodyId) {
+    return db.prepare(`
+      SELECT id, file_number, type, title, status, intro_date
+      FROM matters WHERE body_id = ?
+      ORDER BY intro_date DESC, id DESC`).all(bodyId);
+  },
   // Count rows that would block a hard delete (FK references without cascade).
   references(id) {
     const n = (sql) => db.prepare(sql).get(id).n;
