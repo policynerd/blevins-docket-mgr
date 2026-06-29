@@ -84,7 +84,8 @@ function matterForm(matter, opts = {}) {
         var sel = document.querySelector('select[name="type"]');
         var out = document.getElementById('fn-preview');
         if(!sel||!out) return;
-        function refresh(){ fetch('/admin/matters/next-number?type='+encodeURIComponent(sel.value)).then(function(r){return r.json();}).then(function(d){out.textContent=d.number;}); }
+        var seq=0;
+        function refresh(){ var s=++seq; fetch('/admin/matters/next-number?type='+encodeURIComponent(sel.value)).then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){if(s===seq)out.textContent=d.number;}).catch(function(){if(s===seq)out.textContent='—';}); }
         sel.addEventListener('change', refresh);
         refresh();
       })();

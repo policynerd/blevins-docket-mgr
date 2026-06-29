@@ -525,6 +525,7 @@ route('POST', /^\/admin\/meetings\/(\d+)\/load-template$/, (req, res, ctx) => {
   const meetingId = Number(ctx.params[0]);
   const mt = repo.meetings.get(meetingId);
   if (!mt) return sendHtml(res, pages.notFound(), 404);
+  if (repo.meetings.items(meetingId).length > 0) return redirect(res, `/admin/meetings/${meetingId}/agenda`);
   const { db: settingsDb } = require('./src/db');
   const row = settingsDb.prepare("SELECT value FROM settings WHERE key = 'agenda.template'").get();
   if (row && row.value) {

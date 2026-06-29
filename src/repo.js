@@ -404,21 +404,46 @@ const meetings = {
     const maxOrder = existing.length ? existing[existing.length - 1].sort_order : 0;
 
     // Auto-assign agenda_number when not provided: "1A", "1B" within sections,
-    // or "1", "2", "3" for unsectioned items.
+    // or "1", "2", "3" for unsectioned items. Derived from existing agenda_number
+    // values so deletes and reorders never cause collisions.
     let agendaNum = it.agenda_number || null;
     if (!agendaNum) {
       if (it.section) {
-        const sections = [];
-        const seen = new Set();
-        for (const row of existing) {
-          if (row.section && !seen.has(row.section)) { seen.add(row.section); sections.push(row.section); }
+        const sectionItems = existing.filter((r) => r.section === it.section && r.agenda_number);
+        if (sectionItems.length > 0) {
+          // Reuse the numeric prefix already established for this section.
+          const prefixMatch = sectionItems[0].agenda_number.match(/^(\d+)/);
+          const prefix = prefixMatch ? prefixMatch[1] : '1';
+          // Find the highest letter suffix in use and take the next one.
+          let maxCode = 64; // one before 'A'
+          for (const si of sectionItems) {
+            const lm = si.agenda_number.match(/([A-Za-z]+)$/);
+            if (lm && lm[1].length === 1) maxCode = Math.max(maxCode, lm[1].toUpperCase().charCodeAt(0));
+          }
+          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}${maxCode - 64 + 1}`;
+        } else {
+          // New section: assign the next unused numeric prefix.
+          const usedPrefixes = new Set();
+          for (const row of existing) {
+            if (row.section && row.agenda_number) {
+              const m = row.agenda_number.match(/^(\d+)/);
+              if (m) usedPrefixes.add(Number(m[1]));
+            }
+          }
+          let next = 1;
+          while (usedPrefixes.has(next)) next++;
+          agendaNum = `${next}A`;
         }
-        let si = sections.indexOf(it.section);
-        if (si === -1) si = sections.length;
-        const letter = String.fromCharCode(65 + existing.filter((r) => r.section === it.section).length);
-        agendaNum = `${si + 1}${letter}`;
       } else {
-        agendaNum = String(existing.filter((r) => !r.section).length + 1);
+        // Unsectioned: max existing numeric agenda_number + 1.
+        let maxN = 0;
+        for (const row of existing) {
+          if (!row.section && row.agenda_number) {
+            const n = parseInt(row.agenda_number, 10);
+            if (!isNaN(n)) maxN = Math.max(maxN, n);
+          }
+        }
+        agendaNum = String(maxN + 1);
       }
     }
 
