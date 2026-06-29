@@ -298,6 +298,7 @@ const COLUMN_MIGRATIONS = {
     seconder_id: 'INTEGER REFERENCES people(id)',
     motion_text: 'TEXT',
     vote_status: "TEXT NOT NULL DEFAULT 'pending'",
+    vote_threshold: "TEXT NOT NULL DEFAULT 'majority'", // majority | two_thirds | majority_full
   },
   matters: {
     body_html: 'TEXT',

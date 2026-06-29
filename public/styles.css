@@ -347,6 +347,19 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .la-myvote { margin-top: 14px; padding: 14px; background: #fff8e6; border: 1px solid #f0d98a; border-radius: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .vote-btn { background: var(--accent); }
 .la-actions { margin-top: 16px; }
+.outcome-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 4px; background: #f4f7fb; border: 1px solid var(--line); margin-bottom: 14px; font-size: 13px; }
+.ob-sep { color: var(--muted); }
+.ob-threshold { color: var(--muted); }
+.qb-met { color: var(--good); font-weight: 600; }
+.qb-fail { color: var(--bad); font-weight: 600; }
+.out-pass { color: var(--good); font-size: 14px; }
+.out-fail { color: var(--bad); font-size: 14px; }
+.out-noquorum { color: #b07300; font-size: 14px; }
+.la-motion-form { margin-bottom: 14px; font-size: 13px; }
+.la-motion-form summary { cursor: pointer; color: var(--accent-dark); font-weight: 600; padding: 6px 0; }
+.la-motion-fields { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; background: #f4f7fb; border: 1px solid var(--line); border-radius: 4px; margin-top: 6px; }
+.la-motion-fields label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.la-motion-fields select, .la-motion-fields input { font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; }
 .live-agenda { list-style: none; padding: 0; margin: 0; }
 .live-ag-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .lai-title { flex: 1; }

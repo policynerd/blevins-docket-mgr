@@ -720,6 +720,12 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
   if (!item) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
   repo.meetings.setItemResult(itemId, b.action, b.result);
+  repo.meetings.setMotion(itemId, {
+    mover_id: b.mover_id ? Number(b.mover_id) : null,
+    seconder_id: b.seconder_id ? Number(b.seconder_id) : null,
+    motion_text: b.motion_text || null,
+    vote_threshold: b.vote_threshold || 'majority',
+  });
   repo.votes.clearForItem(itemId);
   for (const key of Object.keys(b)) {
     const m = key.match(/^vote_(\d+)$/);
@@ -832,7 +838,20 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
   const t = repo.votes.tally(item.id);
-  const result = t.Yea > t.Nay ? 'Pass' : 'Fail';
+  const threshold = item.vote_threshold || 'majority';
+  const yea = t.Yea || 0;
+  const nay = t.Nay || 0;
+  let passes;
+  if (threshold === 'two_thirds') {
+    const cast = yea + nay;
+    passes = cast > 0 && yea / cast >= 2 / 3;
+  } else if (threshold === 'majority_full') {
+    const seatCount = repo.bodies.members(item.body_id).length;
+    passes = yea > Math.floor(seatCount / 2);
+  } else {
+    passes = yea > nay;
+  }
+  const result = passes ? 'Pass' : 'Fail';
   repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
   repo.meetings.setVoteStatus(item.id, 'closed');
   // Reflect the outcome on the matter's legislative history.
@@ -854,6 +873,7 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/motion$/, (req, res, ctx) => {
     mover_id: b.mover_id ? Number(b.mover_id) : null,
     seconder_id: b.seconder_id ? Number(b.seconder_id) : null,
     motion_text: b.motion_text || null,
+    vote_threshold: b.vote_threshold || undefined,
   });
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true });

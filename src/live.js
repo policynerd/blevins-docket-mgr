@@ -21,11 +21,38 @@ function snapshot(meetingId) {
   const members = repo.bodies.members(meeting.body_id);
   const open = items.find((i) => i.vote_status === 'open') || null;
 
+  const seatCount = members.length;
+  const quorumNeeded = seatCount ? Math.floor(seatCount / 2) + 1 : 0;
+
   let active = null;
   if (open) {
     const cast = repo.votes.forItem(open.id);
     const castBy = {};
     for (const v of cast) castBy[v.person_id] = v.vote;
+    const tally = repo.votes.tally(open.id);
+    const absentCount = tally.Absent || 0;
+    const presentCount = seatCount - absentCount;
+    const quorumMet = presentCount >= quorumNeeded;
+    const threshold = open.vote_threshold || 'majority';
+
+    let projectedOutcome;
+    if (!quorumMet) {
+      projectedOutcome = 'No quorum';
+    } else {
+      const yea = tally.Yea || 0;
+      const nay = tally.Nay || 0;
+      let passes;
+      if (threshold === 'two_thirds') {
+        const castVotes = yea + nay;
+        passes = castVotes > 0 && yea / castVotes >= 2 / 3;
+      } else if (threshold === 'majority_full') {
+        passes = yea > Math.floor(seatCount / 2);
+      } else {
+        passes = yea > nay;
+      }
+      projectedOutcome = passes ? 'Passes' : 'Fails';
+    }
+
     active = {
       id: open.id,
       agenda_number: open.agenda_number,
@@ -34,10 +61,15 @@ function snapshot(meetingId) {
       motion_text: open.motion_text || null,
       mover: nameOf(open.mover_id),
       seconder: nameOf(open.seconder_id),
-      tally: repo.votes.tally(open.id),
+      tally,
       roster: members.map((m) => ({
         person_id: m.person_id, name: m.full_name, vote: castBy[m.person_id] || null,
       })),
+      seatCount,
+      quorumNeeded,
+      quorumMet,
+      threshold,
+      projectedOutcome,
     };
   }
 

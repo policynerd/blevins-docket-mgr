@@ -359,11 +359,29 @@ function voteBlock(meeting, it) {
       </span>
     </div>`).join('') : '';
 
+  const memberSel = (name, currentId) => {
+    const opts = '<option value="">—</option>' + members.map((m) =>
+      `<option value="${m.person_id}"${String(m.person_id) === String(currentId) ? ' selected' : ''}>${escapeText(m.full_name)}</option>`
+    ).join('');
+    return `<select name="${name}">${opts}</select>`;
+  };
+  const thresholdSel = [
+    ['majority', 'Majority of votes cast'],
+    ['two_thirds', 'Two-thirds (⅔)'],
+    ['majority_full', 'Majority of full body'],
+  ].map(([v, l]) => `<option value="${v}"${(it.vote_threshold || 'majority') === v ? ' selected' : ''}>${l}</option>`).join('');
+
   const voteForm = it.matter_id ? html`
     <form class="form vote-form" method="post" action="/admin/agenda-items/${it.id}/votes">
       <div class="form-row">
         <label>Action<input type="text" name="action" value="${it.action || ''}" placeholder="Motion to adopt"></label>
         <label>Result<select name="result">${raw(selectOptions(['', 'Pass', 'Fail'], it.result || ''))}</select></label>
+        <label>Threshold<select name="vote_threshold">${raw(thresholdSel)}</select></label>
+      </div>
+      <div class="form-row">
+        <label>Mover${raw(memberSel('mover_id', it.mover_id))}</label>
+        <label>Seconder${raw(memberSel('seconder_id', it.seconder_id))}</label>
+        <label>Motion text<input type="text" name="motion_text" value="${it.motion_text || ''}" placeholder="I move to…"></label>
       </div>
       <div class="vote-grid">${raw(voteRows)}</div>
       <button type="submit" class="btn">Save votes</button>
