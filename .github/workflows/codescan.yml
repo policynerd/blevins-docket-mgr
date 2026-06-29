@@ -40,8 +40,20 @@ jobs:
                 with:
                     path: |
                         ~/.sonar
-                    key: ${{ runner.os }}-sonar
-                    restore-keys: ${{ runner.os }}-sonar
+                    key: ${{ runner.os }}-sonar-java17
+                    restore-keys: ${{ runner.os }}-sonar-java17
+            -   name: Provision sonar-scanner without embedded JRE
+                run: |
+                    SCANNER_VERSION="4.4.0.2170"
+                    SCANNER_DIR="$HOME/.sonar/native-sonar-scanner/sonar-scanner-${SCANNER_VERSION}-linux"
+                    if [ ! -f "$SCANNER_DIR/bin/sonar-scanner" ]; then
+                      mkdir -p "$HOME/.sonar/native-sonar-scanner"
+                      curl -sSL -o /tmp/sonar-scanner.zip \
+                        "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SCANNER_VERSION}-linux.zip"
+                      unzip -q /tmp/sonar-scanner.zip -d "$HOME/.sonar/native-sonar-scanner/"
+                    fi
+                    rm -rf "$SCANNER_DIR/jre"
+                    chmod +x "$SCANNER_DIR/bin/sonar-scanner"
             -   name: Run Analysis
                 uses: codescan-io/codescan-scanner-action@5b2e8c5683ef6a5adc8fa3b7950bb07debccce12
                 with:
