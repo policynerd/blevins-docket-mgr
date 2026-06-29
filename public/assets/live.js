@@ -34,13 +34,13 @@
     }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json().catch(function () { return {}; }); });
   }
 
-  function tallyBar(t) {
-    return '<div class="tally">' +
-      '<span class="v yea">Yea ' + (t.Yea || 0) + '</span>' +
-      '<span class="v nay">Nay ' + (t.Nay || 0) + '</span>' +
-      '<span class="v">Abstain ' + (t.Abstain || 0) + '</span>' +
-      '<span class="v">Recused ' + (t.Recused || 0) + '</span>' +
-      '<span class="v">Absent ' + (t.Absent || 0) + '</span>' +
+  function tallyBoard(t) {
+    var notVoting = (t.Recused || 0) + (t.Absent || 0);
+    return '<div class="vote-board">' +
+      '<div class="vb-col vb-yea"><span class="vb-n">' + (t.Yea || 0) + '</span><span class="vb-l">Yea</span></div>' +
+      '<div class="vb-col vb-nay"><span class="vb-n">' + (t.Nay || 0) + '</span><span class="vb-l">Nay</span></div>' +
+      '<div class="vb-col vb-abs"><span class="vb-n">' + (t.Abstain || 0) + '</span><span class="vb-l">Abstain</span></div>' +
+      '<div class="vb-col vb-nv"><span class="vb-n">' + notVoting + '</span><span class="vb-l">Not Voting</span></div>' +
       '</div>';
   }
 
@@ -77,7 +77,7 @@
       '<label>Seconder <select data-mf-seconder>' + rosterOpts(a.seconder_id) + '</select></label>' +
       '<label>Threshold <select data-mf-threshold>' + threshOpts + '</select></label>' +
       '<label>Motion text <input type="text" data-mf-text value="' + esc(a.motion_text || '') + '" placeholder="I move to…"></label>' +
-      '<button class="btn" data-mf-save="' + a.id + '">Save motion</button>' +
+      '<button class="btn" data-mf-save="' + esc(a.id) + '">Save motion</button>' +
       '</div></details>';
   }
 
@@ -93,23 +93,24 @@
       html += '<p class="la-motion">' + (a.motion_text ? '<strong>Motion:</strong> ' + esc(a.motion_text) + ' · ' : '') +
         (a.mover ? 'Moved by ' + esc(a.mover) : '') + (a.seconder ? ', seconded by ' + esc(a.seconder) : '') + '</p>';
     }
-    html += tallyBar(a.tally);
+    html += tallyBoard(a.tally);
     if (a.seatCount) html += outcomeBar(a);
     if (control) html += motionForm(a);
 
-    // Roster with each member's recorded vote
+    // Roster grid — each member's name, vote chip, and (clerk only) cast controls
     html += '<div class="la-roster">';
     a.roster.forEach(function (m) {
       var mine = personId && String(m.person_id) === String(personId);
+      var voteClass = m.vote ? 'vt vt-' + esc(m.vote.toLowerCase()) : 'vt vt-pending';
+      var voteLabel = m.vote ? esc(m.vote) : '—';
       html += '<div class="la-row' + (mine ? ' mine' : '') + '">';
       html += '<span class="la-name">' + esc(m.name) + (mine ? ' <em>(you)</em>' : '') + '</span>';
-      html += '<span class="la-vote">' + (m.vote
-        ? '<span class="vt vt-' + esc(m.vote.toLowerCase()) + '">' + esc(m.vote) + '</span>'
-        : '<span class="muted">—</span>') + '</span>';
+      html += '<span class="la-vote"><span class="' + voteClass + '">' + voteLabel + '</span></span>';
       if (control) {
         html += '<span class="la-controls">';
         VOTES.forEach(function (v) {
-          html += '<button class="chip-btn" data-cast="' + m.person_id + '" data-vote="' + v + '">' + v + '</button>';
+          var active = m.vote === v ? ' active' : '';
+          html += '<button class="chip-btn' + active + '" data-cast="' + esc(m.person_id) + '" data-vote="' + v + '">' + v + '</button>';
         });
         html += '</span>';
       }

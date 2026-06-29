@@ -451,7 +451,7 @@ function agendaTemplateAdmin(saved) {
       The section name groups items on the agenda. The template is stamped onto a new meeting when you click "Load standard agenda template".</p>
       <form class="form" method="post" action="/admin/agenda-template">
         <label>Template items
-          <textarea name="template" rows="14" style="font-family:monospace">${current || 'Call to Order | Call to Order\nRoll Call | Roll Call\nApproval of Minutes | Approval of Minutes\nPublic Comment | Public Comment\nAdjournment | Adjournment'}</textarea>
+          <textarea name="template" rows="14" style="font-family:monospace">${current || 'Call to Order | Call to Order\nCall to Order | Pledge of Allegiance\nCall to Order | Land Acknowledgement\nRoll Call | Quorum Call\nPublic Comment | Public Comment\nApproval of Minutes | Approval of Minutes\nApproval of Minutes | Approval of the Agenda\nConsent Agenda | Development of the Consent Calendar\nConsent Agenda | Approval of the Consent Calendar'}</textarea>
         </label>
         <div class="form-actions"><button type="submit" class="btn primary">Save template</button></div>
       </form>`))}`;

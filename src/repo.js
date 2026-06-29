@@ -420,7 +420,7 @@ const meetings = {
             const lm = si.agenda_number.match(/([A-Za-z]+)$/);
             if (lm && lm[1].length === 1) maxCode = Math.max(maxCode, lm[1].toUpperCase().charCodeAt(0));
           }
-          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}${maxCode - 64 + 1}`;
+          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}-${maxCode - 63}`;
         } else {
           // New section: assign the next unused numeric prefix.
           const usedPrefixes = new Set();
@@ -521,6 +521,28 @@ const meetings = {
       throw e;
     }
     return pos;
+  },
+  inSession() {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.status = 'In Progress'
+      ORDER BY mt.meeting_date DESC, mt.meeting_time DESC`).all();
+  },
+  nextScheduled(fromDate) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.meeting_date >= ? AND mt.status NOT IN ('Cancelled', 'Adjourned', 'Final', 'In Progress')
+      ORDER BY mt.meeting_date ASC, mt.meeting_time ASC
+      LIMIT 1`).get(fromDate);
+  },
+  todayDocket(date) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.meeting_date = ? AND mt.status != 'Cancelled'
+      ORDER BY mt.meeting_time ASC`).all(date);
   },
 };
 

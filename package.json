@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
-    "@supabase/supabase-js": "^2.108.2"
+    "@supabase/supabase-js": "^2.108.2",
+    "pdf-lib": "^1.17.1"
   },
   "engines": {
     "node": ">=22.5.0"

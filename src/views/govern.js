@@ -76,8 +76,8 @@ function bodiesAdmin() {
 function bodyForm(b) {
   const isEdit = !!b;
   const action = isEdit ? `/admin/bodies/${b.id}` : '/admin/bodies';
-  const types = ['Governing Board', 'Primary Legislative Body', 'Standing Committee',
-    'Commission', 'Board', 'Advisory Committee', 'Subcommittee', 'Task Force'];
+  const types = ['Governing Body', 'Standing Committee', 'Commission',
+    'Advisory Board', 'Subcommittee', 'Task Force'];
   const form = html`
     <form class="form" method="post" action="${action}">
       <label>Name<input type="text" name="name" required value="${b ? b.name : ''}" placeholder="Finance Committee"></label>
