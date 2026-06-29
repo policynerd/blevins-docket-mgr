@@ -501,6 +501,49 @@ route('POST', /^\/admin\/branding$/, (req, res, ctx) => {
   redirect(res, '/admin/branding?saved=1');
 });
 
+// Agenda template (admin) ----------------------------------------------------
+route('GET', /^\/admin\/agenda-template\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  sendHtml(res, admin.agendaTemplateAdmin(ctx.query.saved === '1'));
+});
+route('POST', /^\/admin\/agenda-template$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  const lines = (ctx.body.template || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const items = lines.map((line) => {
+    const sep = line.indexOf('|');
+    if (sep === -1) return { section: '', title: line.trim() };
+    return { section: line.slice(0, sep).trim(), title: line.slice(sep + 1).trim() };
+  });
+  const { db: settingsDb } = require('./src/db');
+  settingsDb.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('agenda.template', ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+    .run(JSON.stringify(items));
+  redirect(res, '/admin/agenda-template?saved=1');
+});
+route('POST', /^\/admin\/meetings\/(\d+)\/load-template$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  const meetingId = Number(ctx.params[0]);
+  const mt = repo.meetings.get(meetingId);
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  if (repo.meetings.items(meetingId).length > 0) return redirect(res, `/admin/meetings/${meetingId}/agenda`);
+  const { db: settingsDb } = require('./src/db');
+  const row = settingsDb.prepare("SELECT value FROM settings WHERE key = 'agenda.template'").get();
+  if (row && row.value) {
+    try {
+      const items = JSON.parse(row.value);
+      for (const item of items) {
+        repo.meetings.addItem({ meeting_id: meetingId, section: item.section || null, title: item.title });
+      }
+    } catch (_) { /* invalid template JSON — ignore */ }
+  }
+  redirect(res, `/admin/meetings/${meetingId}/agenda`);
+});
+// Next file-number preview (JSON, for the new-matter form)
+route('GET', /^\/admin\/matters\/next-number$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  sendJson(res, { number: repo.matters.nextFileNumber(ctx.query.type || 'Ordinance') });
+});
+
 // Editable legal pages — Terms & Privacy (admin) -----------------------------
 function blankHtml(s) {
   return String(s || '').replace(/<[^>]*>/g, '').replace(/&nbsp;|&amp;|\s/g, '').length === 0;

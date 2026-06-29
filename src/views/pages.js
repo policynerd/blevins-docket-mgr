@@ -536,7 +536,11 @@ function agendaPacket(meeting) {
           ` — ${itemVotes.map((v) => `${escapeText(v.full_name)} (${v.vote})`).join('; ')}</p>`
         : '';
       const attachLine = attachments.length
-        ? `<p class="pk-meta"><strong>Attachments:</strong> ${attachments.map((a) => escapeText(a.name)).join(', ')}</p>`
+        ? `<p class="pk-meta"><strong>Attachments:</strong></p><ul class="pk-attachments">${attachments.map((a) =>
+            `<li>${a.url
+              ? `<a href="${escapeText(a.url)}" target="_blank" rel="noopener">${escapeText(a.name)}</a>`
+              : escapeText(a.name)}${a.note ? ` <span class="muted">— ${escapeText(a.note)}</span>` : ''}</li>`
+          ).join('')}</ul>`
         : '';
       detail = `<div class="pk-title"><span class="pk-file">${escapeText(it.file_number)}</span> ${escapeText(it.matter_title)}</div>`
         + summary + sponsorLine + actionLine + voteLine + attachLine;

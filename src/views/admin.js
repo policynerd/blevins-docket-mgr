@@ -25,6 +25,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/meetings/new">+ Schedule meeting</a>
       <a class="btn" href="/govern/members">Board membership</a>
       <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
+      <a class="btn" href="/admin/agenda-template">Agenda template</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
@@ -76,6 +77,20 @@ function matterForm(matter, opts = {}) {
     <label class="chk"><input type="checkbox" name="sponsor_id" value="${p.id}"
       ${sponsors.includes(p.id) ? raw('checked') : ''}> ${p.full_name}</label>`).join('');
 
+  const fileNumPreview = !isEdit ? raw(`
+    <p class="muted file-num-preview">File # will be auto-assigned: <strong id="fn-preview">…</strong></p>
+    <script>
+      (function(){
+        var sel = document.querySelector('select[name="type"]');
+        var out = document.getElementById('fn-preview');
+        if(!sel||!out) return;
+        var seq=0;
+        function refresh(){ var s=++seq; fetch('/admin/matters/next-number?type='+encodeURIComponent(sel.value)).then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){if(s===seq)out.textContent=d.number;}).catch(function(){if(s===seq)out.textContent='—';}); }
+        sel.addEventListener('change', refresh);
+        refresh();
+      })();
+    </script>`) : '';
+
   const form = html`
     <form class="form" method="post" action="${action}">
       <div class="form-row">
@@ -86,6 +101,7 @@ function matterForm(matter, opts = {}) {
           <select name="status">${raw(selectOptions(repo.MATTER_STATUSES, matter ? matter.status : 'Draft'))}</select>
         </label>
       </div>
+      ${fileNumPreview}
       <label>Title
         <input type="text" name="title" required value="${matter ? matter.title : ''}" placeholder="An ordinance amending…">
       </label>
@@ -302,7 +318,9 @@ function agendaManager(meeting) {
   const addItemForm = html`
     <form class="form inline-form" method="post" action="/admin/meetings/${meeting.id}/agenda">
       <div class="form-row">
-        <label>Agenda #<input type="text" name="agenda_number" placeholder="5.A"></label>
+        <label>Agenda # <span class="muted" style="font-weight:400">(auto)</span>
+          <input type="text" name="agenda_number" placeholder="auto (e.g. 1A)">
+        </label>
         <label>Section<select name="section">${raw(selectOptions(repo.AGENDA_SECTIONS, '', { includeBlank: '—' }))}</select></label>
       </div>
       <label>Legislative file (optional)
@@ -313,6 +331,16 @@ function agendaManager(meeting) {
       </label>
       <button type="submit" class="btn">Add to agenda</button>
     </form>`;
+
+  const { db: settingsDb } = require('../db');
+  const templateRow = settingsDb.prepare("SELECT value FROM settings WHERE key = 'agenda.template'").get();
+  const hasTemplate = !!(templateRow && templateRow.value);
+
+  const loadTemplateBtn = hasTemplate && items.length === 0
+    ? `<form class="inline" method="post" action="/admin/meetings/${meeting.id}/load-template">
+        <button type="submit" class="btn">Load standard agenda template</button>
+      </form>`
+    : '';
 
   const reorderHint = items.length > 1
     ? '<p class="muted reorder-hint">Drag items by the ⠿ handle to reorder. <span class="reorder-status" data-reorder-status></span></p>'
@@ -332,7 +360,7 @@ function agendaManager(meeting) {
     <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
     ${raw(card('Add agenda item', addItemForm))}
     ${raw(card('Agenda items & voting',
-      reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
+      loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
     <script src="/assets/agenda-reorder.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
@@ -401,6 +429,35 @@ function voteBlock(meeting, it) {
   </div>`;
 }
 
+// --- Agenda template admin --------------------------------------------------
+function agendaTemplateAdmin(saved) {
+  const { db: settingsDb } = require('../db');
+  const row = settingsDb.prepare("SELECT value FROM settings WHERE key = 'agenda.template'").get();
+  let current = '';
+  if (row && row.value) {
+    try {
+      const parsed = JSON.parse(row.value);
+      current = parsed.map((i) => i.section ? `${i.section} | ${i.title}` : i.title).join('\n');
+    } catch (_) { current = row.value; }
+  }
+
+  const savedBanner = saved ? '<p class="saved-banner">Template saved.</p>' : '';
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Agenda template</p>
+    <h1>Standard agenda template</h1>
+    ${raw(savedBanner)}
+    ${raw(card('Edit template', html`
+      <p class="muted">One item per line. Format: <code>Section | Display title</code> — or just a title with no section.<br>
+      The section name groups items on the agenda. The template is stamped onto a new meeting when you click "Load standard agenda template".</p>
+      <form class="form" method="post" action="/admin/agenda-template">
+        <label>Template items
+          <textarea name="template" rows="14" style="font-family:monospace">${current || 'Call to Order | Call to Order\nRoll Call | Roll Call\nApproval of Minutes | Approval of Minutes\nPublic Comment | Public Comment\nAdjournment | Adjournment'}</textarea>
+        </label>
+        <div class="form-actions"><button type="submit" class="btn primary">Save template</button></div>
+      </form>`))}`;
+  return layout({ title: 'Agenda template', active: '/admin', body });
+}
+
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin,
 };

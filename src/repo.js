@@ -398,14 +398,60 @@ const meetings = {
       mt.minutes_url || null, mt.notes || null, id);
   },
   addItem(it) {
-    const maxOrder = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), 0) AS m FROM agenda_items WHERE meeting_id = ?')
-      .get(it.meeting_id).m;
+    const existing = db.prepare(
+      'SELECT section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
+      .all(it.meeting_id);
+    const maxOrder = existing.length ? existing[existing.length - 1].sort_order : 0;
+
+    // Auto-assign agenda_number when not provided: "1A", "1B" within sections,
+    // or "1", "2", "3" for unsectioned items. Derived from existing agenda_number
+    // values so deletes and reorders never cause collisions.
+    let agendaNum = it.agenda_number || null;
+    if (!agendaNum) {
+      if (it.section) {
+        const sectionItems = existing.filter((r) => r.section === it.section && r.agenda_number);
+        if (sectionItems.length > 0) {
+          // Reuse the numeric prefix already established for this section.
+          const prefixMatch = sectionItems[0].agenda_number.match(/^(\d+)/);
+          const prefix = prefixMatch ? prefixMatch[1] : '1';
+          // Find the highest letter suffix in use and take the next one.
+          let maxCode = 64; // one before 'A'
+          for (const si of sectionItems) {
+            const lm = si.agenda_number.match(/([A-Za-z]+)$/);
+            if (lm && lm[1].length === 1) maxCode = Math.max(maxCode, lm[1].toUpperCase().charCodeAt(0));
+          }
+          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}${maxCode - 64 + 1}`;
+        } else {
+          // New section: assign the next unused numeric prefix.
+          const usedPrefixes = new Set();
+          for (const row of existing) {
+            if (row.section && row.agenda_number) {
+              const m = row.agenda_number.match(/^(\d+)/);
+              if (m) usedPrefixes.add(Number(m[1]));
+            }
+          }
+          let next = 1;
+          while (usedPrefixes.has(next)) next++;
+          agendaNum = `${next}A`;
+        }
+      } else {
+        // Unsectioned: max existing numeric agenda_number + 1.
+        let maxN = 0;
+        for (const row of existing) {
+          if (!row.section && row.agenda_number) {
+            const n = parseInt(row.agenda_number, 10);
+            if (!isNaN(n)) maxN = Math.max(maxN, n);
+          }
+        }
+        agendaNum = String(maxN + 1);
+      }
+    }
+
     return db.prepare(`INSERT INTO agenda_items
       (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes)
       VALUES (?,?,?,?,?,?,?,?,?)`).run(
       it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
-      it.agenda_number || null, it.section || null, it.title || null,
+      agendaNum, it.section || null, it.title || null,
       it.action || null, it.result || null, it.notes || null).lastInsertRowid;
   },
   getItem(id) {
