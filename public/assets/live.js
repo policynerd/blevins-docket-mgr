@@ -77,7 +77,7 @@
       '<label>Seconder <select data-mf-seconder>' + rosterOpts(a.seconder_id) + '</select></label>' +
       '<label>Threshold <select data-mf-threshold>' + threshOpts + '</select></label>' +
       '<label>Motion text <input type="text" data-mf-text value="' + esc(a.motion_text || '') + '" placeholder="I move to…"></label>' +
-      '<button class="btn" data-mf-save="' + a.id + '">Save motion</button>' +
+      '<button class="btn" data-mf-save="' + esc(a.id) + '">Save motion</button>' +
       '</div></details>';
   }
 
@@ -110,7 +110,7 @@
         html += '<span class="la-controls">';
         VOTES.forEach(function (v) {
           var active = m.vote === v ? ' active' : '';
-          html += '<button class="chip-btn' + active + '" data-cast="' + m.person_id + '" data-vote="' + v + '">' + v + '</button>';
+          html += '<button class="chip-btn' + active + '" data-cast="' + esc(m.person_id) + '" data-vote="' + v + '">' + v + '</button>';
         });
         html += '</span>';
       }

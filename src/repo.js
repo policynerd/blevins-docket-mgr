@@ -420,7 +420,7 @@ const meetings = {
             const lm = si.agenda_number.match(/([A-Za-z]+)$/);
             if (lm && lm[1].length === 1) maxCode = Math.max(maxCode, lm[1].toUpperCase().charCodeAt(0));
           }
-          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}${maxCode - 64 + 1}`;
+          agendaNum = maxCode < 90 ? `${prefix}${String.fromCharCode(maxCode + 1)}` : `${prefix}-${maxCode - 63}`;
         } else {
           // New section: assign the next unused numeric prefix.
           const usedPrefixes = new Set();

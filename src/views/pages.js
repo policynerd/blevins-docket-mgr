@@ -580,6 +580,7 @@ function agendaPacket(meeting) {
     <div class="no-print packet-toolbar">
       <a class="btn-link" href="/meetings/${meeting.id}">← Back to meeting</a>
       <button class="btn primary" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <a class="btn" href="/meetings/${meeting.id}/packet.pdf">⬇ Download PDF with attachments</a>
     </div>
     <article class="packet">
       <header class="pk-head">
@@ -796,16 +797,19 @@ function docket() {
       ? `<table class="data meeting-items"><thead><tr><th>#</th><th>File #</th><th>Type</th><th>Title</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`
       : emptyState('No agenda items posted.');
 
-    return card(`${escapeText(mt.body_name)} — ${raw(formatDateTime(mt.meeting_date, mt.meeting_time))}${mt.location ? ' · ' + escapeText(mt.location) : ''}`,
-      `${statusBadge(mt.status)} <a class="btn-link" href="/meetings/${mt.id}/packet" style="margin-left:8px">Agenda packet</a>${grid}`);
+    const stCls = 'st-' + String(mt.status || '').toLowerCase().replace(/[^a-z]+/g, '-');
+    return card(
+      `${escapeText(mt.body_name)} — ${formatDateTime(mt.meeting_date, mt.meeting_time)}${mt.location ? ' · ' + escapeText(mt.location) : ''}`,
+      `<span class="badge ${stCls}">${escapeText(mt.status)}</span> <a class="btn-link" href="/meetings/${mt.id}/packet" style="margin-left:8px">Agenda packet</a>${grid}`
+    );
   });
 
   const noMeetings = meetings.length === 0
-    ? emptyState(`No meetings scheduled for today (${raw(formatDate(today))}).`)
+    ? emptyState(`No meetings scheduled for today (${formatDate(today)}).`)
     : '';
 
   const upcomingNote = upcoming && meetings.length === 0
-    ? raw(`<p class="muted">Next scheduled meeting: <a href="/meetings/${upcoming.id}">${escapeText(upcoming.body_name)}</a> on ${raw(formatDate(upcoming.meeting_date))}${upcoming.meeting_time ? ' at ' + escapeText(upcoming.meeting_time) : ''}.</p>`)
+    ? raw(`<p class="muted">Next scheduled meeting: <a href="/meetings/${upcoming.id}">${escapeText(upcoming.body_name)}</a> on ${formatDate(upcoming.meeting_date)}${upcoming.meeting_time ? ' at ' + escapeText(upcoming.meeting_time) : ''}.</p>`)
     : '';
 
   const body = html`
@@ -818,7 +822,7 @@ function docket() {
     ${upcomingNote}
     ${raw(meetingBlocks.join(''))}
   `;
-  return layout({ title: "Today's Docket", active: '/calendar', body });
+  return layout({ title: "Today's Docket", active: '/docket', body });
 }
 
 // --- helpers -----------------------------------------------------------------

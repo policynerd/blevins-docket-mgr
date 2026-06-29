@@ -26,6 +26,7 @@ const usersView = require('./src/views/users');
 const legal = require('./src/views/legal');
 const sso = require('./src/sso');
 const importer = require('./src/import');
+const pdfGen = require('./src/pdf');
 const org = require('./src/org');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -175,6 +176,22 @@ route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.agendaPacket(mt));
+});
+route('GET', /^\/meetings\/(\d+)\/packet\.pdf$/, async (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  try {
+    const bytes = await pdfGen.generatePacket(mt);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="packet-meeting-${mt.id}.pdf"`,
+    });
+    res.end(Buffer.from(bytes));
+  } catch (e) {
+    console.error('PDF generation error:', e);
+    sendHtml(res, '<h1>500 — PDF generation failed</h1><p>' +
+      String(e.message).replace(/</g, '&lt;') + '</p>', 500);
+  }
 });
 route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
