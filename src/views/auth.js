@@ -1,6 +1,6 @@
 'use strict';
 
-const { html, raw } = require('../util');
+
 const { authLayout, escapeText } = require('./layout');
 const { ORG, orgEmail } = require('../org');
 const sso = require('../sso');
