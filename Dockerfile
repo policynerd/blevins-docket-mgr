@@ -1,8 +1,10 @@
-# Legislative Docket Manager — zero-dependency Node app.
-# node:sqlite is built into Node core, so there is nothing to npm install.
 FROM node:22-alpine
 
 WORKDIR /app
+
+# Install dependencies before copying source so the layer is cached on source-only changes.
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 # Copy the application source (see .dockerignore for exclusions).
 COPY . .
