@@ -522,6 +522,28 @@ const meetings = {
     }
     return pos;
   },
+  inSession() {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.status = 'In Progress'
+      ORDER BY mt.meeting_date DESC, mt.meeting_time DESC`).all();
+  },
+  nextScheduled(fromDate) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.meeting_date >= ? AND mt.status NOT IN ('Cancelled', 'Adjourned', 'Final', 'In Progress')
+      ORDER BY mt.meeting_date ASC, mt.meeting_time ASC
+      LIMIT 1`).get(fromDate);
+  },
+  todayDocket(date) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      WHERE mt.meeting_date = ? AND mt.status != 'Cancelled'
+      ORDER BY mt.meeting_time ASC`).all(date);
+  },
 };
 
 // ---------------------------------------------------------------------------

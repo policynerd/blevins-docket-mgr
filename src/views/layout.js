@@ -7,6 +7,7 @@ const NAV = [
   { href: '/', label: 'Dashboard' },
   { href: '/legislation', label: 'Legislation' },
   { href: '/calendar', label: 'Calendar' },
+  { href: '/docket', label: "Today's Docket" },
   { href: '/people', label: ORG.membersLabel },
   { href: '/bodies', label: 'Bodies & Committees' },
   { href: '/policies', label: 'Policies' },

@@ -14,6 +14,8 @@ function dashboard() {
   const upcoming = repo.meetings.upcoming(today, 6);
   const recent = repo.matters.search({ limit: 8 });
   const buckets = repo.statusBuckets();
+  const inSession = repo.meetings.inSession();
+  const nextMeeting = repo.meetings.nextScheduled(today);
 
   const statCards = [
     ['Legislative files', s.matters, '/legislation'],
@@ -45,7 +47,26 @@ function dashboard() {
     <li><a href="/legislation?status=${encodeURIComponent(b.status)}">
       <span class="bucket-l">${b.status}</span><span class="bucket-n">${b.n}</span></a></li>`);
 
+  const sessionBanner = inSession.length
+    ? raw(`<div class="session-banner">
+        ${inSession.map((m) => `<span class="session-live">● IN SESSION</span>
+          <a class="session-link" href="/live/${m.id}">${escapeText(m.body_name)} is meeting now</a>
+          <a class="btn session-btn" href="/live/${m.id}">Watch live →</a>`).join('')}
+      </div>`)
+    : '';
+
+  const nextCard = nextMeeting
+    ? raw(`<div class="next-meeting-strip">
+        <span class="nm-label">Next meeting</span>
+        <span class="nm-body"><a href="/meetings/${nextMeeting.id}">${escapeText(nextMeeting.body_name)}</a></span>
+        <span class="nm-when">${escapeText(formatDate(nextMeeting.meeting_date))}${nextMeeting.meeting_time ? ' · ' + escapeText(nextMeeting.meeting_time) : ''}${nextMeeting.location ? ' · ' + escapeText(nextMeeting.location) : ''}</span>
+        <a class="btn-link" href="/docket">Today's docket →</a>
+      </div>`)
+    : raw(`<div class="next-meeting-strip"><span class="nm-label">No upcoming meetings scheduled</span> <a class="btn-link" href="/docket">Today's docket →</a></div>`);
+
   const body = html`
+    ${sessionBanner}
+    ${nextCard}
     <div class="hero">
       <h1>Legislative Docket</h1>
       <p>Track ordinances, resolutions, and motions from introduction through final action.
@@ -741,6 +762,65 @@ function topicsList() {
     subtitle: 'Browse legislation by subject index term.', body });
 }
 
+// --- Daily docket ------------------------------------------------------------
+function docket() {
+  const today = todayISO();
+  const meetings = repo.meetings.todayDocket(today);
+  const upcoming = repo.meetings.nextScheduled(today);
+
+  const meetingBlocks = meetings.map((mt) => {
+    const items = repo.meetings.items(mt.id);
+    let lastSection = null;
+    const rows = items.map((it) => {
+      let sectionRow = '';
+      if (it.section && it.section !== lastSection) {
+        lastSection = it.section;
+        sectionRow = `<tr class="section-row"><td colspan="5">${escapeText(it.section)}</td></tr>`;
+      }
+      const fileCell = it.matter_id
+        ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a>` : '';
+      const typeCell = it.matter_id ? `<span class="badge type">${escapeText(it.matter_type)}</span>` : '';
+      const titleCell = it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '');
+      const resultCell = it.result
+        ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
+      return sectionRow + `<tr>
+        <td>${escapeText(it.agenda_number || '')}</td>
+        <td>${fileCell}</td>
+        <td>${typeCell}</td>
+        <td class="title-cell">${titleCell}</td>
+        <td>${resultCell}</td>
+      </tr>`;
+    }).join('');
+
+    const grid = items.length
+      ? `<table class="data meeting-items"><thead><tr><th>#</th><th>File #</th><th>Type</th><th>Title</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`
+      : emptyState('No agenda items posted.');
+
+    return card(`${escapeText(mt.body_name)} — ${raw(formatDateTime(mt.meeting_date, mt.meeting_time))}${mt.location ? ' · ' + escapeText(mt.location) : ''}`,
+      `${statusBadge(mt.status)} <a class="btn-link" href="/meetings/${mt.id}/packet" style="margin-left:8px">Agenda packet</a>${grid}`);
+  });
+
+  const noMeetings = meetings.length === 0
+    ? emptyState(`No meetings scheduled for today (${raw(formatDate(today))}).`)
+    : '';
+
+  const upcomingNote = upcoming && meetings.length === 0
+    ? raw(`<p class="muted">Next scheduled meeting: <a href="/meetings/${upcoming.id}">${escapeText(upcoming.body_name)}</a> on ${raw(formatDate(upcoming.meeting_date))}${upcoming.meeting_time ? ' at ' + escapeText(upcoming.meeting_time) : ''}.</p>`)
+    : '';
+
+  const body = html`
+    <div class="detail-head">
+      <h1>Daily Docket</h1>
+      <span class="head-actions"><a class="btn-link" href="/calendar">Full calendar →</a></span>
+    </div>
+    <p class="muted">${raw(formatDate(today))}</p>
+    ${raw(noMeetings)}
+    ${upcomingNote}
+    ${raw(meetingBlocks.join(''))}
+  `;
+  return layout({ title: "Today's Docket", active: '/calendar', body });
+}
+
 // --- helpers -----------------------------------------------------------------
 function initials(name) {
   return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
@@ -777,5 +857,5 @@ function notFound() {
 
 module.exports = {
   dashboard, legislationList, matterDetail, calendar, meetingDetail, agendaPacket,
-  peopleList, personDetail, bodiesList, bodyDetail, topicsList, notFound,
+  peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
 };

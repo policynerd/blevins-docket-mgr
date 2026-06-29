@@ -135,6 +135,7 @@ route('GET', /^\/auth\/sso\/callback$/, async (req, res, ctx) => {
 
 // Public portal --------------------------------------------------------------
 route('GET', /^\/$/, (req, res) => sendHtml(res, pages.dashboard()));
+route('GET', /^\/docket\/?$/, (req, res) => sendHtml(res, pages.docket()));
 route('GET', /^\/legislation\/?$/, (req, res, ctx) => sendHtml(res, pages.legislationList(ctx.query)));
 
 // Feeds & exports -----------------------------------------------------------
