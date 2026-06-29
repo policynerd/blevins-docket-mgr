@@ -15,9 +15,15 @@
   var pill = document.querySelector('[data-live-pill]');
 
   var VOTES = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent'];
+  var THRESHOLD_LABELS = {
+    majority: 'Majority of votes cast',
+    two_thirds: 'Two-thirds (⅔)',
+    majority_full: 'Majority of full body',
+  };
 
   function esc(s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function post(url, data) {
@@ -38,6 +44,43 @@
       '</div>';
   }
 
+  function outcomeBar(a) {
+    var presentCount = (a.seatCount || 0) - (a.tally.Absent || 0);
+    var quorumClass = a.quorumMet ? 'qb-met' : 'qb-fail';
+    var quorumText = a.quorumMet
+      ? 'Quorum ✓ (' + presentCount + '/' + a.seatCount + ' present)'
+      : 'No quorum (' + presentCount + '/' + a.quorumNeeded + ' needed)';
+    var outcomeClass = a.projectedOutcome === 'Passes' ? 'out-pass'
+      : (a.projectedOutcome === 'Fails' ? 'out-fail' : 'out-noquorum');
+    return '<div class="outcome-bar">' +
+      '<span class="' + quorumClass + '">' + esc(quorumText) + '</span>' +
+      '<span class="ob-sep">·</span>' +
+      '<span class="ob-threshold">' + esc(THRESHOLD_LABELS[a.threshold] || a.threshold) + '</span>' +
+      '<span class="ob-sep">·</span>' +
+      '<strong class="' + outcomeClass + '">Projected: ' + esc(a.projectedOutcome) + '</strong>' +
+      '</div>';
+  }
+
+  function motionForm(a) {
+    var rosterOpts = function (currentId) {
+      return '<option value="">—</option>' + a.roster.map(function (m) {
+        var sel = String(m.person_id) === String(currentId) ? ' selected' : '';
+        return '<option value="' + esc(m.person_id) + '"' + sel + '>' + esc(m.name) + '</option>';
+      }).join('');
+    };
+    var threshOpts = Object.keys(THRESHOLD_LABELS).map(function (v) {
+      return '<option value="' + v + '"' + (a.threshold === v ? ' selected' : '') + '>' + esc(THRESHOLD_LABELS[v]) + '</option>';
+    }).join('');
+    return '<details class="la-motion-form"><summary>Set motion / threshold</summary>' +
+      '<div class="la-motion-fields">' +
+      '<label>Mover <select data-mf-mover>' + rosterOpts(a.mover_id) + '</select></label>' +
+      '<label>Seconder <select data-mf-seconder>' + rosterOpts(a.seconder_id) + '</select></label>' +
+      '<label>Threshold <select data-mf-threshold>' + threshOpts + '</select></label>' +
+      '<label>Motion text <input type="text" data-mf-text value="' + esc(a.motion_text || '') + '" placeholder="I move to…"></label>' +
+      '<button class="btn" data-mf-save="' + a.id + '">Save motion</button>' +
+      '</div></details>';
+  }
+
   function renderActive(a) {
     if (!a) {
       activeEl.innerHTML = '<p class="empty">Waiting for the clerk to open an item…</p>';
@@ -51,6 +94,8 @@
         (a.mover ? 'Moved by ' + esc(a.mover) : '') + (a.seconder ? ', seconded by ' + esc(a.seconder) : '') + '</p>';
     }
     html += tallyBar(a.tally);
+    if (a.seatCount) html += outcomeBar(a);
+    if (control) html += motionForm(a);
 
     // Roster with each member's recorded vote
     html += '<div class="la-roster">';
@@ -102,6 +147,15 @@
     });
     var closeBtn = activeEl.querySelector('[data-close]');
     if (closeBtn) closeBtn.addEventListener('click', function () { post('/admin/agenda-items/' + a.id + '/close', {}); });
+    var mfSave = activeEl.querySelector('[data-mf-save]');
+    if (mfSave) mfSave.addEventListener('click', function () {
+      post('/admin/agenda-items/' + a.id + '/motion', {
+        mover_id: (activeEl.querySelector('[data-mf-mover]') || {}).value || null,
+        seconder_id: (activeEl.querySelector('[data-mf-seconder]') || {}).value || null,
+        motion_text: (activeEl.querySelector('[data-mf-text]') || {}).value || null,
+        vote_threshold: (activeEl.querySelector('[data-mf-threshold]') || {}).value || 'majority',
+      });
+    });
   }
 
   function renderAgenda(items) {

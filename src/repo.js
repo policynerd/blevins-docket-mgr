@@ -423,9 +423,16 @@ const meetings = {
   removeItem(itemId) {
     db.prepare('DELETE FROM agenda_items WHERE id = ?').run(itemId); // votes cascade
   },
-  setMotion(itemId, { mover_id, seconder_id, motion_text }) {
-    db.prepare('UPDATE agenda_items SET mover_id=?, seconder_id=?, motion_text=? WHERE id=?')
-      .run(mover_id || null, seconder_id || null, motion_text || null, itemId);
+  setMotion(itemId, { mover_id, seconder_id, motion_text, vote_threshold }) {
+    const VALID_THRESHOLDS = new Set(['majority', 'two_thirds', 'majority_full']);
+    if (vote_threshold !== undefined) {
+      const safeThreshold = VALID_THRESHOLDS.has(vote_threshold) ? vote_threshold : 'majority';
+      db.prepare('UPDATE agenda_items SET mover_id=?, seconder_id=?, motion_text=?, vote_threshold=? WHERE id=?')
+        .run(mover_id || null, seconder_id || null, motion_text || null, safeThreshold, itemId);
+    } else {
+      db.prepare('UPDATE agenda_items SET mover_id=?, seconder_id=?, motion_text=? WHERE id=?')
+        .run(mover_id || null, seconder_id || null, motion_text || null, itemId);
+    }
   },
   setVoteStatus(itemId, status) {
     db.prepare('UPDATE agenda_items SET vote_status=? WHERE id=?').run(status, itemId);
