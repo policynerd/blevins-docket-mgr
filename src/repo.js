@@ -398,14 +398,35 @@ const meetings = {
       mt.minutes_url || null, mt.notes || null, id);
   },
   addItem(it) {
-    const maxOrder = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), 0) AS m FROM agenda_items WHERE meeting_id = ?')
-      .get(it.meeting_id).m;
+    const existing = db.prepare(
+      'SELECT section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
+      .all(it.meeting_id);
+    const maxOrder = existing.length ? existing[existing.length - 1].sort_order : 0;
+
+    // Auto-assign agenda_number when not provided: "1A", "1B" within sections,
+    // or "1", "2", "3" for unsectioned items.
+    let agendaNum = it.agenda_number || null;
+    if (!agendaNum) {
+      if (it.section) {
+        const sections = [];
+        const seen = new Set();
+        for (const row of existing) {
+          if (row.section && !seen.has(row.section)) { seen.add(row.section); sections.push(row.section); }
+        }
+        let si = sections.indexOf(it.section);
+        if (si === -1) si = sections.length;
+        const letter = String.fromCharCode(65 + existing.filter((r) => r.section === it.section).length);
+        agendaNum = `${si + 1}${letter}`;
+      } else {
+        agendaNum = String(existing.filter((r) => !r.section).length + 1);
+      }
+    }
+
     return db.prepare(`INSERT INTO agenda_items
       (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes)
       VALUES (?,?,?,?,?,?,?,?,?)`).run(
       it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
-      it.agenda_number || null, it.section || null, it.title || null,
+      agendaNum, it.section || null, it.title || null,
       it.action || null, it.result || null, it.notes || null).lastInsertRowid;
   },
   getItem(id) {
