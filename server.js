@@ -583,6 +583,17 @@ route('POST', /^\/admin\/legal$/, (req, res, ctx) => {
   redirect(res, '/admin/legal?saved=1');
 });
 
+route('GET', /^\/admin\/footer\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, legal.footerForm({ saved: ctx.query.saved === '1' }));
+});
+route('POST', /^\/admin\/footer$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const h = sanitizeHtml(ctx.body.footer_html || '');
+  legal.setFooterHtml(blankHtml(h) ? '' : h);
+  redirect(res, '/admin/footer?saved=1');
+});
+
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
 route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
 route('POST', /^\/govern\/members\/nominate$/, (req, res, ctx) => {
@@ -763,7 +774,8 @@ route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   repo.meetings.addItem({
     meeting_id: id, matter_id: matterId,
     agenda_number: b.agenda_number, section: b.section, title: b.title,
-    requires_vote: b.requires_vote === '1' ? 1 : (matterId ? 1 : 0),
+    item_type: b.item_type || null,
+    requires_vote: b.requires_vote === '1' ? 1 : undefined,
   });
   redirect(res, `/admin/meetings/${id}/agenda`);
 });

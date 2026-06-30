@@ -17,6 +17,7 @@ const MATTER_STATUSES = [
 ];
 
 const VOTE_VALUES = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent'];
+const ITEM_TYPES = ['Action', 'Discussion', 'Information'];
 
 const AGENDA_SECTIONS = [
   'Call to Order', 'Roll Call', 'Approval of Minutes', 'Public Comment',
@@ -453,15 +454,16 @@ const meetings = {
       }
     }
 
+    const itemType = ITEM_TYPES.includes(it.item_type) ? it.item_type : null;
     const requiresVote = it.requires_vote != null
       ? (it.requires_vote ? 1 : 0)
-      : (it.matter_id ? 1 : 0);
+      : (it.matter_id || itemType === 'Action' ? 1 : 0);
     return db.prepare(`INSERT INTO agenda_items
-      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes, requires_vote)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes, requires_vote, item_type)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
       agendaNum, it.section || null, it.title || null,
-      it.action || null, it.result || null, it.notes || null, requiresVote).lastInsertRowid;
+      it.action || null, it.result || null, it.notes || null, requiresVote, itemType).lastInsertRowid;
   },
   getItem(id) {
     return db.prepare(`
@@ -1101,7 +1103,7 @@ function purgeDomainData() {
 }
 
 module.exports = {
-  MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
+  MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
