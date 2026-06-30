@@ -453,12 +453,15 @@ const meetings = {
       }
     }
 
+    const requiresVote = it.requires_vote != null
+      ? (it.requires_vote ? 1 : 0)
+      : (it.matter_id ? 1 : 0);
     return db.prepare(`INSERT INTO agenda_items
-      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes, requires_vote)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
       it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
       agendaNum, it.section || null, it.title || null,
-      it.action || null, it.result || null, it.notes || null).lastInsertRowid;
+      it.action || null, it.result || null, it.notes || null, requiresVote).lastInsertRowid;
   },
   getItem(id) {
     return db.prepare(`
@@ -471,6 +474,9 @@ const meetings = {
   setItemResult(itemId, action, result) {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
+  },
+  setRequiresVote(itemId, val) {
+    db.prepare('UPDATE agenda_items SET requires_vote=? WHERE id=?').run(val ? 1 : 0, itemId);
   },
   removeItem(itemId) {
     db.prepare('DELETE FROM agenda_items WHERE id = ?').run(itemId); // votes cascade

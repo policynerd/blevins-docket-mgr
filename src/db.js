@@ -299,6 +299,7 @@ const COLUMN_MIGRATIONS = {
     motion_text: 'TEXT',
     vote_status: "TEXT NOT NULL DEFAULT 'pending'",
     vote_threshold: "TEXT NOT NULL DEFAULT 'majority'", // majority | two_thirds | majority_full
+    requires_vote: 'INTEGER NOT NULL DEFAULT 0',
   },
   matters: {
     body_html: 'TEXT',

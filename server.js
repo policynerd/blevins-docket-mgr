@@ -759,9 +759,11 @@ route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   const mt = repo.meetings.get(id);
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
+  const matterId = b.matter_id ? Number(b.matter_id) : null;
   repo.meetings.addItem({
-    meeting_id: id, matter_id: b.matter_id ? Number(b.matter_id) : null,
+    meeting_id: id, matter_id: matterId,
     agenda_number: b.agenda_number, section: b.section, title: b.title,
+    requires_vote: b.requires_vote === '1' ? 1 : (matterId ? 1 : 0),
   });
   redirect(res, `/admin/meetings/${id}/agenda`);
 });
@@ -773,6 +775,13 @@ route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/reorder$/, (req, res, ctx) => 
   const order = asArray(ctx.body && ctx.body.order).map(Number).filter((n) => !Number.isNaN(n));
   const moved = repo.meetings.reorderItems(id, order);
   sendJson(res, { ok: true, moved });
+});
+
+route('POST', /^\/admin\/agenda-items\/(\d+)\/toggle-vote$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  repo.meetings.setRequiresVote(item.id, item.requires_vote ? 0 : 1);
+  redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
 
 route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
@@ -808,6 +817,25 @@ route('GET', /^\/reports\/(\d+)$/, (req, res, ctx) => {
   if (!r) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, reportsView.reportView(r));
 });
+route('POST', /^\/admin\/matters\/(\d+)\/reports\/draft$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const template = [
+    '<h2>Background</h2><p></p>',
+    '<h2>Analysis</h2><p></p>',
+    '<h2>Fiscal Impact</h2><p>None anticipated.</p>',
+    '<h2>Recommendation</h2><p></p>',
+  ].join('\n');
+  const id = repo.reports.insert({
+    matter_id: m.id,
+    title: `Staff Report — ${m.file_number}`,
+    kind: 'Staff Report',
+    body_html: template,
+    author_id: ctx.user ? ctx.user.id : null,
+  });
+  redirect(res, `/admin/reports/${id}/edit`);
+});
+
 route('GET', /^\/admin\/matters\/(\d+)\/reports\/new$/, (req, res, ctx) => {
   const m = repo.matters.get(Number(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
