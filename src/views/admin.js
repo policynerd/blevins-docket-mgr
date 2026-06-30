@@ -455,9 +455,24 @@ function agendaTemplateAdmin(saved) {
   if (row && row.value) {
     try {
       const parsed = JSON.parse(row.value);
-      current = parsed.map((i) => i.section ? `${i.section} | ${i.title}` : i.title).join('\n');
+      current = parsed.map((i) => {
+        const base = i.section ? `${i.section} | ${i.title}` : i.title;
+        return i.item_type ? `${base} | ${i.item_type}` : base;
+      }).join('\n');
     } catch (_) { current = row.value; }
   }
+
+  const DEFAULT_TEMPLATE = [
+    'Call to Order | Call to Order | Information',
+    'Call to Order | Pledge of Allegiance | Information',
+    'Call to Order | Land Acknowledgement | Information',
+    'Roll Call | Quorum Call | Action',
+    'Public Comment | Public Comment | Information',
+    'Approval of Minutes | Approval of Minutes | Action',
+    'Approval of Minutes | Approval of the Agenda | Action',
+    'Consent Agenda | Development of the Consent Calendar | Discussion',
+    'Consent Agenda | Approval of the Consent Calendar | Action',
+  ].join('\n');
 
   const savedBanner = saved ? '<p class="saved-banner">Template saved.</p>' : '';
   const body = html`
@@ -465,11 +480,11 @@ function agendaTemplateAdmin(saved) {
     <h1>Standard agenda template</h1>
     ${raw(savedBanner)}
     ${raw(card('Edit template', html`
-      <p class="muted">One item per line. Format: <code>Section | Display title</code> — or just a title with no section.<br>
-      The section name groups items on the agenda. The template is stamped onto a new meeting when you click "Load standard agenda template".</p>
+      <p class="muted">One item per line. Format: <code>Section | Title | Type</code> where Type is <em>Action</em>, <em>Discussion</em>, or <em>Information</em> (optional).<br>
+      Omit the section to create an unsectioned item. The template is stamped onto a new meeting when you click "Load standard agenda template".</p>
       <form class="form" method="post" action="/admin/agenda-template">
         <label>Template items
-          <textarea name="template" rows="14" style="font-family:monospace">${current || 'Call to Order | Call to Order\nCall to Order | Pledge of Allegiance\nCall to Order | Land Acknowledgement\nRoll Call | Quorum Call\nPublic Comment | Public Comment\nApproval of Minutes | Approval of Minutes\nApproval of Minutes | Approval of the Agenda\nConsent Agenda | Development of the Consent Calendar\nConsent Agenda | Approval of the Consent Calendar'}</textarea>
+          <textarea name="template" rows="14" style="font-family:monospace">${current || DEFAULT_TEMPLATE}</textarea>
         </label>
         <div class="form-actions"><button type="submit" class="btn primary">Save template</button></div>
       </form>`))}`;

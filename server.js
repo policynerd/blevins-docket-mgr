@@ -528,9 +528,12 @@ route('POST', /^\/admin\/agenda-template$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;
   const lines = (ctx.body.template || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const items = lines.map((line) => {
-    const sep = line.indexOf('|');
-    if (sep === -1) return { section: '', title: line.trim() };
-    return { section: line.slice(0, sep).trim(), title: line.slice(sep + 1).trim() };
+    const parts = line.split('|').map((s) => s.trim());
+    if (parts.length === 1) return { section: '', title: parts[0], item_type: null };
+    if (parts.length === 2) return { section: parts[0], title: parts[1], item_type: null };
+    const rawType = parts[2];
+    const item_type = repo.ITEM_TYPES.includes(rawType) ? rawType : null;
+    return { section: parts[0], title: parts[1], item_type };
   });
   const { db: settingsDb } = require('./src/db');
   settingsDb.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('agenda.template', ?, datetime('now'))
@@ -550,7 +553,10 @@ route('POST', /^\/admin\/meetings\/(\d+)\/load-template$/, (req, res, ctx) => {
     try {
       const items = JSON.parse(row.value);
       for (const item of items) {
-        repo.meetings.addItem({ meeting_id: meetingId, section: item.section || null, title: item.title });
+        repo.meetings.addItem({
+          meeting_id: meetingId, section: item.section || null,
+          title: item.title, item_type: item.item_type || null,
+        });
       }
     } catch (_) { /* invalid template JSON — ignore */ }
   }
