@@ -459,7 +459,11 @@ function meetingDetail(meeting) {
     const fileCell = it.matter_id
       ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a>` : '';
     const typeCell = it.matter_id ? `<span class="badge type">${escapeText(it.matter_type)}</span>` : '';
-    const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)')) + motionLine;
+    const itemTypeBadge = it.item_type
+      ? ` <span class="badge type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
+      : '';
+    const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)'))
+      + itemTypeBadge + motionLine;
     const resultCell = it.result
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 

@@ -33,6 +33,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/users">Users &amp; roles</a>
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/branding">Branding</a>
+      <a class="btn" href="/admin/footer">Footer</a>
       <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
     </div>
     <div class="stat-grid small">
@@ -323,9 +324,12 @@ function agendaManager(meeting) {
         </label>
         <label>Section<select name="section">${raw(selectOptions(repo.AGENDA_SECTIONS, '', { includeBlank: '—' }))}</select></label>
       </div>
-      <label>Legislative file (optional)
-        <select name="matter_id">${raw(selectOptions(openMatters, '', { includeBlank: '— none (procedural item) —' }))}</select>
-      </label>
+      <div class="form-row">
+        <label>Legislative file (optional)
+          <select name="matter_id">${raw(selectOptions(openMatters, '', { includeBlank: '— none (procedural item) —' }))}</select>
+        </label>
+        <label>Item type<select name="item_type">${raw(selectOptions(repo.ITEM_TYPES, '', { includeBlank: '— none —' }))}</select></label>
+      </div>
       <label>Item title (for procedural items)
         <input type="text" name="title" placeholder="Call to Order / Approval of Minutes…">
       </label>
@@ -419,6 +423,9 @@ function voteBlock(meeting, it) {
       <button type="submit" class="btn">Save votes</button>
     </form>` : '';
 
+  const itemTypeBadge = it.item_type
+    ? `<span class="badge type it-${escapeText(String(it.item_type).toLowerCase())}">${escapeText(it.item_type)}</span>`
+    : '';
   const toggleLabel = needsVote ? 'Voted' : 'No vote';
   const toggleTitle = needsVote ? 'Click to mark as procedural (no vote)' : 'Click to enable voting for this item';
 
@@ -427,6 +434,7 @@ function voteBlock(meeting, it) {
       <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
       <span class="ai-num">${escapeText(it.agenda_number || '')}</span>
       <strong>${titleLine}</strong>
+      ${itemTypeBadge}
       ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}
       <form class="inline" method="post" action="/admin/agenda-items/${it.id}/toggle-vote">
         <button type="submit" class="btn-link${needsVote ? ' vote-on' : ' vote-off'}" title="${toggleTitle}">${toggleLabel}</button>

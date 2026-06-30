@@ -5,6 +5,7 @@ const { layout, card, escapeText } = require('./layout');
 const { editorField } = require('./reports');
 const { ORG } = require('../org');
 const { db } = require('../db');
+const { getFooterHtml, setFooterHtml } = require('../footer-content');
 
 // --- Editable content store (settings table, "legal." keys) -----------------
 function getContent(key) {
@@ -111,4 +112,25 @@ function legalForm({ saved = false } = {}) {
   return layout({ title: 'Legal pages', active: '/admin', body });
 }
 
-module.exports = { termsPage, privacyPage, legalForm, setContent };
+// --- Footer body editor ------------------------------------------------------
+function footerForm({ saved = false } = {}) {
+  const DEFAULT_FOOTER = '<p>Public records of ordinances, resolutions, meetings, and votes.</p>';
+  const form = html`
+    <form class="form" method="post" action="/admin/footer" data-wp-form>
+      ${raw(editorField('footer_html', getFooterHtml() || DEFAULT_FOOTER, { label: 'Footer body', rows: 8 }))}
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Save footer</button>
+        <a class="btn-link" href="/">View site</a>
+      </div>
+      <p class="muted">Replaces the description shown in the site footer on all pages. Clear and save to revert to the default.</p>
+    </form>
+    <script src="/assets/editor.js" defer></script>`;
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Footer</p>
+    <h1>Footer editor</h1>
+    ${saved ? raw('<p class="form-ok">Footer saved.</p>') : ''}
+    ${raw(card('Edit footer body', form))}`;
+  return layout({ title: 'Footer editor', active: '/admin', body });
+}
+
+module.exports = { termsPage, privacyPage, legalForm, footerForm, setContent, setFooterHtml };

@@ -2,6 +2,7 @@
 
 const { html, raw, formatDate } = require('../util');
 const { ORG } = require('../org');
+const { getFooterHtml } = require('../footer-content');
 
 const NAV = [
   { href: '/', label: 'Dashboard' },
@@ -150,7 +151,7 @@ function layout({ title, active, body, subtitle, head }) {
     <div class="wrap footer-inner">
       <div>
         <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
-        <p>Public records of ordinances, resolutions, meetings, and votes.</p>
+        ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
       </div>
       <div class="footer-links">
         <a href="/legislation">Legislation</a>
