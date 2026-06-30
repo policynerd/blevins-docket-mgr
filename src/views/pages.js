@@ -464,7 +464,7 @@ function meetingDetail(meeting) {
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 
     let voteCell = '<span class="doc-na">—</span>';
-    const itemVotes = (it.matter_id || it.requires_vote) ? repo.votes.forItem(it.id) : [];
+    const itemVotes = it.requires_vote ? repo.votes.forItem(it.id) : [];
     if (itemVotes.length) {
       const t = repo.votes.tally(it.id);
       const list = itemVotes.map((v) => `<li><span class="vt vt-${String(v.vote).toLowerCase()}">${escapeText(v.vote)}</span> ${escapeText(v.full_name)}</li>`).join('');

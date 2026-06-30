@@ -376,7 +376,7 @@ function voteBlock(meeting, it) {
 
   // Voting roster = members of the meeting body
   const members = repo.bodies.members(meeting.body_id);
-  const needsVote = !!(it.matter_id || it.requires_vote);
+  const needsVote = !!it.requires_vote;
   const existing = needsVote ? repo.votes.forItem(it.id) : [];
   const byPerson = {};
   for (const v of existing) byPerson[v.person_id] = v.vote;
