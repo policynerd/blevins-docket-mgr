@@ -329,6 +329,9 @@ function agendaManager(meeting) {
       <label>Item title (for procedural items)
         <input type="text" name="title" placeholder="Call to Order / Approval of Minutes…">
       </label>
+      <label class="check-label">
+        <input type="checkbox" name="requires_vote" value="1"> Requires a vote
+      </label>
       <button type="submit" class="btn">Add to agenda</button>
     </form>`;
 
@@ -373,11 +376,12 @@ function voteBlock(meeting, it) {
 
   // Voting roster = members of the meeting body
   const members = repo.bodies.members(meeting.body_id);
-  const existing = it.matter_id ? repo.votes.forItem(it.id) : [];
+  const needsVote = !!it.requires_vote;
+  const existing = needsVote ? repo.votes.forItem(it.id) : [];
   const byPerson = {};
   for (const v of existing) byPerson[v.person_id] = v.vote;
 
-  const voteRows = (it.matter_id && members.length) ? members.map((m) => html`
+  const voteRows = (needsVote && members.length) ? members.map((m) => html`
     <div class="vote-row">
       <span>${m.full_name}</span>
       <span class="vote-opts">
@@ -399,7 +403,7 @@ function voteBlock(meeting, it) {
     ['majority_full', 'Majority of full body'],
   ].map(([v, l]) => `<option value="${v}"${(it.vote_threshold || 'majority') === v ? ' selected' : ''}>${l}</option>`).join('');
 
-  const voteForm = it.matter_id ? html`
+  const voteForm = needsVote ? html`
     <form class="form vote-form" method="post" action="/admin/agenda-items/${it.id}/votes">
       <div class="form-row">
         <label>Action<input type="text" name="action" value="${it.action || ''}" placeholder="Motion to adopt"></label>
@@ -415,12 +419,18 @@ function voteBlock(meeting, it) {
       <button type="submit" class="btn">Save votes</button>
     </form>` : '';
 
+  const toggleLabel = needsVote ? 'Voted' : 'No vote';
+  const toggleTitle = needsVote ? 'Click to mark as procedural (no vote)' : 'Click to enable voting for this item';
+
   return `<div class="agenda-manage-item" draggable="true" data-id="${it.id}">
     <div class="ami-head">
       <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
       <span class="ai-num">${escapeText(it.agenda_number || '')}</span>
       <strong>${titleLine}</strong>
       ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}
+      <form class="inline" method="post" action="/admin/agenda-items/${it.id}/toggle-vote">
+        <button type="submit" class="btn-link${needsVote ? ' vote-on' : ' vote-off'}" title="${toggleTitle}">${toggleLabel}</button>
+      </form>
       <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
         <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>

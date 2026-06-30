@@ -299,6 +299,7 @@ const COLUMN_MIGRATIONS = {
     motion_text: 'TEXT',
     vote_status: "TEXT NOT NULL DEFAULT 'pending'",
     vote_threshold: "TEXT NOT NULL DEFAULT 'majority'", // majority | two_thirds | majority_full
+    requires_vote: 'INTEGER NOT NULL DEFAULT 0',
   },
   matters: {
     body_html: 'TEXT',
@@ -325,6 +326,9 @@ function migrate() {
       if (!existing.has(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def};`);
     }
   }
+  // Backfill: matter-linked items existed before requires_vote was added (DEFAULT 0).
+  // They should require a vote, so flip them to 1 if they haven't been explicitly toggled off.
+  db.exec(`UPDATE agenda_items SET requires_vote=1 WHERE matter_id IS NOT NULL AND requires_vote=0`);
 }
 
 function init() {

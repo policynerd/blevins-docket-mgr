@@ -329,7 +329,12 @@ function matterDetail(matter) {
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
     <div class="detail-head">
       <h1>${matter.title}</h1>
-      <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
+      <span class="head-actions">
+        <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
+        <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
+          <button type="submit" class="btn">+ Draft staff report</button>
+        </form>
+      </span>
     </div>
     ${raw(card('Record', meta))}
     ${raw(tabbed)}
@@ -459,7 +464,7 @@ function meetingDetail(meeting) {
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 
     let voteCell = '<span class="doc-na">—</span>';
-    const itemVotes = it.matter_id ? repo.votes.forItem(it.id) : [];
+    const itemVotes = it.requires_vote ? repo.votes.forItem(it.id) : [];
     if (itemVotes.length) {
       const t = repo.votes.tally(it.id);
       const list = itemVotes.map((v) => `<li><span class="vt vt-${String(v.vote).toLowerCase()}">${escapeText(v.vote)}</span> ${escapeText(v.full_name)}</li>`).join('');
