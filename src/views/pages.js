@@ -457,13 +457,13 @@ function meetingDetail(meeting) {
       ? `<div class="sub">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
       : '';
     const fileCell = it.matter_id
-      ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a>` : '';
-    const typeCell = it.matter_id ? `<span class="badge type">${escapeText(it.matter_type)}</span>` : '';
-    const itemTypeBadge = it.item_type
-      ? ` <span class="badge type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
+      ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a><br><span class="badge type">${escapeText(it.matter_type)}</span>`
+      : '';
+    const typeCell = it.item_type
+      ? `<span class="badge type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
       : '';
     const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)'))
-      + itemTypeBadge + motionLine;
+      + motionLine;
     const resultCell = it.result
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 
