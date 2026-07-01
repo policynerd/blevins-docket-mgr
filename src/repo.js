@@ -267,23 +267,20 @@ const matters = {
       WHERE ai.matter_id = ?
       ORDER BY mt.meeting_date DESC`).all(matterId);
   },
-  nextFileNumber(type) {
-    const prefix = ({
-      Ordinance: 'ORD', Resolution: 'RES', Motion: 'MOT', Appointment: 'APT',
-      'Public Hearing': 'PH', Proclamation: 'PRO', Contract: 'CON',
-      Report: 'RPT', Communication: 'COM',
-    })[type] || 'FILE';
-    const year = new Date().getFullYear();
-    const like = `${prefix}-${year}-%`;
+  nextFileNumber() {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `${yy}${mm}`;
     const row = db.prepare(
       `SELECT file_number FROM matters WHERE file_number LIKE ?
-       ORDER BY file_number DESC LIMIT 1`).get(like);
+       ORDER BY file_number DESC LIMIT 1`).get(`${prefix}%`);
     let next = 1;
     if (row) {
-      const m = row.file_number.match(/(\d+)$/);
-      if (m) next = parseInt(m[1], 10) + 1;
+      const seq = parseInt(row.file_number.slice(4), 10);
+      if (!isNaN(seq)) next = seq + 1;
     }
-    return `${prefix}-${year}-${String(next).padStart(4, '0')}`;
+    return `${prefix}${String(next).padStart(2, '0')}`;
   },
   insert(m) {
     const id = db.prepare(`INSERT INTO matters

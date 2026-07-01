@@ -565,7 +565,7 @@ route('POST', /^\/admin\/meetings\/(\d+)\/load-template$/, (req, res, ctx) => {
 // Next file-number preview (JSON, for the new-matter form)
 route('GET', /^\/admin\/matters\/next-number$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;
-  sendJson(res, { number: repo.matters.nextFileNumber(ctx.query.type || 'Ordinance') });
+  sendJson(res, { number: repo.matters.nextFileNumber() });
 });
 
 // Editable legal pages — Terms & Privacy (admin) -----------------------------
@@ -655,7 +655,7 @@ route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matter
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return sendHtml(res, admin.matterForm(null), 400);
-  const fileNumber = repo.matters.nextFileNumber(b.type);
+  const fileNumber = repo.matters.nextFileNumber();
   const id = repo.matters.insert({
     file_number: fileNumber, type: b.type, title: b.title,
     status: b.status || 'Draft', body_id: b.body_id || null,
@@ -889,7 +889,7 @@ route('GET', /^\/member\/files\/new$/, (req, res, ctx) => sendHtml(res, member.m
 route('POST', /^\/member\/files$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return redirect(res, '/member/files/new');
-  const fileNumber = repo.matters.nextFileNumber(b.type);
+  const fileNumber = repo.matters.nextFileNumber();
   const id = repo.matters.insert({
     file_number: fileNumber, type: b.type, title: b.title, status: 'Draft',
     summary: b.summary || null,

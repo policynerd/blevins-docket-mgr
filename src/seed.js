@@ -90,7 +90,7 @@ function run() {
 
     // --- Matters ----------------------------------------------------------
     function makeMatter(spec) {
-      const fileNumber = repo.matters.nextFileNumber(spec.type);
+      const fileNumber = repo.matters.nextFileNumber();
       const id = repo.matters.insert({
         file_number: fileNumber, type: spec.type, title: spec.title,
         status: spec.status, body_id: spec.body_id, intro_date: spec.intro_date,
