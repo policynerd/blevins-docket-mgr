@@ -275,6 +275,7 @@ route('POST', /^\/meetings\/(\d+)\/speak$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   const back = `/meetings/${mt.id}`;
+  if (!pages.acceptsSpeakers(mt)) return redirect(res, back); // meeting concluded/cancelled
   if (ctx.body.website) return redirect(res, back + '?speak=1'); // honeypot
   const name = String(ctx.body.name || '').trim().slice(0, 100);
   if (!name) return redirect(res, back);

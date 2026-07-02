@@ -356,6 +356,8 @@ CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
+CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);

@@ -653,11 +653,11 @@ function meetingDetail(meeting, query = {}) {
   return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
 }
 
-// Public request-to-speak sign-up, shown for meetings that haven't happened.
+// Public request-to-speak sign-up, shown while a meeting still accepts
+// speakers (not concluded/cancelled; In Progress allowed for same-day
+// sign-ups while the meeting is live). Keep in sync with acceptsSpeakers.
 function speakCard(meeting, items, query = {}) {
-  const upcoming = meeting.meeting_date >= todayISO()
-    && !['Cancelled', 'Final'].includes(meeting.status);
-  if (!upcoming) return '';
+  if (!acceptsSpeakers(meeting)) return '';
   if (query.speak === '1') {
     return card('Request to speak',
       '<p class="form-ok">Thank you — your request has been received. The Clerk’s office will confirm your spot before the meeting.</p>');
@@ -684,6 +684,11 @@ function speakCard(meeting, items, query = {}) {
       <button type="submit" class="btn primary">Request to speak</button>
     </form>`;
   return card('Request to speak', form);
+}
+
+function acceptsSpeakers(meeting) {
+  return meeting.meeting_date >= todayISO()
+    && !['Cancelled', 'Final', 'Adjourned'].includes(meeting.status);
 }
 
 // --- Agenda packet (print / save-as-PDF) ------------------------------------
@@ -1107,5 +1112,5 @@ function notFound() {
 
 module.exports = {
   dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, calendar, meetingDetail, agendaPacket,
-  peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
+  peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound, acceptsSpeakers,
 };
