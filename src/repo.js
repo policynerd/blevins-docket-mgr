@@ -1240,6 +1240,38 @@ const comments = {
 };
 
 // ---------------------------------------------------------------------------
+// Applications to serve on a board/commission
+// ---------------------------------------------------------------------------
+const applications = {
+  add(a) {
+    return db.prepare(`INSERT INTO board_applications (body_id, name, email, phone, statement)
+      VALUES (?,?,?,?,?)`).run(a.body_id, a.name, a.email || null, a.phone || null,
+      a.statement || null).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.id = ?`).get(id);
+  },
+  pending() {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.status = 'Pending' ORDER BY a.created_at`).all();
+  },
+  recentDecided(limit = 25) {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.status != 'Pending'
+      ORDER BY a.created_at DESC LIMIT ?`).all(limit);
+  },
+  pendingCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM board_applications WHERE status = 'Pending'").get().n;
+  },
+  decide(id, { status, motionId = null }) {
+    if (!['Nominated', 'Declined', 'Pending'].includes(status)) return;
+    db.prepare('UPDATE board_applications SET status = ?, motion_id = ? WHERE id = ?')
+      .run(status, motionId, id);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Request to speak (public sign-ups for upcoming meetings)
 // ---------------------------------------------------------------------------
 const speakers = {
@@ -1304,5 +1336,5 @@ module.exports = {
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, watches, speakers, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, speakers, applications, stats, statusBuckets, purgeDomainData,
 };

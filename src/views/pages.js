@@ -898,7 +898,7 @@ function bodiesList() {
     subtitle: 'Legislative bodies, committees, and commissions.', body });
 }
 
-function bodyDetail(b) {
+function bodyDetail(b, query = {}) {
   const members = repo.bodies.members(b.id);
   const meetings = repo.bodies.upcomingMeetings(b.id, 24);
   const legislation = repo.bodies.legislation(b.id);
@@ -949,10 +949,29 @@ function bodyDetail(b) {
     ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Introduced</th></tr></thead><tbody>${legRows}</tbody></table>`
     : emptyState('No legislation in control of this body.');
 
+  const applyPanel = query.applied === '1'
+    ? '<p class="form-ok">Thank you — your application has been received. The Clerk’s office reviews applications and will contact you.</p>'
+    : `
+    <p class="muted">Interested in serving on the ${escapeText(b.name)}? Submit an application —
+      the ${escapeText(ORG.clerkOffice)} reviews it, and approved applicants are nominated through
+      the membership process.</p>
+    <form class="form" method="post" action="/bodies/${b.id}/apply">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email<input type="email" name="email" maxlength="200"></label>
+        <label>Phone<input type="text" name="phone" maxlength="40"></label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label>Why do you want to serve? (qualifications, interest)
+        <textarea name="statement" rows="4" maxlength="4000"></textarea></label>
+      <button type="submit" class="btn primary">Submit application</button>
+    </form>`;
+
   const tabbed = tabs([
     { id: 'members', label: 'Members', count: members.length, html: membersPanel },
     { id: 'meetings', label: 'Meetings', count: meetings.length, html: meetingsPanel },
     { id: 'legislation', label: 'Legislation', count: legislation.length, html: legPanel },
+    { id: 'apply', label: 'Apply to serve', html: applyPanel },
   ]);
 
   const meta = html`

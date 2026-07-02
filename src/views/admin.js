@@ -31,6 +31,8 @@ function adminHome(user) {
       <a class="btn" href="/admin/doc-templates">Document templates</a>
       <a class="btn" href="/admin/comments">Public comments${repo.comments.pendingCount()
         ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
+      <a class="btn" href="/admin/applications">Applications${repo.applications.pendingCount()
+        ? raw(` <span class="badge pending-badge">${repo.applications.pendingCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
@@ -651,7 +653,48 @@ function commentsAdmin() {
   return layout({ title: 'Public comments', active: '/admin', body });
 }
 
+// --- Board/commission application review --------------------------------------
+function applicationsAdmin() {
+  const pending = repo.applications.pending();
+  const decided = repo.applications.recentDecided();
+  const row = (a, actions) => html`
+    <li>
+      <div class="comment-head">
+        <strong>${a.name}</strong> — applying to <strong>${a.body_name}</strong>
+        <span class="muted">· ${raw(formatDate(a.created_at))}${a.email ? ' · ' + a.email : ''}${a.phone ? ' · ' + a.phone : ''}</span>
+      </div>
+      ${a.statement ? raw(`<p class="comment-body">${escapeText(a.statement)}</p>`) : ''}
+      ${raw(actions)}
+    </li>`;
+  const pendingList = pending.length
+    ? `<ul class="comment-list">${pending.map((a) => row(a, `
+        <div class="form-actions">
+          <form method="post" action="/admin/applications/${a.id}/decide" class="inline">
+            <input type="hidden" name="decision" value="nominate">
+            <button type="submit" class="btn primary">Nominate for seat</button>
+          </form>
+          <form method="post" action="/admin/applications/${a.id}/decide" class="inline">
+            <input type="hidden" name="decision" value="decline">
+            <button type="submit" class="btn">Decline</button>
+          </form>
+        </div>`)).join('')}</ul>`
+    : emptyState('No applications waiting for review.');
+  const decidedList = decided.length
+    ? `<ul class="comment-list">${decided.map((a) => row(a,
+      `<div class="form-actions">${statusBadge(a.status)}${a.motion_id
+        ? ` <a class="btn-link" href="/govern/members">view nomination</a>` : ''}</div>`)).join('')}</ul>`
+    : emptyState('No decided applications yet.');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Applications</p>
+    <h1>Board &amp; commission applications</h1>
+    <p class="muted">Citizen applications submitted from body pages. Nominating an applicant creates a
+      seat nomination in the membership workflow (Nominate → Approve → Seat).</p>
+    ${raw(card(`Awaiting review (${pending.length})`, pendingList))}
+    ${raw(card('Recently decided', decidedList))}`;
+  return layout({ title: 'Applications', active: '/admin', body });
+}
+
 module.exports = {
   adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
-  matterTextForm, docTemplatesAdmin,
+  matterTextForm, docTemplatesAdmin, applicationsAdmin,
 };

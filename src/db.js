@@ -214,6 +214,20 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Citizen applications to serve on a board/commission. Approving one creates
+-- a member_motions nomination (entering the Nominate -> Approve -> Seat flow).
+CREATE TABLE IF NOT EXISTS board_applications (
+  id INTEGER PRIMARY KEY,
+  body_id INTEGER NOT NULL REFERENCES bodies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  statement TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Nominated | Declined
+  motion_id INTEGER REFERENCES member_motions(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Request-to-speak sign-ups for upcoming meetings; reviewed by the clerk.
 CREATE TABLE IF NOT EXISTS speaker_requests (
   id INTEGER PRIMARY KEY,
@@ -483,7 +497,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'watches', 'speaker_requests', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

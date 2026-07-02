@@ -368,7 +368,46 @@ route('GET', /^\/bodies\/?$/, (req, res) => sendHtml(res, pages.bodiesList()));
 route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
   const b = repo.bodies.get(Number(ctx.params[0]));
   if (!b) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.bodyDetail(b));
+  sendHtml(res, pages.bodyDetail(b, ctx.query));
+});
+
+// Citizen application to serve on a board/commission (public form).
+route('POST', /^\/bodies\/(\d+)\/apply$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  const back = `/bodies/${b.id}?applied=1`;
+  if (ctx.body.website) return redirect(res, back); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  if (!name) return redirect(res, `/bodies/${b.id}`);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.applications.add({
+    body_id: b.id, name,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    phone: String(ctx.body.phone || '').trim().slice(0, 40) || null,
+    statement: String(ctx.body.statement || '').trim().slice(0, 4000) || null,
+  });
+  redirect(res, back);
+});
+
+// Application review (clerk): approving creates a membership nomination.
+route('GET', /^\/admin\/applications\/?$/, (req, res) => sendHtml(res, admin.applicationsAdmin()));
+route('POST', /^\/admin\/applications\/(\d+)\/decide$/, (req, res, ctx) => {
+  const a = repo.applications.get(Number(ctx.params[0]));
+  if (!a) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.decision === 'nominate') {
+    const motionId = repo.memberMotions.nominate({
+      action: 'seat', body_id: a.body_id,
+      nominee_name: a.name, nominee_email: a.email,
+      reason: a.statement ? `Citizen application: ${a.statement.slice(0, 400)}` : 'Citizen application',
+      nominated_by: ctx.user ? ctx.user.id : null,
+    });
+    repo.applications.decide(a.id, { status: 'Nominated', motionId });
+  } else {
+    repo.applications.decide(a.id, { status: 'Declined' });
+  }
+  redirect(res, '/admin/applications');
 });
 
 // Admin ----------------------------------------------------------------------
