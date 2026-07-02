@@ -136,7 +136,7 @@ function legislationList(query) {
       ${topic ? raw(`<input type="hidden" name="topic" value="${escapeText(topic)}">`) : ''}
       <div class="sp-grid">
         <label class="sp-field">Words or file number
-          <input type="search" name="q" value="${q}" placeholder="e.g. zoning, ORD-2026-0003">
+          <input type="search" name="q" value="${q}" placeholder="e.g. zoning, 260603">
         </label>
         <label class="sp-field">Type
           <select name="type">${raw('<option value="">— All types —</option>' + repo.MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>

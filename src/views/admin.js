@@ -82,13 +82,9 @@ function matterForm(matter, opts = {}) {
     <p class="muted file-num-preview">File # will be auto-assigned: <strong id="fn-preview">…</strong></p>
     <script>
       (function(){
-        var sel = document.querySelector('select[name="type"]');
         var out = document.getElementById('fn-preview');
-        if(!sel||!out) return;
-        var seq=0;
-        function refresh(){ var s=++seq; fetch('/admin/matters/next-number?type='+encodeURIComponent(sel.value)).then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){if(s===seq)out.textContent=d.number;}).catch(function(){if(s===seq)out.textContent='—';}); }
-        sel.addEventListener('change', refresh);
-        refresh();
+        if(!out) return;
+        fetch('/admin/matters/next-number').then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){out.textContent=d.number;}).catch(function(){out.textContent='—';});
       })();
     </script>`) : '';
 

@@ -272,15 +272,13 @@ const matters = {
     const yy = String(now.getFullYear()).slice(-2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const prefix = `${yy}${mm}`;
-    const row = db.prepare(
-      `SELECT file_number FROM matters WHERE file_number LIKE ?
-       ORDER BY file_number DESC LIMIT 1`).get(`${prefix}%`);
-    let next = 1;
-    if (row) {
-      const seq = parseInt(row.file_number.slice(4), 10);
-      if (!isNaN(seq)) next = seq + 1;
-    }
-    return `${prefix}${String(next).padStart(2, '0')}`;
+    // Max sequence computed numerically: lexicographic ordering would rank
+    // 260799 above 2607100 once a month passes 99 files and mint a duplicate.
+    const { m } = db.prepare(
+      `SELECT MAX(CAST(substr(file_number, 5) AS INTEGER)) AS m
+       FROM matters
+       WHERE file_number LIKE ? || '%' AND file_number NOT GLOB '*[^0-9]*'`).get(prefix);
+    return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
   },
   insert(m) {
     const id = db.prepare(`INSERT INTO matters
