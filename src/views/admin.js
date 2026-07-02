@@ -40,6 +40,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/users">Users &amp; roles</a>
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/branding">Branding</a>
+      <a class="btn" href="/admin/audit">Audit log</a>
       <a class="btn" href="/admin/footer">Footer</a>
       <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
     </div>
@@ -694,7 +695,29 @@ function applicationsAdmin() {
   return layout({ title: 'Applications', active: '/admin', body });
 }
 
+// --- Audit log ------------------------------------------------------------------
+function auditAdmin() {
+  const rows = repo.audit.recent(200);
+  const table = rows.length
+    ? `<table class="data compact"><thead><tr><th>When</th><th>User</th><th>Action</th><th>IP</th></tr></thead><tbody>${
+      rows.map((r) => html`
+        <tr>
+          <td>${r.created_at}</td>
+          <td>${r.user_name || raw('<span class="muted">—</span>')}</td>
+          <td><code>${r.method} ${r.path}</code></td>
+          <td>${r.ip || ''}</td>
+        </tr>`).join('')}</tbody></table>`
+    : emptyState('No recorded actions yet.');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Audit log</p>
+    <h1>Audit log</h1>
+    <p class="muted">Every state-changing request by a signed-in user (most recent 200 shown;
+      the log keeps the last 20,000 entries). Timestamps are UTC.</p>
+    ${raw(card('Recent actions', table))}`;
+  return layout({ title: 'Audit log', active: '/admin', body });
+}
+
 module.exports = {
   adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
-  matterTextForm, docTemplatesAdmin, applicationsAdmin,
+  matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin,
 };

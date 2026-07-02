@@ -1240,6 +1240,24 @@ const comments = {
 };
 
 // ---------------------------------------------------------------------------
+// Audit log (state-changing requests by signed-in users)
+// ---------------------------------------------------------------------------
+const audit = {
+  record({ userId, userName, method, path, ip }) {
+    db.prepare(`INSERT INTO audit_log (user_id, user_name, method, path, ip)
+      VALUES (?,?,?,?,?)`).run(userId || null, userName || null, method, path, ip || null);
+    // Cheap opportunistic prune so the table stays bounded.
+    if ((this._n = (this._n || 0) + 1) % 200 === 0) {
+      db.exec(`DELETE FROM audit_log WHERE id < (
+        SELECT MIN(id) FROM (SELECT id FROM audit_log ORDER BY id DESC LIMIT 20000))`);
+    }
+  },
+  recent(limit = 200) {
+    return db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Applications to serve on a board/commission
 // ---------------------------------------------------------------------------
 const applications = {
@@ -1336,5 +1354,5 @@ module.exports = {
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, watches, speakers, applications, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, speakers, applications, audit, stats, statusBuckets, purgeDomainData,
 };

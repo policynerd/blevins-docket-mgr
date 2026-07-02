@@ -824,6 +824,12 @@ route('POST', /^\/admin\/comments\/(\d+)\/status$/, (req, res, ctx) => {
   redirect(res, '/admin/comments');
 });
 
+// Audit log viewer (admin).
+route('GET', /^\/admin\/audit\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, admin.auditAdmin());
+});
+
 // Database backup download (admin): a fresh consistent copy via VACUUM INTO.
 route('GET', /^\/admin\/backup$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
@@ -1446,6 +1452,16 @@ const server = http.createServer(async (req, res) => {
   setUser(user);
 
   if (!gate(req, res, pathname, user)) return;
+
+  // Audit trail: record state-changing requests by signed-in users.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && user) {
+    try {
+      repo.audit.record({
+        userId: user.id, userName: user.name,
+        method: req.method, path: pathname, ip: clientIp(req),
+      });
+    } catch (e) { console.error('Audit record failed:', e.message); }
+  }
 
   for (const r of routes) {
     if (r.method !== req.method) continue;
