@@ -1,6 +1,6 @@
 'use strict';
 
-const { db } = require('./db');
+const { db, ftsEnabled } = require('./db');
 const { ORG } = require('./org');
 
 // ---------------------------------------------------------------------------
@@ -185,15 +185,32 @@ const bodies = {
 // ---------------------------------------------------------------------------
 // Matters (legislative files)
 // ---------------------------------------------------------------------------
+// Turn free text into a safe FTS5 MATCH expression: each token becomes a
+// quoted prefix phrase ("zoning"*), which sidesteps FTS query syntax entirely
+// (AND/OR/NEAR/parens in user input can't cause errors).
+function ftsQuery(q) {
+  return String(q).split(/\s+/).filter(Boolean).slice(0, 12)
+    .map((t) => `"${t.replace(/"/g, '')}"*`)
+    .join(' ');
+}
+
 const matters = {
   // Build the shared WHERE clause + bound args for search/count.
   _filter({ q, type, status, bodyId, sponsorId, topicId, from, to } = {}) {
     const clauses = [];
     const args = [];
     if (q) {
-      clauses.push('(m.title LIKE ? OR m.file_number LIKE ? OR m.summary LIKE ?)');
-      const like = `%${q}%`;
-      args.push(like, like, like);
+      const match = ftsEnabled() ? ftsQuery(q) : '';
+      if (match) {
+        // Full text (title, summary, full text, document body) OR a partial
+        // file-number match, which FTS prefix queries don't cover mid-string.
+        clauses.push('(m.id IN (SELECT rowid FROM matters_fts WHERE matters_fts MATCH ?) OR m.file_number LIKE ?)');
+        args.push(match, `%${q}%`);
+      } else {
+        clauses.push('(m.title LIKE ? OR m.file_number LIKE ? OR m.summary LIKE ?)');
+        const like = `%${q}%`;
+        args.push(like, like, like);
+      }
     }
     if (type) { clauses.push('m.type = ?'); args.push(type); }
     if (status) { clauses.push('m.status = ?'); args.push(status); }

@@ -344,6 +344,43 @@ function migrate() {
   // They should require a vote, so flip them to 1 if they haven't been explicitly toggled off.
   db.exec(`UPDATE agenda_items SET requires_vote=1 WHERE matter_id IS NOT NULL AND requires_vote=0`);
   renumberLegacyFileNumbers();
+  setupFullTextSearch();
+}
+
+// Full-text index over legislative files, kept in sync with triggers so every
+// writer (admin forms, member submissions, imports, seeds) is covered. If this
+// build of SQLite lacks FTS5 the app silently falls back to LIKE search.
+let FTS_ENABLED = false;
+function ftsEnabled() { return FTS_ENABLED; }
+
+function setupFullTextSearch() {
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS matters_fts USING fts5(
+      file_number, title, summary, full_text, body_html)`);
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS matters_fts_ai AFTER INSERT ON matters BEGIN
+        INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        VALUES (new.id, new.file_number, new.title, new.summary, new.full_text, new.body_html);
+      END;
+      CREATE TRIGGER IF NOT EXISTS matters_fts_ad AFTER DELETE ON matters BEGIN
+        DELETE FROM matters_fts WHERE rowid = old.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS matters_fts_au AFTER UPDATE ON matters BEGIN
+        DELETE FROM matters_fts WHERE rowid = old.id;
+        INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        VALUES (new.id, new.file_number, new.title, new.summary, new.full_text, new.body_html);
+      END;`);
+    // Backfill rows created before the index/triggers existed.
+    const indexed = db.prepare('SELECT COUNT(*) AS n FROM matters_fts').get().n;
+    const total = db.prepare('SELECT COUNT(*) AS n FROM matters').get().n;
+    if (indexed === 0 && total > 0) {
+      db.exec(`INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        SELECT id, file_number, title, summary, full_text, body_html FROM matters`);
+    }
+    FTS_ENABLED = true;
+  } catch (e) {
+    console.error('FTS5 unavailable, falling back to LIKE search:', e.message);
+  }
 }
 
 // One-time data migration: rewrite legacy prefix-style file numbers
@@ -393,7 +430,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['sessions', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
@@ -404,4 +441,4 @@ function reset() {
   init();
 }
 
-module.exports = { db, init, reset, DB_PATH };
+module.exports = { db, init, reset, DB_PATH, ftsEnabled };
