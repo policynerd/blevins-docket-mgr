@@ -26,7 +26,14 @@ function navFor(user) {
   // Re-resolve the live members label (branding may have changed it).
   const items = NAV.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : n));
   const rank = user ? (RANK[user.role] || 0) : 0;
-  if (rank >= RANK.member) items.push({ href: '/member', label: 'Member Portal' });
+  if (rank >= RANK.member) {
+    items.push({ href: '/member', label: 'Member Portal' });
+    // Approvals routed to this user (lazy require avoids a load-order cycle).
+    try {
+      const n = require('../repo').workflow.inboxCount(user.id, rank >= RANK.clerk);
+      items.push({ href: '/approvals', label: n ? `Approvals (${n})` : 'Approvals' });
+    } catch (_) { items.push({ href: '/approvals', label: 'Approvals' }); }
+  }
   if (rank >= RANK.staff) items.push({ href: '/govern/members', label: 'Membership' });
   if (rank >= RANK.clerk) items.push({ href: '/admin', label: 'Clerk Workspace' });
   return items;
@@ -201,12 +208,15 @@ function emptyState(msg) {
 function workflowStepper(steps) {
   if (!steps || !steps.length) return emptyState('This file has not been routed yet.');
   const badge = (st) => `<span class="wf-badge wf-b-${escapeText(String(st).toLowerCase())}">${escapeText(st)}</span>`;
+  const routedTo = (s) => ((s.status === 'Pending' || s.status === 'Returned')
+    ? (s.assignee_name ? ' · routed to ' + escapeText(s.assignee_name) : ' · unassigned (any clerk)')
+    : '');
   return `<ol class="wf">${steps.map((s) => `
     <li class="wf-step wf-${escapeText(String(s.status).toLowerCase())}">
       <span class="wf-dot"></span>
       <div class="wf-body">
         <div class="wf-name">${s.seq}. ${escapeText(s.name)} ${badge(s.status)}</div>
-        <div class="sub">${escapeText(s.role || '')}${s.acted_by_name ? ' · ' + escapeText(s.acted_by_name) : ''}${s.acted_at ? ' · ' + escapeText(formatDate(s.acted_at)) : ''}</div>
+        <div class="sub">${escapeText(s.role || '')}${routedTo(s)}${s.acted_by_name ? ' · ' + escapeText(s.acted_by_name) : ''}${s.acted_at ? ' · ' + escapeText(formatDate(s.acted_at)) : ''}</div>
         ${s.notes ? `<div class="sub wf-notes">${escapeText(s.notes)}</div>` : ''}
       </div>
     </li>`).join('')}</ol>`;

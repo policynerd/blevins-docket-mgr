@@ -30,6 +30,7 @@ const pdfGen = require('./src/pdf');
 const org = require('./src/org');
 const backup = require('./src/backup');
 const upload = require('./src/upload');
+const approvalsView = require('./src/views/approvals');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -797,7 +798,9 @@ route('POST', /^\/admin\/matters\/(\d+)\/route$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   const m = repo.matters.get(id);
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  repo.workflow.start(id);
+  // One assignee select per template step, in order; blank = any clerk.
+  const assigneeIds = asArray(ctx.body.assignee_id).map((v) => (v ? Number(v) : null));
+  repo.workflow.start(id, assigneeIds);
   repo.matters.addHistory({
     matter_id: id, action_date: require('./src/util').todayISO(), body_id: m.body_id || null,
     action: 'Introduced to approval route',
@@ -805,9 +808,19 @@ route('POST', /^\/admin\/matters\/(\d+)\/route$/, (req, res, ctx) => {
   redirect(res, `/admin/matters/${id}/edit`);
 });
 
-route('POST', /^\/admin\/workflow-steps\/(\d+)\/act$/, (req, res, ctx) => {
+// Who may act on a routed step: the user it's routed to, any clerk when the
+// step is unassigned, and admins (override).
+function canActOnStep(user, step) {
+  if (!user) return false;
+  if (auth.hasRole(user, 'admin')) return true;
+  if (step.assignee_id) return step.assignee_id === user.id;
+  return auth.hasRole(user, 'clerk');
+}
+
+function actOnStep(req, res, ctx, { backTo }) {
   const step = repo.workflow.get(Number(ctx.params[0]));
   if (!step) return sendHtml(res, pages.notFound(), 404);
+  if (!canActOnStep(ctx.user, step)) return sendHtml(res, forbidden(), 403);
   const status = ['Approved', 'Returned', 'Skipped'].includes(ctx.body.status) ? ctx.body.status : 'Approved';
   repo.workflow.act(step.id, { status, userId: ctx.user ? ctx.user.id : null, notes: ctx.body.notes });
   repo.matters.addHistory({
@@ -816,7 +829,21 @@ route('POST', /^\/admin\/workflow-steps\/(\d+)\/act$/, (req, res, ctx) => {
     result: status === 'Approved' ? 'Pass' : (status === 'Returned' ? 'Fail' : null),
     notes: ctx.body.notes || null,
   });
-  redirect(res, `/admin/matters/${step.matter_id}/edit`);
+  redirect(res, backTo === 'inbox' ? '/approvals' : `/admin/matters/${step.matter_id}/edit`);
+}
+
+route('POST', /^\/admin\/workflow-steps\/(\d+)\/act$/, (req, res, ctx) => actOnStep(req, res, ctx, { backTo: 'admin' }));
+
+// Approvals inbox — steps routed to the signed-in user (member+; assignees
+// may be staff or members who cannot reach the clerk-gated /admin area).
+route('GET', /^\/approvals\/?$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fapprovals');
+  if (!need(ctx, res, 'member')) return;
+  sendHtml(res, approvalsView.approvalsPage(ctx.user));
+});
+route('POST', /^\/approvals\/steps\/(\d+)\/act$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fapprovals');
+  actOnStep(req, res, ctx, { backTo: 'inbox' });
 });
 
 route('POST', /^\/admin\/matters\/(\d+)\/attachments$/, (req, res, ctx) => {

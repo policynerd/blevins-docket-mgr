@@ -863,21 +863,47 @@ function workflowTemplate() {
 const workflow = {
   forMatter(matterId) {
     return db.prepare(`
-      SELECT w.*, u.name AS acted_by_name
-      FROM workflow_steps w LEFT JOIN users u ON u.id = w.acted_by
+      SELECT w.*, u.name AS acted_by_name, a.name AS assignee_name
+      FROM workflow_steps w
+      LEFT JOIN users u ON u.id = w.acted_by
+      LEFT JOIN users a ON a.id = w.assignee_id
       WHERE w.matter_id = ? ORDER BY w.seq`).all(matterId);
   },
   get(stepId) {
-    return db.prepare('SELECT * FROM workflow_steps WHERE id = ?').get(stepId);
+    return db.prepare(`
+      SELECT w.*, a.name AS assignee_name
+      FROM workflow_steps w LEFT JOIN users a ON a.id = w.assignee_id
+      WHERE w.id = ?`).get(stepId);
   },
-  // Create the default route if this matter has none. Returns the step count.
-  start(matterId) {
+  // Create the default route if this matter has none, routing each step to the
+  // chosen user (assigneeIds is parallel to the template; null = any clerk).
+  // Returns the step count.
+  start(matterId, assigneeIds = []) {
     const existing = db.prepare('SELECT COUNT(*) AS n FROM workflow_steps WHERE matter_id = ?').get(matterId).n;
     if (existing > 0) return existing;
-    const ins = db.prepare('INSERT INTO workflow_steps (matter_id, seq, name, role, status) VALUES (?,?,?,?,?)');
+    const ins = db.prepare(`INSERT INTO workflow_steps (matter_id, seq, name, role, status, assignee_id)
+      VALUES (?,?,?,?,?,?)`);
     const template = workflowTemplate();
-    template.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending'));
+    template.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending', assigneeIds[i] || null));
     return template.length;
+  },
+  // Approvals inbox: the active (first Pending/Returned) step of each routed
+  // matter that is either assigned to this user, or unassigned and the user
+  // can act as a clerk.
+  inboxFor(userId, actsAsClerk = false) {
+    return db.prepare(`
+      SELECT w.*, m.file_number, m.title AS matter_title, a.name AS assignee_name
+      FROM workflow_steps w
+      JOIN matters m ON m.id = w.matter_id
+      LEFT JOIN users a ON a.id = w.assignee_id
+      WHERE w.status IN ('Pending','Returned')
+        AND w.seq = (SELECT MIN(w2.seq) FROM workflow_steps w2
+                     WHERE w2.matter_id = w.matter_id AND w2.status IN ('Pending','Returned'))
+        AND (w.assignee_id = ? OR (w.assignee_id IS NULL AND ?))
+      ORDER BY w.id`).all(userId, actsAsClerk ? 1 : 0);
+  },
+  inboxCount(userId, actsAsClerk = false) {
+    return this.inboxFor(userId, actsAsClerk).length;
   },
   // The active step = first that is Pending or Returned.
   current(matterId) {

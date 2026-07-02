@@ -187,16 +187,29 @@ function actionRecorder(matter) {
 function workflowPanel(matter) {
   const steps = repo.workflow.forMatter(matter.id);
   if (!steps.length) {
-    const inner = `<p class="muted">Route this file through departmental review and approval.</p>
-      <form method="post" action="/admin/matters/${matter.id}/route">
+    const activeUsers = repo.users.all().filter((u) => u.active);
+    const userOptions = (selected) => `<option value="">— any clerk —</option>`
+      + activeUsers.map((u) => `<option value="${u.id}">${escapeText(u.name)} (${escapeText(u.role)})</option>`).join('');
+    const stepRows = repo.workflowTemplate().map((s) => `
+      <label>${escapeText(s.name)} <span class="muted">(${escapeText(s.role || '')})</span>
+        <select name="assignee_id">${userOptions()}</select>
+      </label>`).join('');
+    const inner = `<p class="muted">Route this file through departmental review and approval.
+        Each step goes to the person you pick — it appears in their Approvals inbox, and only they
+        (or an admin) can act on it. Leave a step unassigned to let any clerk handle it.</p>
+      <form class="form" method="post" action="/admin/matters/${matter.id}/route">
+        <div class="form-row">${stepRows}</div>
         <button type="submit" class="btn">▶ Start approval route</button>
       </form>`;
     return card('Approval routing', inner);
   }
   const current = repo.workflow.current(matter.id);
+  const currentFull = current ? repo.workflow.get(current.id) : null;
   const actionForm = current ? `
     <form class="form inline-form" method="post" action="/admin/workflow-steps/${current.id}/act">
-      <p><strong>Current step:</strong> ${escapeText(current.seq + '. ' + current.name)} <span class="muted">(${escapeText(current.role || '')})</span></p>
+      <p><strong>Current step:</strong> ${escapeText(current.seq + '. ' + current.name)}
+        <span class="muted">(${escapeText(current.role || '')})</span>
+        — routed to <strong>${escapeText((currentFull && currentFull.assignee_name) || 'any clerk')}</strong></p>
       <label>Notes<input type="text" name="notes" placeholder="Optional decision note"></label>
       <div class="form-actions">
         <button type="submit" name="status" value="Approved" class="btn primary">Approve &amp; advance</button>
