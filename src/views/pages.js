@@ -239,7 +239,9 @@ function matterDetail(matter) {
 
   const attachmentList = attachments.length
     ? `<ul class="attach-list">${attachments.map((a) => html`
-        <li>${a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a>`) : a.name}
+        <li>${a.file_path
+    ? raw(`<a href="/files/${a.id}">${escapeText(a.name)}</a>`)
+    : (a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a>`) : a.name)}
         ${a.note ? raw(`<span class="muted"> — ${escapeText(a.note)}</span>`) : ''}</li>`).join('')}</ul>`
     : emptyState('No attachments.');
 
@@ -566,11 +568,12 @@ function agendaPacket(meeting) {
           ` — ${itemVotes.map((v) => `${escapeText(v.full_name)} (${v.vote})`).join('; ')}</p>`
         : '';
       const attachLine = attachments.length
-        ? `<p class="pk-meta"><strong>Attachments:</strong></p><ul class="pk-attachments">${attachments.map((a) =>
-            `<li>${a.url
-              ? `<a href="${escapeText(a.url)}" target="_blank" rel="noopener">${escapeText(a.name)}</a>`
-              : escapeText(a.name)}${a.note ? ` <span class="muted">— ${escapeText(a.note)}</span>` : ''}</li>`
-          ).join('')}</ul>`
+        ? `<p class="pk-meta"><strong>Attachments:</strong></p><ul class="pk-attachments">${attachments.map((a) => {
+    const href = a.file_path ? `/files/${a.id}` : a.url;
+    return `<li>${href
+      ? `<a href="${escapeText(href)}" target="_blank" rel="noopener">${escapeText(a.name)}</a>`
+      : escapeText(a.name)}${a.note ? ` <span class="muted">— ${escapeText(a.note)}</span>` : ''}</li>`;
+  }).join('')}</ul>`
         : '';
       detail = `<div class="pk-title"><span class="pk-file">${escapeText(it.file_number)}</span> ${escapeText(it.matter_title)}</div>`
         + summary + sponsorLine + actionLine + voteLine + attachLine;

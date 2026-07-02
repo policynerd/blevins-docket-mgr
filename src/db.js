@@ -315,6 +315,11 @@ const COLUMN_MIGRATIONS = {
     fiscal_impact: 'REAL',                         // dollar impact of this item
     budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
   },
+  attachments: {
+    file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
+    size: 'INTEGER',
+    content_type: 'TEXT',
+  },
   meetings: {
     minutes_html: 'TEXT',
     minutes_status: "TEXT NOT NULL DEFAULT 'none'",

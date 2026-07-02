@@ -219,17 +219,28 @@ function documentsPanel(matter) {
 
 function attachmentForm(matter) {
   const attachments = repo.matters.attachments(matter.id);
+  const sizeLabel = (n) => (n > 1024 * 1024 ? (n / (1024 * 1024)).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
   const list = attachments.length
-    ? `<ul class="attach-list">${attachments.map((a) => html`<li>${a.name}${a.url ? raw(` — <a href="${escapeText(a.url)}">link</a>`) : ''}</li>`).join('')}</ul>`
+    ? `<ul class="attach-list">${attachments.map((a) => html`<li>
+        ${a.file_path
+    ? raw(`<a href="/files/${a.id}">${escapeText(a.name)}</a> <span class="muted">(${escapeText(sizeLabel(a.size || 0))})</span>`)
+    : (a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a> <span class="muted">(link)</span>`) : a.name)}
+        <form method="post" action="/admin/attachments/${a.id}/delete" class="inline">
+          <button type="submit" class="btn-link danger" title="Remove attachment">remove</button>
+        </form></li>`).join('')}</ul>`
     : emptyState('No attachments yet.');
   const form = html`
-    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/attachments">
+    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/attachments"
+      enctype="multipart/form-data">
+      <label>Upload a file<input type="file" name="file"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.txt,.csv,.rtf"></label>
       <div class="form-row">
-        <label>Name<input type="text" name="name" required placeholder="Staff report.pdf"></label>
-        <label>URL<input type="url" name="url" placeholder="https://…"></label>
+        <label>Name<input type="text" name="name" placeholder="Defaults to the file name"></label>
+        <label>…or link a URL<input type="url" name="url" placeholder="https://…"></label>
       </div>
       <label>Note<input type="text" name="note" placeholder="Optional"></label>
       <button type="submit" class="btn">Add attachment</button>
+      <p class="muted">Upload a file (stored with the record, max 20 MB) or provide an external link with a name.</p>
     </form>
     ${raw(list)}`;
   return card('Attachments', form);

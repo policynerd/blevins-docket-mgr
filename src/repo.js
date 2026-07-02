@@ -326,8 +326,15 @@ const matters = {
       h.result || null, h.notes || null, h.meeting_id || null).lastInsertRowid;
   },
   addAttachment(a) {
-    return db.prepare(`INSERT INTO attachments (matter_id, name, url, note)
-      VALUES (?,?,?,?)`).run(a.matter_id, a.name, a.url || null, a.note || null).lastInsertRowid;
+    return db.prepare(`INSERT INTO attachments (matter_id, name, url, note, file_path, size, content_type)
+      VALUES (?,?,?,?,?,?,?)`).run(a.matter_id, a.name, a.url || null, a.note || null,
+      a.file_path || null, a.size || null, a.content_type || null).lastInsertRowid;
+  },
+  getAttachment(id) {
+    return db.prepare('SELECT * FROM attachments WHERE id = ?').get(id);
+  },
+  removeAttachment(id) {
+    db.prepare('DELETE FROM attachments WHERE id = ?').run(id);
   },
 };
 

@@ -29,6 +29,7 @@ const importer = require('./src/import');
 const pdfGen = require('./src/pdf');
 const org = require('./src/org');
 const backup = require('./src/backup');
+const upload = require('./src/upload');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -775,10 +776,44 @@ route('POST', /^\/admin\/matters\/(\d+)\/attachments$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   const m = repo.matters.get(id);
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  if (ctx.body.name) {
+  const file = (ctx.files || []).find((f) => f.field === 'file' && f.filename);
+  if (file) {
+    const saved = upload.saveUpload(`matter-${id}`, file);
+    if (!saved.error) {
+      repo.matters.addAttachment({
+        matter_id: id, name: ctx.body.name || saved.name, note: ctx.body.note,
+        file_path: saved.rel, size: saved.size, content_type: saved.contentType,
+      });
+    }
+  } else if (ctx.body.name) {
     repo.matters.addAttachment({ matter_id: id, name: ctx.body.name, url: ctx.body.url, note: ctx.body.note });
   }
   redirect(res, `/admin/matters/${id}/edit`);
+});
+route('POST', /^\/admin\/attachments\/(\d+)\/delete$/, (req, res, ctx) => {
+  const a = repo.matters.getAttachment(Number(ctx.params[0]));
+  if (!a) return sendHtml(res, pages.notFound(), 404);
+  if (a.file_path) upload.removeUpload(a.file_path);
+  repo.matters.removeAttachment(a.id);
+  redirect(res, `/admin/matters/${a.matter_id}/edit`);
+});
+
+// Public download of uploaded attachment files (attachments are public record).
+route('GET', /^\/files\/(\d+)$/, (req, res, ctx) => {
+  const a = repo.matters.getAttachment(Number(ctx.params[0]));
+  if (!a || !a.file_path) return sendHtml(res, pages.notFound(), 404);
+  const abs = upload.uploadPath(a.file_path);
+  if (!abs) return sendHtml(res, pages.notFound(), 404);
+  const inline = /^(application\/pdf|image\/|text\/plain)/.test(a.content_type || '');
+  const ext = path.extname(a.file_path);
+  let fname = String(a.name || 'file').replace(/["\r\n]/g, '');
+  if (ext && !fname.toLowerCase().endsWith(ext.toLowerCase())) fname += ext;
+  res.writeHead(200, {
+    'Content-Type': a.content_type || 'application/octet-stream',
+    'Content-Length': fs.statSync(abs).size,
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${fname}"`,
+  });
+  fs.createReadStream(abs).pipe(res);
 });
 
 route('GET', /^\/admin\/meetings\/new$/, (req, res) => sendHtml(res, admin.meetingForm()));
@@ -1170,8 +1205,16 @@ const server = http.createServer(async (req, res) => {
 
   const query = parseQuery(url.search.replace(/^\?/, ''));
   let body = {};
+  let files = [];
   if (req.method === 'POST' || req.method === 'PUT') {
-    body = await parseBody(req);
+    if ((req.headers['content-type'] || '').startsWith('multipart/form-data')) {
+      const mp = await upload.parseMultipart(req);
+      body = mp.fields;
+      files = mp.files;
+      if (mp.tooLarge) body.__too_large = true;
+    } else {
+      body = await parseBody(req);
+    }
   }
 
   // Resolve the current user and gate protected areas. Set the user for the
@@ -1187,7 +1230,7 @@ const server = http.createServer(async (req, res) => {
     if (match) {
       const params = match.slice(1);
       try {
-        return r.handler(req, res, { params, query, body, user, pathname });
+        return r.handler(req, res, { params, query, body, files, user, pathname });
       } catch (err) {
         console.error('Handler error:', err);
         if (pathname.startsWith('/api/')) return sendJson(res, { error: 'Internal error' }, 500);
