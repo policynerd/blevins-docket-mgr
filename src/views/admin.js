@@ -31,6 +31,8 @@ function adminHome(user) {
       <a class="btn" href="/admin/doc-templates">Document templates</a>
       <a class="btn" href="/admin/comments">Public comments${repo.comments.pendingCount()
         ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
+      <a class="btn" href="/admin/applications">Applications${repo.applications.pendingCount()
+        ? raw(` <span class="badge pending-badge">${repo.applications.pendingCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
@@ -38,6 +40,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/users">Users &amp; roles</a>
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/branding">Branding</a>
+      <a class="btn" href="/admin/audit">Audit log</a>
       <a class="btn" href="/admin/footer">Footer</a>
       <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
     </div>
@@ -449,9 +452,36 @@ function agendaManager(meeting) {
     ${raw(card('Add agenda item', addItemForm))}
     ${raw(card('Agenda items & voting',
       loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
+    ${raw(speakerQueue(meeting))}
     <script src="/assets/agenda-reorder.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
+}
+
+// Request-to-speak queue for a meeting (public sign-ups awaiting the clerk).
+function speakerQueue(meeting) {
+  const speakers = repo.speakers.forMeeting(meeting.id);
+  if (!speakers.length) return card('Speakers', emptyState('No requests to speak.'));
+  const btn = (s, status, label, cls = 'btn') => `
+    <form method="post" action="/admin/speakers/${s.id}/status" class="inline">
+      <input type="hidden" name="status" value="${status}">
+      <button type="submit" class="${cls}">${label}</button>
+    </form>`;
+  const rows = speakers.map((s) => html`
+    <li>
+      <div class="comment-head">
+        <strong>${s.name}</strong>
+        ${s.position ? raw(`<span class="badge pos-${String(s.position).toLowerCase()}">${escapeText(s.position)}</span>`) : ''}
+        ${statusBadge(s.status)}
+        — ${s.agenda_item_id ? `${s.agenda_number ? s.agenda_number + '. ' : ''}${s.item_title || ''}` : 'General public comment'}
+        ${s.email ? raw(`<span class="muted">· ${escapeText(s.email)}</span>`) : ''}
+      </div>
+      <div class="form-actions">
+        ${s.status === 'Pending' ? raw(btn(s, 'Approved', 'Approve', 'btn primary') + btn(s, 'Rejected', 'Reject')) : ''}
+        ${s.status === 'Approved' ? raw(btn(s, 'Spoke', 'Mark as spoke')) : ''}
+      </div>
+    </li>`).join('');
+  return card(`Speakers (${speakers.length})`, `<ul class="comment-list">${rows}</ul>`);
 }
 
 function voteBlock(meeting, it) {
@@ -624,7 +654,70 @@ function commentsAdmin() {
   return layout({ title: 'Public comments', active: '/admin', body });
 }
 
+// --- Board/commission application review --------------------------------------
+function applicationsAdmin() {
+  const pending = repo.applications.pending();
+  const decided = repo.applications.recentDecided();
+  const row = (a, actions) => html`
+    <li>
+      <div class="comment-head">
+        <strong>${a.name}</strong> — applying to <strong>${a.body_name}</strong>
+        <span class="muted">· ${raw(formatDate(a.created_at))}${a.email ? ' · ' + a.email : ''}${a.phone ? ' · ' + a.phone : ''}</span>
+      </div>
+      ${a.statement ? raw(`<p class="comment-body">${escapeText(a.statement)}</p>`) : ''}
+      ${raw(actions)}
+    </li>`;
+  const pendingList = pending.length
+    ? `<ul class="comment-list">${pending.map((a) => row(a, `
+        <div class="form-actions">
+          <form method="post" action="/admin/applications/${a.id}/decide" class="inline">
+            <input type="hidden" name="decision" value="nominate">
+            <button type="submit" class="btn primary">Nominate for seat</button>
+          </form>
+          <form method="post" action="/admin/applications/${a.id}/decide" class="inline">
+            <input type="hidden" name="decision" value="decline">
+            <button type="submit" class="btn">Decline</button>
+          </form>
+        </div>`)).join('')}</ul>`
+    : emptyState('No applications waiting for review.');
+  const decidedList = decided.length
+    ? `<ul class="comment-list">${decided.map((a) => row(a,
+      `<div class="form-actions">${statusBadge(a.status)}${a.motion_id
+        ? ` <a class="btn-link" href="/govern/members">view nomination</a>` : ''}</div>`)).join('')}</ul>`
+    : emptyState('No decided applications yet.');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Applications</p>
+    <h1>Board &amp; commission applications</h1>
+    <p class="muted">Citizen applications submitted from body pages. Nominating an applicant creates a
+      seat nomination in the membership workflow (Nominate → Approve → Seat).</p>
+    ${raw(card(`Awaiting review (${pending.length})`, pendingList))}
+    ${raw(card('Recently decided', decidedList))}`;
+  return layout({ title: 'Applications', active: '/admin', body });
+}
+
+// --- Audit log ------------------------------------------------------------------
+function auditAdmin() {
+  const rows = repo.audit.recent(200);
+  const table = rows.length
+    ? `<table class="data compact"><thead><tr><th>When</th><th>User</th><th>Action</th><th>IP</th></tr></thead><tbody>${
+      rows.map((r) => html`
+        <tr>
+          <td>${r.created_at}</td>
+          <td>${r.user_name || raw('<span class="muted">—</span>')}</td>
+          <td><code>${r.method} ${r.path}</code></td>
+          <td>${r.ip || ''}</td>
+        </tr>`).join('')}</tbody></table>`
+    : emptyState('No recorded actions yet.');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Audit log</p>
+    <h1>Audit log</h1>
+    <p class="muted">Every state-changing request by a signed-in user (most recent 200 shown;
+      the log keeps the last 20,000 entries). Timestamps are UTC.</p>
+    ${raw(card('Recent actions', table))}`;
+  return layout({ title: 'Audit log', active: '/admin', body });
+}
+
 module.exports = {
   adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
-  matterTextForm, docTemplatesAdmin,
+  matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin,
 };

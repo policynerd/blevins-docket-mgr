@@ -214,6 +214,52 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Audit trail of state-changing requests by signed-in users.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER,
+  user_name TEXT,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  ip TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Citizen applications to serve on a board/commission. Approving one creates
+-- a member_motions nomination (entering the Nominate -> Approve -> Seat flow).
+CREATE TABLE IF NOT EXISTS board_applications (
+  id INTEGER PRIMARY KEY,
+  body_id INTEGER NOT NULL REFERENCES bodies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  statement TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Nominated | Declined
+  motion_id INTEGER REFERENCES member_motions(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Request-to-speak sign-ups for upcoming meetings; reviewed by the clerk.
+CREATE TABLE IF NOT EXISTS speaker_requests (
+  id INTEGER PRIMARY KEY,
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  email TEXT,
+  position TEXT,                            -- Support | Oppose | Neutral
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Approved | Rejected | Spoke
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Watch list: signed-in users following a legislative file.
+CREATE TABLE IF NOT EXISTS watches (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, matter_id)
+);
+
 -- Public comments on legislative files (eComment). Held for clerk review;
 -- only Approved comments are displayed publicly.
 CREATE TABLE IF NOT EXISTS public_comments (
@@ -310,6 +356,8 @@ CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
+CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
@@ -462,7 +510,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'audit_log', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

@@ -182,6 +182,44 @@ route('GET', /^\/calendar\.ics$/, (req, res) => {
     { filename: 'meetings.ics' });
 });
 
+// Per-file activity feed (RSS) — must be registered before the greedy route.
+route('GET', /^\/legislation\/(.+)\.rss$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendJson(res, { error: 'Not found' }, 404);
+  const events = [
+    ...repo.matters.history(m.id).map((h) => ({
+      date: h.action_date,
+      title: `${h.action}${h.result ? ' — ' + h.result : ''}`,
+      description: h.notes || undefined,
+    })),
+    ...repo.matters.versions(m.id).map((v) => ({
+      date: v.created_at,
+      title: `Text revised (version ${v.version} archived)`,
+    })),
+  ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 50);
+  sendText(res, feeds.matterRss(m, events, baseUrl(req)), 'application/rss+xml; charset=utf-8');
+});
+
+// Watch / unwatch a file (signed-in users).
+route('POST', /^\/legislation\/(.+)\/watch$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const back = `/legislation/${encodeURIComponent(m.file_number)}`;
+  if (!ctx.user) return redirect(res, '/login?next=' + encodeURIComponent(back));
+  repo.watches.toggle(ctx.user.id, m.id);
+  redirect(res, back);
+});
+route('GET', /^\/watching\/?$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fwatching');
+  sendHtml(res, member.watchingPage(ctx.user));
+});
+
+// Amendment comparison — must be registered before the greedy matter route.
+route('GET', /^\/legislation\/(.+)\/compare$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.matterComparePage(m, ctx.query));
+});
 // Archived text version — must be registered before the greedy matter route.
 route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
@@ -193,29 +231,37 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.matterDetail(m, ctx.query));
+  sendHtml(res, pages.matterDetail(m, ctx.query, ctx.user));
 });
+
+// Shared per-IP throttle for anonymous public forms (comments, speaker
+// sign-ups, applications): 5 accepted submissions per 10 minutes.
+const publicFormHits = new Map(); // ip -> { count, first }
+function publicFormThrottled(ip) {
+  const now = Date.now();
+  const rec = publicFormHits.get(ip) || { count: 0, first: now };
+  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
+  if (rec.count >= 5) return true;
+  rec.count += 1;
+  publicFormHits.set(ip, rec);
+  if (publicFormHits.size > 10000) publicFormHits.clear();
+  return false;
+}
 
 // Public comment submission (eComment) — throttled per IP, honeypot-filtered,
 // and held for clerk review before publication.
-const commentThrottle = new Map(); // ip -> { count, first }
 route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const back = `/legislation/${encodeURIComponent(m.file_number)}`;
   // Honeypot field filled = bot; pretend success without storing anything.
   if (ctx.body.website) return redirect(res, back + '?commented=1');
-  const ip = clientIp(req);
-  const now = Date.now();
-  const rec = commentThrottle.get(ip) || { count: 0, first: now };
-  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
-  if (rec.count >= 5) return sendHtml(res, '<h1>429 — Too many comments. Please try again later.</h1>', 429);
   const name = String(ctx.body.name || '').trim().slice(0, 100);
   const body = String(ctx.body.body || '').trim().slice(0, 4000);
   if (!name || !body) return redirect(res, back);
-  rec.count += 1;
-  commentThrottle.set(ip, rec);
-  if (commentThrottle.size > 10000) commentThrottle.clear();
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
   repo.comments.add({
     matter_id: m.id, name, body,
     email: String(ctx.body.email || '').trim().slice(0, 200) || null,
@@ -223,11 +269,42 @@ route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
   });
   redirect(res, back + '?commented=1');
 });
+
+// Request to speak at an upcoming meeting.
+route('POST', /^\/meetings\/(\d+)\/speak$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const back = `/meetings/${mt.id}`;
+  if (!pages.acceptsSpeakers(mt)) return redirect(res, back); // meeting concluded/cancelled
+  if (ctx.body.website) return redirect(res, back + '?speak=1'); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  if (!name) return redirect(res, back);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  const itemId = ctx.body.agenda_item_id ? Number(ctx.body.agenda_item_id) : null;
+  const item = itemId ? repo.meetings.getItem(itemId) : null;
+  repo.speakers.add({
+    meeting_id: mt.id,
+    agenda_item_id: item && item.meeting_id === mt.id ? item.id : null,
+    name,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    position: ctx.body.position,
+  });
+  redirect(res, back + '?speak=1');
+});
+// Speaker queue moderation (clerk).
+route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
+  const s = repo.speakers.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  repo.speakers.setStatus(s.id, ctx.body.status);
+  redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
+});
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.meetingDetail(mt));
+  sendHtml(res, pages.meetingDetail(mt, ctx.query));
 });
 route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
@@ -292,7 +369,46 @@ route('GET', /^\/bodies\/?$/, (req, res) => sendHtml(res, pages.bodiesList()));
 route('GET', /^\/bodies\/(\d+)$/, (req, res, ctx) => {
   const b = repo.bodies.get(Number(ctx.params[0]));
   if (!b) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.bodyDetail(b));
+  sendHtml(res, pages.bodyDetail(b, ctx.query));
+});
+
+// Citizen application to serve on a board/commission (public form).
+route('POST', /^\/bodies\/(\d+)\/apply$/, (req, res, ctx) => {
+  const b = repo.bodies.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  const back = `/bodies/${b.id}?applied=1`;
+  if (ctx.body.website) return redirect(res, back); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  if (!name) return redirect(res, `/bodies/${b.id}`);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.applications.add({
+    body_id: b.id, name,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    phone: String(ctx.body.phone || '').trim().slice(0, 40) || null,
+    statement: String(ctx.body.statement || '').trim().slice(0, 4000) || null,
+  });
+  redirect(res, back);
+});
+
+// Application review (clerk): approving creates a membership nomination.
+route('GET', /^\/admin\/applications\/?$/, (req, res) => sendHtml(res, admin.applicationsAdmin()));
+route('POST', /^\/admin\/applications\/(\d+)\/decide$/, (req, res, ctx) => {
+  const a = repo.applications.get(Number(ctx.params[0]));
+  if (!a) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.decision === 'nominate') {
+    const motionId = repo.memberMotions.nominate({
+      action: 'seat', body_id: a.body_id,
+      nominee_name: a.name, nominee_email: a.email,
+      reason: a.statement ? `Citizen application: ${a.statement.slice(0, 400)}` : 'Citizen application',
+      nominated_by: ctx.user ? ctx.user.id : null,
+    });
+    repo.applications.decide(a.id, { status: 'Nominated', motionId });
+  } else {
+    repo.applications.decide(a.id, { status: 'Declined' });
+  }
+  redirect(res, '/admin/applications');
 });
 
 // Admin ----------------------------------------------------------------------
@@ -707,6 +823,12 @@ route('POST', /^\/admin\/comments\/(\d+)\/status$/, (req, res, ctx) => {
   if (!c) return sendHtml(res, pages.notFound(), 404);
   repo.comments.setStatus(c.id, ctx.body.status);
   redirect(res, '/admin/comments');
+});
+
+// Audit log viewer (admin).
+route('GET', /^\/admin\/audit\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, admin.auditAdmin());
 });
 
 // Database backup download (admin): a fresh consistent copy via VACUUM INTO.
@@ -1331,6 +1453,16 @@ const server = http.createServer(async (req, res) => {
   setUser(user);
 
   if (!gate(req, res, pathname, user)) return;
+
+  // Audit trail: record state-changing requests by signed-in users.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && user) {
+    try {
+      repo.audit.record({
+        userId: user.id, userName: user.name,
+        method: req.method, path: pathname, ip: clientIp(req),
+      });
+    } catch (e) { console.error('Audit record failed:', e.message); }
+  }
 
   for (const r of routes) {
     if (r.method !== req.method) continue;

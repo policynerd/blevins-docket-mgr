@@ -62,9 +62,9 @@ function htmlToText(htmlStr, maxLen = 280) {
   const t = String(htmlStr || '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&') // last, so "&amp;lt;" decodes to "&lt;", not "<"
     .replace(/\s+/g, ' ')
     .trim();
   return t.length > maxLen ? t.slice(0, maxLen - 1) + '…' : t;

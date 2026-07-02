@@ -1239,10 +1239,120 @@ const comments = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Audit log (state-changing requests by signed-in users)
+// ---------------------------------------------------------------------------
+const audit = {
+  record({ userId, userName, method, path, ip }) {
+    db.prepare(`INSERT INTO audit_log (user_id, user_name, method, path, ip)
+      VALUES (?,?,?,?,?)`).run(userId || null, userName || null, method, path, ip || null);
+    // Cheap opportunistic prune so the table stays bounded.
+    if ((this._n = (this._n || 0) + 1) % 200 === 0) {
+      db.exec(`DELETE FROM audit_log WHERE id < (
+        SELECT MIN(id) FROM (SELECT id FROM audit_log ORDER BY id DESC LIMIT 20000))`);
+    }
+  },
+  recent(limit = 200) {
+    return db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Applications to serve on a board/commission
+// ---------------------------------------------------------------------------
+const applications = {
+  add(a) {
+    return db.prepare(`INSERT INTO board_applications (body_id, name, email, phone, statement)
+      VALUES (?,?,?,?,?)`).run(a.body_id, a.name, a.email || null, a.phone || null,
+      a.statement || null).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.id = ?`).get(id);
+  },
+  pending() {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.status = 'Pending' ORDER BY a.created_at`).all();
+  },
+  recentDecided(limit = 25) {
+    return db.prepare(`SELECT a.*, b.name AS body_name FROM board_applications a
+      JOIN bodies b ON b.id = a.body_id WHERE a.status != 'Pending'
+      ORDER BY a.created_at DESC LIMIT ?`).all(limit);
+  },
+  pendingCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM board_applications WHERE status = 'Pending'").get().n;
+  },
+  decide(id, { status, motionId = null }) {
+    if (!['Nominated', 'Declined', 'Pending'].includes(status)) return;
+    db.prepare('UPDATE board_applications SET status = ?, motion_id = ? WHERE id = ?')
+      .run(status, motionId, id);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Request to speak (public sign-ups for upcoming meetings)
+// ---------------------------------------------------------------------------
+const speakers = {
+  add(s) {
+    return db.prepare(`INSERT INTO speaker_requests (meeting_id, agenda_item_id, name, email, position)
+      VALUES (?,?,?,?,?)`).run(
+      s.meeting_id, s.agenda_item_id || null, s.name, s.email || null,
+      COMMENT_POSITIONS.includes(s.position) ? s.position : null).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM speaker_requests WHERE id = ?').get(id);
+  },
+  forMeeting(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ?
+      ORDER BY CASE s.status WHEN 'Pending' THEN 0 WHEN 'Approved' THEN 1 ELSE 2 END, s.created_at`)
+      .all(meetingId);
+  },
+  setStatus(id, status) {
+    if (!['Pending', 'Approved', 'Rejected', 'Spoke'].includes(status)) return;
+    db.prepare('UPDATE speaker_requests SET status = ? WHERE id = ?').run(status, id);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Watch lists (follow a legislative file)
+// ---------------------------------------------------------------------------
+const watches = {
+  isWatching(userId, matterId) {
+    return !!db.prepare('SELECT 1 FROM watches WHERE user_id = ? AND matter_id = ?').get(userId, matterId);
+  },
+  toggle(userId, matterId) {
+    if (this.isWatching(userId, matterId)) {
+      db.prepare('DELETE FROM watches WHERE user_id = ? AND matter_id = ?').run(userId, matterId);
+      return false;
+    }
+    db.prepare('INSERT INTO watches (user_id, matter_id) VALUES (?,?)').run(userId, matterId);
+    return true;
+  },
+  // Watched files with their most recent recorded action.
+  forUser(userId) {
+    return db.prepare(`
+      SELECT m.*, b.name AS body_name, w.created_at AS watched_at,
+        (SELECT h.action FROM matter_history h WHERE h.matter_id = m.id
+         ORDER BY h.action_date DESC, h.id DESC LIMIT 1) AS last_action,
+        (SELECT h.action_date FROM matter_history h WHERE h.matter_id = m.id
+         ORDER BY h.action_date DESC, h.id DESC LIMIT 1) AS last_action_date
+      FROM watches w
+      JOIN matters m ON m.id = w.matter_id
+      LEFT JOIN bodies b ON b.id = m.body_id
+      WHERE w.user_id = ?
+      ORDER BY m.updated_at DESC`).all(userId);
+  },
+};
+
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, speakers, applications, audit, stats, statusBuckets, purgeDomainData,
 };

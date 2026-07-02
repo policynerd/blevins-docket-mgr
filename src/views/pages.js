@@ -218,7 +218,7 @@ function legislationList(query) {
 }
 
 // --- Matter detail -----------------------------------------------------------
-function matterDetail(matter, query = {}) {
+function matterDetail(matter, query = {}, user = null) {
   const sponsors = repo.matters.sponsors(matter.id);
   const history = repo.matters.history(matter.id);
   const attachments = repo.matters.attachments(matter.id);
@@ -317,7 +317,8 @@ function matterDetail(matter, query = {}) {
     ? `<h3 class="tab-h">Text versions</h3><ul class="version-list">
         <li><strong>Version ${currentVersion}</strong> <span class="badge st-active">current</span></li>
         ${versions.map((v) => html`<li>Version ${v.version} — archived ${raw(formatDate(v.created_at))}
-          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a></li>`).join('')}
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a>
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/compare?from=${v.version}&amp;to=${currentVersion}">compare with current</a></li>`).join('')}
       </ul>`
     : '';
 
@@ -386,6 +387,11 @@ function matterDetail(matter, query = {}) {
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">
+        ${user ? raw(`
+        <form method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/watch" class="inline">
+          <button type="submit" class="btn">${repo.watches.isWatching(user.id, matter.id) ? '★ Watching' : '☆ Watch'}</button>
+        </form>`) : ''}
+        <a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}.rss" title="Activity feed">RSS</a>
         <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
         <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
           <button type="submit" class="btn">+ Draft staff report</button>
@@ -397,6 +403,47 @@ function matterDetail(matter, query = {}) {
     <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: matter.file_number, active: '/legislation', body });
+}
+
+// Amendment comparison: inline redline between two text versions.
+function matterComparePage(matter, query = {}) {
+  const diff = require('../diff');
+  const versions = repo.matters.versions(matter.id);
+  const currentVersion = versions.length + 1;
+  const textOf = (sel) => {
+    if (String(sel) === String(currentVersion) || sel === 'current' || !sel) {
+      return { n: currentVersion, label: `Version ${currentVersion} (current)`,
+        text: matter.body_html ? diff.stripHtml(matter.body_html) : (matter.full_text || '') };
+    }
+    const v = repo.matters.getVersion(matter.id, Number(sel));
+    if (!v) return null;
+    return { n: v.version, label: `Version ${v.version} (archived ${formatDate(v.created_at)})`,
+      text: v.body_html ? diff.stripHtml(v.body_html) : (v.full_text || '') };
+  };
+  const from = textOf(query.from || (versions.length ? versions[0].version : currentVersion)) || textOf('current');
+  const to = textOf(query.to || 'current') || textOf('current');
+
+  const st = diff.stats(from.text, to.text);
+  const opts = (sel) => Array.from({ length: currentVersion }, (_, i) => i + 1)
+    .map((n) => `<option value="${n}"${n === sel.n ? ' selected' : ''}>Version ${n}${n === currentVersion ? ' (current)' : ''}</option>`).join('');
+  const picker = `
+    <form class="form inline-form" method="get" action="/legislation/${encodeURIComponent(matter.file_number)}/compare">
+      <div class="form-row">
+        <label>From<select name="from">${opts(from)}</select></label>
+        <label>To<select name="to">${opts(to)}</select></label>
+        <button type="submit" class="btn">Compare</button>
+      </div>
+    </form>
+    <p class="muted"><ins class="df-ins">Added</ins> and <del class="df-del">removed</del> text,
+      comparing ${escapeText(from.label)} → ${escapeText(to.label)} ·
+      <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/legislation">Legislation</a> /
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Compare</p>
+    <h1>${matter.title}</h1>
+    ${raw(card('Compare versions', picker + `<div class="doc-body redline">${diff.diffHtml(from.text, to.text) || emptyState('Neither version has text.')}</div>`))}`;
+  return layout({ title: `${matter.file_number} — compare`, active: '/legislation', body });
 }
 
 // Archived text version of a matter (public record, like the current text).
@@ -513,7 +560,7 @@ function calendar(query = {}) {
 }
 
 // --- Meeting detail ----------------------------------------------------------
-function meetingDetail(meeting) {
+function meetingDetail(meeting, query = {}) {
   const items = repo.meetings.items(meeting.id);
 
   // Columnar "meeting items" grid grouped by agenda section.
@@ -601,8 +648,47 @@ function meetingDetail(meeting) {
       </dl>`))}
     ${raw(attendanceCard)}
     ${raw(card('Meeting items', itemsGrid))}
+    ${raw(speakCard(meeting, items, query))}
   `;
   return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
+}
+
+// Public request-to-speak sign-up, shown while a meeting still accepts
+// speakers (not concluded/cancelled; In Progress allowed for same-day
+// sign-ups while the meeting is live). Keep in sync with acceptsSpeakers.
+function speakCard(meeting, items, query = {}) {
+  if (!acceptsSpeakers(meeting)) return '';
+  if (query.speak === '1') {
+    return card('Request to speak',
+      '<p class="form-ok">Thank you — your request has been received. The Clerk’s office will confirm your spot before the meeting.</p>');
+  }
+  const itemOptions = ['<option value="">General public comment</option>']
+    .concat(items.map((it) => {
+      const label = `${it.agenda_number ? it.agenda_number + '. ' : ''}${it.matter_id ? it.matter_title : (it.title || '(item)')}`;
+      return `<option value="${it.id}">${escapeText(label.slice(0, 90))}</option>`;
+    })).join('');
+  const form = `
+    <p class="muted">Sign up to address the body at this meeting. Requests are reviewed by the Clerk's office;
+      your name is called during the item you select.</p>
+    <form class="form" method="post" action="/meetings/${meeting.id}/speak">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email (for confirmation)<input type="email" name="email" maxlength="200"></label>
+      </div>
+      <div class="form-row">
+        <label>Agenda item<select name="agenda_item_id">${itemOptions}</select></label>
+        <label>Position<select name="position"><option value="">—</option>
+          ${repo.COMMENT_POSITIONS.map((p) => `<option>${p}</option>`).join('')}</select></label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit" class="btn primary">Request to speak</button>
+    </form>`;
+  return card('Request to speak', form);
+}
+
+function acceptsSpeakers(meeting) {
+  return meeting.meeting_date >= todayISO()
+    && !['Cancelled', 'Final', 'Adjourned'].includes(meeting.status);
 }
 
 // --- Agenda packet (print / save-as-PDF) ------------------------------------
@@ -817,7 +903,7 @@ function bodiesList() {
     subtitle: 'Legislative bodies, committees, and commissions.', body });
 }
 
-function bodyDetail(b) {
+function bodyDetail(b, query = {}) {
   const members = repo.bodies.members(b.id);
   const meetings = repo.bodies.upcomingMeetings(b.id, 24);
   const legislation = repo.bodies.legislation(b.id);
@@ -868,10 +954,29 @@ function bodyDetail(b) {
     ? `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Introduced</th></tr></thead><tbody>${legRows}</tbody></table>`
     : emptyState('No legislation in control of this body.');
 
+  const applyPanel = query.applied === '1'
+    ? '<p class="form-ok">Thank you — your application has been received. The Clerk’s office reviews applications and will contact you.</p>'
+    : `
+    <p class="muted">Interested in serving on the ${escapeText(b.name)}? Submit an application —
+      the ${escapeText(ORG.clerkOffice)} reviews it, and approved applicants are nominated through
+      the membership process.</p>
+    <form class="form" method="post" action="/bodies/${b.id}/apply">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email<input type="email" name="email" maxlength="200"></label>
+        <label>Phone<input type="text" name="phone" maxlength="40"></label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label>Why do you want to serve? (qualifications, interest)
+        <textarea name="statement" rows="4" maxlength="4000"></textarea></label>
+      <button type="submit" class="btn primary">Submit application</button>
+    </form>`;
+
   const tabbed = tabs([
     { id: 'members', label: 'Members', count: members.length, html: membersPanel },
     { id: 'meetings', label: 'Meetings', count: meetings.length, html: meetingsPanel },
     { id: 'legislation', label: 'Legislation', count: legislation.length, html: legPanel },
+    { id: 'apply', label: 'Apply to serve', html: applyPanel },
   ]);
 
   const meta = html`
@@ -1006,6 +1111,6 @@ function notFound() {
 }
 
 module.exports = {
-  dashboard, legislationList, matterDetail, matterVersionPage, calendar, meetingDetail, agendaPacket,
-  peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
+  dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, calendar, meetingDetail, agendaPacket,
+  peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound, acceptsSpeakers,
 };
