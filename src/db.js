@@ -330,6 +330,47 @@ function migrate() {
   // Backfill: matter-linked items existed before requires_vote was added (DEFAULT 0).
   // They should require a vote, so flip them to 1 if they haven't been explicitly toggled off.
   db.exec(`UPDATE agenda_items SET requires_vote=1 WHERE matter_id IS NOT NULL AND requires_vote=0`);
+  renumberLegacyFileNumbers();
+}
+
+// One-time data migration: rewrite legacy prefix-style file numbers
+// (ORD-2026-0001, RES-2026-0002, ...) into the all-numeric YYMMXX scheme.
+// Files are bucketed by the month they were received (intro_date, falling back
+// to created_at) and sequenced within each month in receipt order. Rows already
+// all-numeric are left untouched, so this is a no-op on subsequent boots.
+function renumberLegacyFileNumbers() {
+  const legacy = db.prepare(`
+    SELECT id, COALESCE(intro_date, created_at) AS received
+    FROM matters WHERE file_number GLOB '*[^0-9]*'
+    ORDER BY received, id`).all();
+  if (!legacy.length) return;
+
+  const update = db.prepare('UPDATE matters SET file_number = ? WHERE id = ?');
+  // Per-month counters, seeded past any numbers already issued in the new scheme.
+  const counters = new Map();
+  const maxSeq = db.prepare(`
+    SELECT MAX(CAST(substr(file_number, 5) AS INTEGER)) AS m
+    FROM matters
+    WHERE file_number NOT GLOB '*[^0-9]*' AND file_number LIKE ? || '%'`);
+
+  db.exec('SAVEPOINT sp_renumber');
+  try {
+    const today = new Date().toISOString();
+    for (const row of legacy) {
+      // received is ISO-ish text (YYYY-MM-DD...); fall back to today if malformed.
+      const d = /^\d{4}-\d{2}/.test(String(row.received || '')) ? String(row.received) : today;
+      const prefix = d.slice(2, 4) + d.slice(5, 7);
+      if (!counters.has(prefix)) counters.set(prefix, (maxSeq.get(prefix).m || 0));
+      const next = counters.get(prefix) + 1;
+      counters.set(prefix, next);
+      update.run(`${prefix}${String(next).padStart(2, '0')}`, row.id);
+    }
+    db.exec('RELEASE sp_renumber');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_renumber');
+    db.exec('RELEASE sp_renumber');
+    throw e;
+  }
 }
 
 function init() {
