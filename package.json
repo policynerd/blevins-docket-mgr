@@ -1,22 +1,16 @@
 {
   "name": "blevins-docket-mgr",
   "version": "0.1.0",
-  "description": "Legislative docket & agenda management system (Legistar-style) with zero runtime dependencies.",
+  "description": "Legislative docket & agenda management system (Legistar-style) on SQLite, with a single runtime dependency (pdf-lib).",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node --experimental-sqlite --no-warnings server.js",
     "seed": "node --experimental-sqlite --no-warnings src/seed.js --reset",
     "reset": "node --experimental-sqlite --no-warnings src/seed.js --reset",
-    "test": "node --experimental-sqlite --no-warnings --test",
-    "supabase:login": "npx supabase login",
-    "supabase:link": "npx supabase link --project-ref qpoupyodhhiupgalgbuf",
-    "supabase:push": "npx supabase db push",
-    "supabase:migrations": "npx supabase migration list"
+    "test": "node --experimental-sqlite --no-warnings --test"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.0",
-    "@supabase/supabase-js": "^2.108.2",
     "pdf-lib": "^1.17.1"
   },
   "engines": {

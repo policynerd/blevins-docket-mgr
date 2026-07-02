@@ -280,6 +280,18 @@ const matters = {
        WHERE file_number LIKE ? || '%' AND file_number NOT GLOB '*[^0-9]*'`).get(prefix);
     return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
   },
+  // Insert with an auto-assigned file number, retrying if a concurrent request
+  // claimed the same number between generation and insert (UNIQUE constraint).
+  insertNumbered(m) {
+    for (let attempt = 0; ; attempt++) {
+      const file_number = this.nextFileNumber();
+      try {
+        return { id: this.insert({ ...m, file_number }), file_number };
+      } catch (e) {
+        if (attempt >= 2 || !/UNIQUE/i.test(String(e.message))) throw e;
+      }
+    }
+  },
   insert(m) {
     const id = db.prepare(`INSERT INTO matters
       (file_number, type, title, status, body_id, intro_date, summary, full_text)

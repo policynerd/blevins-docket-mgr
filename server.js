@@ -28,6 +28,8 @@ const sso = require('./src/sso');
 const importer = require('./src/import');
 const pdfGen = require('./src/pdf');
 const org = require('./src/org');
+const backup = require('./src/backup');
+const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
 const {
@@ -48,6 +50,8 @@ if (process.env.ENABLE_DEMO_SEED === 'true' && repo.stats().people === 0) {
 try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed failed:', e.message); }
 // Ensure the configured ADMIN_EMAIL is a global admin (promotes existing accounts).
 try { auth.ensureAdminRole(); } catch (e) { console.error('Admin role check failed:', e.message); }
+// Daily on-volume database backups (VACUUM INTO), pruned to the newest 7.
+backup.schedule();
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -79,10 +83,24 @@ route('GET', /^\/login$/, (req, res, ctx) => {
   if (ctx.user) return redirect(res, auth.hasRole(ctx.user, 'clerk') ? '/admin' : '/member');
   sendHtml(res, authView.loginPage({ next: safeNext(ctx.query.next) || '' }));
 });
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  return (fwd ? String(fwd).split(',')[0].trim() : '') || req.socket.remoteAddress || '';
+}
 route('POST', /^\/login$/, (req, res, ctx) => {
   const { email, password, next } = ctx.body;
+  const ip = clientIp(req);
+  if (auth.loginThrottled(ip, email)) {
+    return sendHtml(res, authView.loginPage({
+      next: safeNext(next) || '', error: 'Too many failed attempts. Try again in a few minutes.',
+    }), 429);
+  }
   const sid = auth.login(email, password);
-  if (!sid) return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
+  if (!sid) {
+    auth.recordLoginFailure(ip, email);
+    return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
+  }
+  auth.clearLoginFailures(ip, email);
   auth.setSessionCookie(res, sid);
   const user = auth.findUserByEmail(email);
   redirect(res, safeNext(next) || (auth.hasRole(user, 'clerk') ? '/admin' : '/member'));
@@ -600,6 +618,22 @@ route('POST', /^\/admin\/footer$/, (req, res, ctx) => {
   redirect(res, '/admin/footer?saved=1');
 });
 
+// Database backup download (admin): a fresh consistent copy via VACUUM INTO.
+route('GET', /^\/admin\/backup$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  try {
+    const file = backup.runBackup();
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${path.basename(file)}"`,
+    });
+    fs.createReadStream(file).pipe(res);
+  } catch (e) {
+    console.error('Backup download failed:', e);
+    sendHtml(res, '<h1>Backup failed</h1>', 500);
+  }
+});
+
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
 route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
 route('POST', /^\/govern\/members\/nominate$/, (req, res, ctx) => {
@@ -655,9 +689,8 @@ route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matter
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return sendHtml(res, admin.matterForm(null), 400);
-  const fileNumber = repo.matters.nextFileNumber();
-  const id = repo.matters.insert({
-    file_number: fileNumber, type: b.type, title: b.title,
+  const { id, file_number: fileNumber } = repo.matters.insertNumbered({
+    type: b.type, title: b.title,
     status: b.status || 'Draft', body_id: b.body_id || null,
     intro_date: b.intro_date || null, summary: b.summary || null, full_text: b.full_text || null,
   });
@@ -889,9 +922,8 @@ route('GET', /^\/member\/files\/new$/, (req, res, ctx) => sendHtml(res, member.m
 route('POST', /^\/member\/files$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return redirect(res, '/member/files/new');
-  const fileNumber = repo.matters.nextFileNumber();
-  const id = repo.matters.insert({
-    file_number: fileNumber, type: b.type, title: b.title, status: 'Draft',
+  const { id, file_number: fileNumber } = repo.matters.insertNumbered({
+    type: b.type, title: b.title, status: 'Draft',
     summary: b.summary || null,
   });
   repo.matters.setBodyHtml(id, sanitizeHtml(b.body_html));
@@ -1092,14 +1124,38 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+// Baseline security headers on every response. Inline scripts/styles are part
+// of the rendering approach (small per-page enhancement scripts), hence
+// 'unsafe-inline'; images allow https: for externally hosted seals/photos.
+function securityHeaders(req, res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' data: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
+  if ((req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+}
+
 // --- Server -----------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
+  securityHeaders(req, res);
+
   // Static assets
   if (pathname === '/styles.css' || pathname.startsWith('/assets/') || pathname === '/favicon.ico') {
     return serveStatic(req, res, pathname === '/styles.css' ? '/styles.css' : pathname);
+  }
+
+  // CSRF guard: state-changing requests must originate from this site. All
+  // mutating routes are same-origin browser forms/fetches, which always carry
+  // an Origin (or Referer) header; cross-site submissions are rejected.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    return sendHtml(res, forbidden(), 403);
   }
 
   const query = parseQuery(url.search.replace(/^\?/, ''));

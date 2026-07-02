@@ -193,6 +193,14 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   notes TEXT
 );
 
+-- Login sessions (hashed cookie ids) persisted so deploys and machine
+-- auto-stop/start cycles don't log everyone out.
+CREATE TABLE IF NOT EXISTS sessions (
+  sid_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+
 -- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -380,7 +388,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['sessions', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
