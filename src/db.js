@@ -360,6 +360,9 @@ const COLUMN_MIGRATIONS = {
   people: {
     office_name: 'TEXT',          // e.g. "Office of Governor Smith"
   },
+  workflow_steps: {
+    assignee_id: 'INTEGER REFERENCES users(id)',  // who this approval is routed to
+  },
 };
 
 function migrate() {
