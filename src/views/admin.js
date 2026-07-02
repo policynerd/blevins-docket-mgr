@@ -5,6 +5,8 @@ const { layout, card, workflowStepper, statusBadge, typeBadge, emptyState, escap
 const { ORG } = require('../org');
 const auth = require('../auth');
 const repo = require('../repo');
+const docTemplates = require('../doc-templates');
+const { editorField } = require('./reports');
 
 function adminHome(user) {
   const s = repo.stats();
@@ -26,6 +28,7 @@ function adminHome(user) {
       <a class="btn" href="/govern/members">Board membership</a>
       <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
       <a class="btn" href="/admin/agenda-template">Agenda template</a>
+      <a class="btn" href="/admin/doc-templates">Document templates</a>
       <a class="btn" href="/admin/comments">Public comments${repo.comments.pendingCount()
         ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
@@ -228,8 +231,64 @@ function documentsPanel(matter) {
         <li><a href="/reports/${r.id}">${r.title}</a> <span class="badge type">${r.kind}</span>
         — <a class="btn-link" href="/admin/reports/${r.id}/edit">Edit</a></li>`).join('')}</ul>`
     : emptyState('No documents yet.');
-  const inner = `<p><a class="btn" href="/admin/matters/${matter.id}/reports/new">✎ New document (word processor)</a></p>${list}`;
+  const inner = `<p>
+      <a class="btn" href="/admin/matters/${matter.id}/text">✎ Edit legislation text</a>
+      <a class="btn" href="/admin/matters/${matter.id}/reports/new">✎ New document (word processor)</a>
+    </p>${list}`;
   return card('Documents & reports', inner);
+}
+
+// --- Legislation text editor (per-type form template + versioning) -----------
+function matterTextForm(matter) {
+  const usingTemplate = !matter.body_html;
+  const content = matter.body_html || docTemplates.applyTemplate(matter.type, matter) || '';
+  const form = html`
+    <form class="form" method="post" action="/admin/matters/${matter.id}/text" data-wp-form>
+      ${usingTemplate ? raw(`<p class="muted">Pre-filled from the <strong>${escapeText(matter.type)}</strong> form template
+        (<a href="/admin/doc-templates?type=${encodeURIComponent(matter.type)}">edit templates</a>). Nothing is saved until you save here.</p>`) : ''}
+      ${raw(editorField('body_html', content, { label: 'Legislation text', rows: 18 }))}
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Save text</button>
+        <a class="btn-link" href="/admin/matters/${matter.id}/edit">Cancel</a>
+      </div>
+      <p class="muted">Saving over existing text archives the previous text as a numbered version.</p>
+    </form>
+    <script src="/assets/editor.js" defer></script>`;
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> /
+      <a href="/admin/matters/${matter.id}/edit">${matter.file_number}</a> / Text</p>
+    <h1>${matter.file_number} — legislation text</h1>
+    ${raw(card('Word processor', form))}`;
+  return layout({ title: `${matter.file_number} text`, active: '/admin', body });
+}
+
+// --- Document form templates (per matter type) --------------------------------
+function docTemplatesAdmin(type, { saved = false } = {}) {
+  const active = repo.MATTER_TYPES.includes(type) ? type : 'Ordinance';
+  const pills = repo.MATTER_TYPES.map((t) => `
+    <a class="btn${t === active ? ' primary' : ''}" href="/admin/doc-templates?type=${encodeURIComponent(t)}">${escapeText(t)}${docTemplates.isCustomized(t) ? ' ●' : ''}</a>`).join(' ');
+  const form = html`
+    <form class="form" method="post" action="/admin/doc-templates" data-wp-form>
+      <input type="hidden" name="type" value="${active}">
+      ${raw(editorField('template_html', docTemplates.getTemplate(active) || '', { label: `${active} form`, rows: 16 }))}
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Save ${active} template</button>
+        <button type="submit" name="reset" value="1" class="btn">Reset to built-in default</button>
+      </div>
+      <p class="muted">Placeholders are filled in when the form is applied to a file:
+        <code>{{file_number}}</code>, <code>{{title}}</code>, <code>{{date}}</code>, <code>{{org}}</code>.
+        Types marked ● have a customized template.</p>
+    </form>
+    <script src="/assets/editor.js" defer></script>`;
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Document templates</p>
+    <h1>Document form templates</h1>
+    <p class="muted">The boilerplate a drafter starts from for each file type — applied when drafting
+      a new file or opening a file's text for the first time.</p>
+    ${saved ? raw('<p class="form-ok">Template saved.</p>') : ''}
+    <div class="admin-actions">${raw(pills)}</div>
+    ${raw(card(`Edit the ${active} form`, form))}`;
+  return layout({ title: 'Document templates', active: '/admin', body });
 }
 
 function attachmentForm(matter) {
@@ -567,4 +626,5 @@ function commentsAdmin() {
 
 module.exports = {
   adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
+  matterTextForm, docTemplatesAdmin,
 };

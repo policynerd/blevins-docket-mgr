@@ -84,7 +84,15 @@ function memberHome(user) {
 
 function memberFileForm(user) {
   const { editorField } = require('./reports');
+  const docTemplates = require('../doc-templates');
   const typeOptions = repo.MATTER_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('');
+  // Pre-fill the editor with the form template for the initially selected
+  // type; a small script swaps templates on type change while the draft is
+  // still untouched (JSON is </-escaped so it can't close the script tag).
+  const templates = {};
+  for (const t of repo.MATTER_TYPES) templates[t] = docTemplates.applyTemplate(t, {}) || '';
+  const templatesJson = JSON.stringify(templates).replace(/</g, '\\u003c');
+  const firstTemplate = templates[repo.MATTER_TYPES[0]] || '';
   const form = html`
     <form class="form" method="post" action="/member/files" data-wp-form>
       <div class="form-row">
@@ -92,14 +100,35 @@ function memberFileForm(user) {
         <label>Title<input type="text" name="title" required placeholder="An ordinance / resolution to…"></label>
       </div>
       <label>Summary<textarea name="summary" rows="3" placeholder="Plain-language summary for the record…"></textarea></label>
-      ${raw(editorField('body_html', '', { label: 'Draft legislative text', rows: 14 }))}
+      ${raw(editorField('body_html', firstTemplate, { label: 'Draft legislative text', rows: 14 }))}
       <div class="form-actions">
         <button type="submit" class="btn primary">Submit draft</button>
         <a class="btn-link" href="/member">Cancel</a>
       </div>
-      <p class="muted">Your draft is filed as <strong>Draft</strong> with you as primary sponsor, then routed to the Clerk for introduction.</p>
+      <p class="muted">The editor starts from the form template for the selected type — replace the blanks
+        and boilerplate with your draft. Your draft is filed as <strong>Draft</strong> with you as primary
+        sponsor, then routed to the Clerk for introduction.</p>
     </form>
-    <script src="/assets/editor.js" defer></script>`;
+    <script src="/assets/editor.js" defer></script>
+    <script>
+      (function(){
+        var templates = ${raw(templatesJson)};
+        var sel = document.querySelector('select[name="type"]');
+        var area = document.querySelector('[data-wp-editor]');
+        var out = document.querySelector('[data-wp-output]');
+        if (!sel || !area || !out) return;
+        function isUntouched(){
+          var cur = area.innerHTML.trim();
+          if (!cur) return true;
+          return Object.keys(templates).some(function(t){ return templates[t].trim() === cur; });
+        }
+        sel.addEventListener('change', function(){
+          if (!isUntouched()) return; // never clobber real drafting
+          area.innerHTML = templates[sel.value] || '';
+          out.value = area.innerHTML;
+        });
+      })();
+    </script>`;
   const body = html`
     <p class="crumbs"><a href="/member">Member Portal</a> / Draft a new file</p>
     <h1>Draft a new legislative file</h1>

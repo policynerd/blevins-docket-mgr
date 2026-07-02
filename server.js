@@ -31,6 +31,7 @@ const org = require('./src/org');
 const backup = require('./src/backup');
 const upload = require('./src/upload');
 const approvalsView = require('./src/views/approvals');
+const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
@@ -664,6 +665,39 @@ route('POST', /^\/admin\/footer$/, (req, res, ctx) => {
   const h = sanitizeHtml(ctx.body.footer_html || '');
   legal.setFooterHtml(blankHtml(h) ? '' : h);
   redirect(res, '/admin/footer?saved=1');
+});
+
+// Document form templates (per matter type) — clerk.
+route('GET', /^\/admin\/doc-templates\/?$/, (req, res, ctx) => {
+  sendHtml(res, admin.docTemplatesAdmin(ctx.query.type, { saved: ctx.query.saved === '1' }));
+});
+route('POST', /^\/admin\/doc-templates$/, (req, res, ctx) => {
+  const type = repo.MATTER_TYPES.includes(ctx.body.type) ? ctx.body.type : null;
+  if (!type) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.reset === '1') {
+    docTemplates.setTemplate(type, '');
+  } else {
+    const h = sanitizeHtml(ctx.body.template_html || '');
+    docTemplates.setTemplate(type, blankHtml(h) ? '' : h);
+  }
+  redirect(res, `/admin/doc-templates?type=${encodeURIComponent(type)}&saved=1`);
+});
+
+// Legislation text editor — body_html with versioning, prefilled from the
+// type's form template when the file has no text yet.
+route('GET', /^\/admin\/matters\/(\d+)\/text$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, admin.matterTextForm(m));
+});
+route('POST', /^\/admin\/matters\/(\d+)\/text$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const h = sanitizeHtml(ctx.body.body_html || '');
+  const next = blankHtml(h) ? null : h;
+  repo.matters.snapshotIfChanged(m.id, { body_html: next });
+  repo.matters.setBodyHtml(m.id, next);
+  redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
 });
 
 // Public comment moderation (clerk).
