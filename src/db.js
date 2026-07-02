@@ -214,6 +214,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Public comments on legislative files (eComment). Held for clerk review;
+-- only Approved comments are displayed publicly.
+CREATE TABLE IF NOT EXISTS public_comments (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  position TEXT,                            -- Support | Oppose | Neutral
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Approved | Rejected
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -295,6 +308,8 @@ CREATE TABLE IF NOT EXISTS office_staff (
 
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
+CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
+CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
@@ -444,7 +459,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

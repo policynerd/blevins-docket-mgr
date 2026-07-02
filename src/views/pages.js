@@ -218,7 +218,7 @@ function legislationList(query) {
 }
 
 // --- Matter detail -----------------------------------------------------------
-function matterDetail(matter) {
+function matterDetail(matter, query = {}) {
   const sponsors = repo.matters.sponsors(matter.id);
   const history = repo.matters.history(matter.id);
   const attachments = repo.matters.attachments(matter.id);
@@ -337,16 +337,52 @@ function matterDetail(matter) {
 
   const wfSteps = repo.workflow.forMatter(matter.id);
 
+  // Public comment (eComment): approved comments + submission form.
+  const approvedComments = repo.comments.approvedForMatter(matter.id);
+  const ctally = repo.comments.tally(matter.id);
+  const positionBadge = (p) => (p ? `<span class="badge pos-${p.toLowerCase()}">${escapeText(p)}</span>` : '');
+  const commentItems = approvedComments.length
+    ? `<p class="muted">Positions: ${ctally.Support} support · ${ctally.Oppose} oppose · ${ctally.Neutral} neutral</p>
+       <ul class="comment-list">${approvedComments.map((c) => html`
+        <li><div class="comment-head"><strong>${c.name}</strong> ${raw(positionBadge(c.position))}
+          <span class="muted">${raw(formatDate(c.created_at))}</span></div>
+          <p class="comment-body">${c.body}</p></li>`).join('')}</ul>`
+    : emptyState('No public comments yet.');
+  const commentForm = html`
+    <h3 class="tab-h">Submit a comment</h3>
+    <form class="form" method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/comments">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email (not published)<input type="email" name="email" maxlength="200"></label>
+        <label>Position
+          <select name="position"><option value="">—</option>
+            ${raw(repo.COMMENT_POSITIONS.map((p) => `<option>${p}</option>`).join(''))}
+          </select>
+        </label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label>Comment<textarea name="body" rows="4" required maxlength="4000"></textarea></label>
+      <button type="submit" class="btn primary">Submit comment</button>
+      <p class="muted">Comments are reviewed by the ${ORG.clerkOffice} before publication and become part of the public record.</p>
+    </form>`;
+  const commentsPanel = commentItems + commentForm;
+
   const tabbed = tabs([
     { id: 'history', label: 'History', count: history.length, html: historyPanel },
     { id: 'text', label: 'Text', html: textPanel },
     { id: 'docs', label: 'Reports & Attachments', count: reports.length + attachments.length, html: docsPanel },
     { id: 'workflow', label: 'Workflow', count: wfSteps.length || null, html: workflowStepper(wfSteps) },
     { id: 'agenda', label: 'Agenda appearances', count: appearances.length, html: appearancesPanel },
+    { id: 'comments', label: 'Public comment', count: approvedComments.length || null, html: commentsPanel },
   ]);
+
+  const commentedNotice = query.commented === '1'
+    ? raw('<p class="form-ok">Thank you — your comment has been received and will appear once reviewed by the Clerk’s office.</p>')
+    : '';
 
   const body = html`
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
+    ${commentedNotice}
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">

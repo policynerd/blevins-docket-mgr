@@ -191,7 +191,35 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.matterDetail(m));
+  sendHtml(res, pages.matterDetail(m, ctx.query));
+});
+
+// Public comment submission (eComment) — throttled per IP, honeypot-filtered,
+// and held for clerk review before publication.
+const commentThrottle = new Map(); // ip -> { count, first }
+route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const back = `/legislation/${encodeURIComponent(m.file_number)}`;
+  // Honeypot field filled = bot; pretend success without storing anything.
+  if (ctx.body.website) return redirect(res, back + '?commented=1');
+  const ip = clientIp(req);
+  const now = Date.now();
+  const rec = commentThrottle.get(ip) || { count: 0, first: now };
+  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
+  if (rec.count >= 5) return sendHtml(res, '<h1>429 — Too many comments. Please try again later.</h1>', 429);
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  const body = String(ctx.body.body || '').trim().slice(0, 4000);
+  if (!name || !body) return redirect(res, back);
+  rec.count += 1;
+  commentThrottle.set(ip, rec);
+  if (commentThrottle.size > 10000) commentThrottle.clear();
+  repo.comments.add({
+    matter_id: m.id, name, body,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    position: ctx.body.position,
+  });
+  redirect(res, back + '?commented=1');
 });
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
@@ -635,6 +663,15 @@ route('POST', /^\/admin\/footer$/, (req, res, ctx) => {
   const h = sanitizeHtml(ctx.body.footer_html || '');
   legal.setFooterHtml(blankHtml(h) ? '' : h);
   redirect(res, '/admin/footer?saved=1');
+});
+
+// Public comment moderation (clerk).
+route('GET', /^\/admin\/comments\/?$/, (req, res) => sendHtml(res, admin.commentsAdmin()));
+route('POST', /^\/admin\/comments\/(\d+)\/status$/, (req, res, ctx) => {
+  const c = repo.comments.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  repo.comments.setStatus(c.id, ctx.body.status);
+  redirect(res, '/admin/comments');
 });
 
 // Database backup download (admin): a fresh consistent copy via VACUUM INTO.

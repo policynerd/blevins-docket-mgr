@@ -1164,10 +1164,59 @@ function purgeDomainData() {
   db.exec('PRAGMA foreign_keys = ON;');
 }
 
+// ---------------------------------------------------------------------------
+// Public comments on legislative files (eComment) — clerk-moderated.
+// ---------------------------------------------------------------------------
+const COMMENT_POSITIONS = ['Support', 'Oppose', 'Neutral'];
+
+const comments = {
+  add(c) {
+    return db.prepare(`INSERT INTO public_comments (matter_id, name, email, position, body)
+      VALUES (?,?,?,?,?)`).run(
+      c.matter_id, c.name, c.email || null,
+      COMMENT_POSITIONS.includes(c.position) ? c.position : null,
+      c.body).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM public_comments WHERE id = ?').get(id);
+  },
+  approvedForMatter(matterId) {
+    return db.prepare(`SELECT * FROM public_comments
+      WHERE matter_id = ? AND status = 'Approved'
+      ORDER BY created_at DESC`).all(matterId);
+  },
+  pending() {
+    return db.prepare(`SELECT c.*, m.file_number, m.title AS matter_title
+      FROM public_comments c JOIN matters m ON m.id = c.matter_id
+      WHERE c.status = 'Pending' ORDER BY c.created_at`).all();
+  },
+  recentDecided(limit = 25) {
+    return db.prepare(`SELECT c.*, m.file_number, m.title AS matter_title
+      FROM public_comments c JOIN matters m ON m.id = c.matter_id
+      WHERE c.status != 'Pending' ORDER BY c.created_at DESC LIMIT ?`).all(limit);
+  },
+  pendingCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM public_comments WHERE status = 'Pending'").get().n;
+  },
+  setStatus(id, status) {
+    if (!['Approved', 'Rejected', 'Pending'].includes(status)) return;
+    db.prepare('UPDATE public_comments SET status = ? WHERE id = ?').run(status, id);
+  },
+  // Position tally over approved comments (shown with the public list).
+  tally(matterId) {
+    const out = { Support: 0, Oppose: 0, Neutral: 0 };
+    for (const r of db.prepare(`SELECT position, COUNT(*) AS n FROM public_comments
+      WHERE matter_id = ? AND status = 'Approved' GROUP BY position`).all(matterId)) {
+      if (out[r.position] != null) out[r.position] = r.n;
+    }
+    return out;
+  },
+};
+
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
-  BUDGET_STATUSES, BUDGET_KINDS, workflowTemplate,
+  BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, stats, statusBuckets, purgeDomainData,
 };
