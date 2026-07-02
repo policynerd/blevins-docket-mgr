@@ -530,17 +530,17 @@ function meetingDetail(meeting) {
       ? `<div class="sub">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
       : '';
     const fileCell = it.matter_id
-      ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a><br><span class="badge type">${escapeText(it.matter_type)}</span>`
+      ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a><div class="sub">${escapeText(it.matter_type)}</div>`
       : '';
     const typeCell = it.item_type
-      ? `<span class="badge type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
+      ? `<span class="item-type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
       : '';
     const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)'))
       + motionLine;
     const resultCell = it.result
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 
-    let voteCell = '<span class="doc-na">—</span>';
+    let voteCell = '';
     const itemVotes = it.requires_vote ? repo.votes.forItem(it.id) : [];
     if (itemVotes.length) {
       const t = repo.votes.tally(it.id);

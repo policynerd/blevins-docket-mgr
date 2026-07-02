@@ -427,6 +427,18 @@ table.meeting-items td { vertical-align: top; }
 table.meeting-items .section-row td { background: #e3ecf6; color: var(--accent-dark); font-weight: 700;
   text-transform: uppercase; letter-spacing: .4px; font-size: 11.5px; }
 table.meeting-items tr:hover td.section-row, table.meeting-items .section-row:hover td { background: #e3ecf6; }
+/* Keep the fixed-purpose columns narrow so the title gets the room. */
+table.meeting-items th:nth-child(1) { width: 68px; }
+table.meeting-items th:nth-child(2) { width: 84px; }
+table.meeting-items th:nth-child(3) { width: 92px; }
+table.meeting-items th:nth-child(5) { width: 150px; }
+table.meeting-items th:nth-child(6) { width: 78px; }
+table.meeting-items th:nth-child(7) { width: 72px; }
+/* Item type as a quiet colored label (a pill per row reads as clutter). */
+.item-type { font-size: 12px; font-weight: 600; }
+.item-type.it-action { color: #1d4ed8; }
+.item-type.it-discussion { color: #a16207; }
+.item-type.it-information { color: #15803d; }
 .vote-details summary { cursor: pointer; font-weight: 700; color: var(--accent-dark); }
 .vote-details .vote-list { margin: 6px 0 0; }
 
