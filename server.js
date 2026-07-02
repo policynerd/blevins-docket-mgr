@@ -444,6 +444,16 @@ route('POST', /^\/admin\/import$/, (req, res, ctx) => {
   const result = importer.importRoster(ctx.body.csv || '');
   sendHtml(res, govern.importPage({ result }));
 });
+// Legislative file (matter) import — historical record migration. ADMIN.
+route('GET', /^\/admin\/import\/matters\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, govern.mattersImportPage());
+});
+route('POST', /^\/admin\/import\/matters$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const result = importer.importMatters(ctx.body.csv || '');
+  sendHtml(res, govern.mattersImportPage({ result }));
+});
 
 // Organization management (clerk)
 route('GET', /^\/admin\/org\/?$/, (req, res) => sendHtml(res, orgView.orgAdmin()));
