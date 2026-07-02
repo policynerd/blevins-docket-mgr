@@ -317,7 +317,8 @@ function matterDetail(matter, query = {}) {
     ? `<h3 class="tab-h">Text versions</h3><ul class="version-list">
         <li><strong>Version ${currentVersion}</strong> <span class="badge st-active">current</span></li>
         ${versions.map((v) => html`<li>Version ${v.version} — archived ${raw(formatDate(v.created_at))}
-          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a></li>`).join('')}
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a>
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/compare?from=${v.version}&amp;to=${currentVersion}">compare with current</a></li>`).join('')}
       </ul>`
     : '';
 
@@ -397,6 +398,47 @@ function matterDetail(matter, query = {}) {
     <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: matter.file_number, active: '/legislation', body });
+}
+
+// Amendment comparison: inline redline between two text versions.
+function matterComparePage(matter, query = {}) {
+  const diff = require('../diff');
+  const versions = repo.matters.versions(matter.id);
+  const currentVersion = versions.length + 1;
+  const textOf = (sel) => {
+    if (String(sel) === String(currentVersion) || sel === 'current' || !sel) {
+      return { n: currentVersion, label: `Version ${currentVersion} (current)`,
+        text: matter.body_html ? diff.stripHtml(matter.body_html) : (matter.full_text || '') };
+    }
+    const v = repo.matters.getVersion(matter.id, Number(sel));
+    if (!v) return null;
+    return { n: v.version, label: `Version ${v.version} (archived ${formatDate(v.created_at)})`,
+      text: v.body_html ? diff.stripHtml(v.body_html) : (v.full_text || '') };
+  };
+  const from = textOf(query.from || (versions.length ? versions[0].version : currentVersion)) || textOf('current');
+  const to = textOf(query.to || 'current') || textOf('current');
+
+  const st = diff.stats(from.text, to.text);
+  const opts = (sel) => Array.from({ length: currentVersion }, (_, i) => i + 1)
+    .map((n) => `<option value="${n}"${n === sel.n ? ' selected' : ''}>Version ${n}${n === currentVersion ? ' (current)' : ''}</option>`).join('');
+  const picker = `
+    <form class="form inline-form" method="get" action="/legislation/${encodeURIComponent(matter.file_number)}/compare">
+      <div class="form-row">
+        <label>From<select name="from">${opts(from)}</select></label>
+        <label>To<select name="to">${opts(to)}</select></label>
+        <button type="submit" class="btn">Compare</button>
+      </div>
+    </form>
+    <p class="muted"><ins class="df-ins">Added</ins> and <del class="df-del">removed</del> text,
+      comparing ${escapeText(from.label)} → ${escapeText(to.label)} ·
+      <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/legislation">Legislation</a> /
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Compare</p>
+    <h1>${matter.title}</h1>
+    ${raw(card('Compare versions', picker + `<div class="doc-body redline">${diff.diffHtml(from.text, to.text) || emptyState('Neither version has text.')}</div>`))}`;
+  return layout({ title: `${matter.file_number} — compare`, active: '/legislation', body });
 }
 
 // Archived text version of a matter (public record, like the current text).
@@ -1006,6 +1048,6 @@ function notFound() {
 }
 
 module.exports = {
-  dashboard, legislationList, matterDetail, matterVersionPage, calendar, meetingDetail, agendaPacket,
+  dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, calendar, meetingDetail, agendaPacket,
   peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
 };

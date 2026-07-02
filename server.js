@@ -182,6 +182,12 @@ route('GET', /^\/calendar\.ics$/, (req, res) => {
     { filename: 'meetings.ics' });
 });
 
+// Amendment comparison — must be registered before the greedy matter route.
+route('GET', /^\/legislation\/(.+)\/compare$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.matterComparePage(m, ctx.query));
+});
 // Archived text version — must be registered before the greedy matter route.
 route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
