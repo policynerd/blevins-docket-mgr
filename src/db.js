@@ -214,6 +214,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Request-to-speak sign-ups for upcoming meetings; reviewed by the clerk.
+CREATE TABLE IF NOT EXISTS speaker_requests (
+  id INTEGER PRIMARY KEY,
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  email TEXT,
+  position TEXT,                            -- Support | Oppose | Neutral
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Approved | Rejected | Spoke
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Watch list: signed-in users following a legislative file.
 CREATE TABLE IF NOT EXISTS watches (
   id INTEGER PRIMARY KEY,
@@ -471,7 +483,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'watches', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'watches', 'speaker_requests', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

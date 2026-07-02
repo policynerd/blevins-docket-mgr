@@ -1240,6 +1240,35 @@ const comments = {
 };
 
 // ---------------------------------------------------------------------------
+// Request to speak (public sign-ups for upcoming meetings)
+// ---------------------------------------------------------------------------
+const speakers = {
+  add(s) {
+    return db.prepare(`INSERT INTO speaker_requests (meeting_id, agenda_item_id, name, email, position)
+      VALUES (?,?,?,?,?)`).run(
+      s.meeting_id, s.agenda_item_id || null, s.name, s.email || null,
+      COMMENT_POSITIONS.includes(s.position) ? s.position : null).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM speaker_requests WHERE id = ?').get(id);
+  },
+  forMeeting(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ?
+      ORDER BY CASE s.status WHEN 'Pending' THEN 0 WHEN 'Approved' THEN 1 ELSE 2 END, s.created_at`)
+      .all(meetingId);
+  },
+  setStatus(id, status) {
+    if (!['Pending', 'Approved', 'Rejected', 'Spoke'].includes(status)) return;
+    db.prepare('UPDATE speaker_requests SET status = ? WHERE id = ?').run(status, id);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Watch lists (follow a legislative file)
 // ---------------------------------------------------------------------------
 const watches = {
@@ -1275,5 +1304,5 @@ module.exports = {
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, watches, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, speakers, stats, statusBuckets, purgeDomainData,
 };

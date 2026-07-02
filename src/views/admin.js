@@ -449,9 +449,36 @@ function agendaManager(meeting) {
     ${raw(card('Add agenda item', addItemForm))}
     ${raw(card('Agenda items & voting',
       loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
+    ${raw(speakerQueue(meeting))}
     <script src="/assets/agenda-reorder.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
+}
+
+// Request-to-speak queue for a meeting (public sign-ups awaiting the clerk).
+function speakerQueue(meeting) {
+  const speakers = repo.speakers.forMeeting(meeting.id);
+  if (!speakers.length) return card('Speakers', emptyState('No requests to speak.'));
+  const btn = (s, status, label, cls = 'btn') => `
+    <form method="post" action="/admin/speakers/${s.id}/status" class="inline">
+      <input type="hidden" name="status" value="${status}">
+      <button type="submit" class="${cls}">${label}</button>
+    </form>`;
+  const rows = speakers.map((s) => html`
+    <li>
+      <div class="comment-head">
+        <strong>${s.name}</strong>
+        ${s.position ? raw(`<span class="badge pos-${String(s.position).toLowerCase()}">${escapeText(s.position)}</span>`) : ''}
+        ${statusBadge(s.status)}
+        — ${s.agenda_item_id ? `${s.agenda_number ? s.agenda_number + '. ' : ''}${s.item_title || ''}` : 'General public comment'}
+        ${s.email ? raw(`<span class="muted">· ${escapeText(s.email)}</span>`) : ''}
+      </div>
+      <div class="form-actions">
+        ${s.status === 'Pending' ? raw(btn(s, 'Approved', 'Approve', 'btn primary') + btn(s, 'Rejected', 'Reject')) : ''}
+        ${s.status === 'Approved' ? raw(btn(s, 'Spoke', 'Mark as spoke')) : ''}
+      </div>
+    </li>`).join('');
+  return card(`Speakers (${speakers.length})`, `<ul class="comment-list">${rows}</ul>`);
 }
 
 function voteBlock(meeting, it) {

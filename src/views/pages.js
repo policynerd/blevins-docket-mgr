@@ -560,7 +560,7 @@ function calendar(query = {}) {
 }
 
 // --- Meeting detail ----------------------------------------------------------
-function meetingDetail(meeting) {
+function meetingDetail(meeting, query = {}) {
   const items = repo.meetings.items(meeting.id);
 
   // Columnar "meeting items" grid grouped by agenda section.
@@ -648,8 +648,42 @@ function meetingDetail(meeting) {
       </dl>`))}
     ${raw(attendanceCard)}
     ${raw(card('Meeting items', itemsGrid))}
+    ${raw(speakCard(meeting, items, query))}
   `;
   return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
+}
+
+// Public request-to-speak sign-up, shown for meetings that haven't happened.
+function speakCard(meeting, items, query = {}) {
+  const upcoming = meeting.meeting_date >= todayISO()
+    && !['Cancelled', 'Final'].includes(meeting.status);
+  if (!upcoming) return '';
+  if (query.speak === '1') {
+    return card('Request to speak',
+      '<p class="form-ok">Thank you — your request has been received. The Clerk’s office will confirm your spot before the meeting.</p>');
+  }
+  const itemOptions = ['<option value="">General public comment</option>']
+    .concat(items.map((it) => {
+      const label = `${it.agenda_number ? it.agenda_number + '. ' : ''}${it.matter_id ? it.matter_title : (it.title || '(item)')}`;
+      return `<option value="${it.id}">${escapeText(label.slice(0, 90))}</option>`;
+    })).join('');
+  const form = `
+    <p class="muted">Sign up to address the body at this meeting. Requests are reviewed by the Clerk's office;
+      your name is called during the item you select.</p>
+    <form class="form" method="post" action="/meetings/${meeting.id}/speak">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email (for confirmation)<input type="email" name="email" maxlength="200"></label>
+      </div>
+      <div class="form-row">
+        <label>Agenda item<select name="agenda_item_id">${itemOptions}</select></label>
+        <label>Position<select name="position"><option value="">—</option>
+          ${repo.COMMENT_POSITIONS.map((p) => `<option>${p}</option>`).join('')}</select></label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button type="submit" class="btn primary">Request to speak</button>
+    </form>`;
+  return card('Request to speak', form);
 }
 
 // --- Agenda packet (print / save-as-PDF) ------------------------------------

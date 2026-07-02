@@ -234,26 +234,34 @@ route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   sendHtml(res, pages.matterDetail(m, ctx.query, ctx.user));
 });
 
+// Shared per-IP throttle for anonymous public forms (comments, speaker
+// sign-ups, applications): 5 accepted submissions per 10 minutes.
+const publicFormHits = new Map(); // ip -> { count, first }
+function publicFormThrottled(ip) {
+  const now = Date.now();
+  const rec = publicFormHits.get(ip) || { count: 0, first: now };
+  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
+  if (rec.count >= 5) return true;
+  rec.count += 1;
+  publicFormHits.set(ip, rec);
+  if (publicFormHits.size > 10000) publicFormHits.clear();
+  return false;
+}
+
 // Public comment submission (eComment) — throttled per IP, honeypot-filtered,
 // and held for clerk review before publication.
-const commentThrottle = new Map(); // ip -> { count, first }
 route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const back = `/legislation/${encodeURIComponent(m.file_number)}`;
   // Honeypot field filled = bot; pretend success without storing anything.
   if (ctx.body.website) return redirect(res, back + '?commented=1');
-  const ip = clientIp(req);
-  const now = Date.now();
-  const rec = commentThrottle.get(ip) || { count: 0, first: now };
-  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
-  if (rec.count >= 5) return sendHtml(res, '<h1>429 — Too many comments. Please try again later.</h1>', 429);
   const name = String(ctx.body.name || '').trim().slice(0, 100);
   const body = String(ctx.body.body || '').trim().slice(0, 4000);
   if (!name || !body) return redirect(res, back);
-  rec.count += 1;
-  commentThrottle.set(ip, rec);
-  if (commentThrottle.size > 10000) commentThrottle.clear();
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
   repo.comments.add({
     matter_id: m.id, name, body,
     email: String(ctx.body.email || '').trim().slice(0, 200) || null,
@@ -261,11 +269,41 @@ route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
   });
   redirect(res, back + '?commented=1');
 });
+
+// Request to speak at an upcoming meeting.
+route('POST', /^\/meetings\/(\d+)\/speak$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const back = `/meetings/${mt.id}`;
+  if (ctx.body.website) return redirect(res, back + '?speak=1'); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  if (!name) return redirect(res, back);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  const itemId = ctx.body.agenda_item_id ? Number(ctx.body.agenda_item_id) : null;
+  const item = itemId ? repo.meetings.getItem(itemId) : null;
+  repo.speakers.add({
+    meeting_id: mt.id,
+    agenda_item_id: item && item.meeting_id === mt.id ? item.id : null,
+    name,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    position: ctx.body.position,
+  });
+  redirect(res, back + '?speak=1');
+});
+// Speaker queue moderation (clerk).
+route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
+  const s = repo.speakers.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  repo.speakers.setStatus(s.id, ctx.body.status);
+  redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
+});
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.meetingDetail(mt));
+  sendHtml(res, pages.meetingDetail(mt, ctx.query));
 });
 route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
