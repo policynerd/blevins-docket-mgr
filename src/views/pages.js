@@ -218,7 +218,7 @@ function legislationList(query) {
 }
 
 // --- Matter detail -----------------------------------------------------------
-function matterDetail(matter, query = {}) {
+function matterDetail(matter, query = {}, user = null) {
   const sponsors = repo.matters.sponsors(matter.id);
   const history = repo.matters.history(matter.id);
   const attachments = repo.matters.attachments(matter.id);
@@ -387,6 +387,11 @@ function matterDetail(matter, query = {}) {
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">
+        ${user ? raw(`
+        <form method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/watch" class="inline">
+          <button type="submit" class="btn">${repo.watches.isWatching(user.id, matter.id) ? '★ Watching' : '☆ Watch'}</button>
+        </form>`) : ''}
+        <a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}.rss" title="Activity feed">RSS</a>
         <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
         <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
           <button type="submit" class="btn">+ Draft staff report</button>

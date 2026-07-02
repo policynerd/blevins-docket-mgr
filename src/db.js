@@ -214,6 +214,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Watch list: signed-in users following a legislative file.
+CREATE TABLE IF NOT EXISTS watches (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, matter_id)
+);
+
 -- Public comments on legislative files (eComment). Held for clerk review;
 -- only Approved comments are displayed publicly.
 CREATE TABLE IF NOT EXISTS public_comments (
@@ -462,7 +471,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'watches', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

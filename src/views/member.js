@@ -136,8 +136,34 @@ function memberFileForm(user) {
   return layout({ title: 'Draft a new file', active: '/member', body });
 }
 
+// Watched files with their latest recorded action (any signed-in user).
+function watchingPage(user) {
+  const rows = repo.watches.forUser(user.id);
+  const table = rows.length
+    ? `<table class="data"><thead><tr><th>File #</th><th>Title</th><th>Status</th><th>Latest action</th><th></th></tr></thead><tbody>${
+      rows.map((m) => html`
+        <tr>
+          <td><a href="/legislation/${encodeURIComponent(m.file_number)}">${m.file_number}</a></td>
+          <td class="title-cell">${m.title}</td>
+          <td>${statusBadge(m.status)}</td>
+          <td>${m.last_action ? raw(`${escapeText(m.last_action)} <span class="muted">· ${escapeText(formatDate(m.last_action_date))}</span>`) : raw('<span class="muted">—</span>')}</td>
+          <td>
+            <form method="post" action="/legislation/${encodeURIComponent(m.file_number)}/watch" class="inline">
+              <button type="submit" class="btn-link">Unwatch</button>
+            </form>
+          </td>
+        </tr>`).join('')}</tbody></table>`
+    : emptyState('You are not watching any files yet. Use the ☆ Watch button on any legislative file.');
+  const body = html`
+    <h1>Watching</h1>
+    <p class="muted">Files you follow, with their most recent recorded action. Each file also has an
+      RSS activity feed you can subscribe to from its page.</p>
+    ${raw(card(`Watched files (${rows.length})`, table))}`;
+  return layout({ title: 'Watching', active: '/watching', body });
+}
+
 function escapeText(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-module.exports = { memberHome, memberFileForm };
+module.exports = { memberHome, memberFileForm, watchingPage };

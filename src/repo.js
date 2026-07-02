@@ -1239,10 +1239,41 @@ const comments = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Watch lists (follow a legislative file)
+// ---------------------------------------------------------------------------
+const watches = {
+  isWatching(userId, matterId) {
+    return !!db.prepare('SELECT 1 FROM watches WHERE user_id = ? AND matter_id = ?').get(userId, matterId);
+  },
+  toggle(userId, matterId) {
+    if (this.isWatching(userId, matterId)) {
+      db.prepare('DELETE FROM watches WHERE user_id = ? AND matter_id = ?').run(userId, matterId);
+      return false;
+    }
+    db.prepare('INSERT INTO watches (user_id, matter_id) VALUES (?,?)').run(userId, matterId);
+    return true;
+  },
+  // Watched files with their most recent recorded action.
+  forUser(userId) {
+    return db.prepare(`
+      SELECT m.*, b.name AS body_name, w.created_at AS watched_at,
+        (SELECT h.action FROM matter_history h WHERE h.matter_id = m.id
+         ORDER BY h.action_date DESC, h.id DESC LIMIT 1) AS last_action,
+        (SELECT h.action_date FROM matter_history h WHERE h.matter_id = m.id
+         ORDER BY h.action_date DESC, h.id DESC LIMIT 1) AS last_action_date
+      FROM watches w
+      JOIN matters m ON m.id = w.matter_id
+      LEFT JOIN bodies b ON b.id = m.body_id
+      WHERE w.user_id = ?
+      ORDER BY m.updated_at DESC`).all(userId);
+  },
+};
+
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, stats, statusBuckets, purgeDomainData,
 };

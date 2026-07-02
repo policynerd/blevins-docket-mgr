@@ -182,6 +182,38 @@ route('GET', /^\/calendar\.ics$/, (req, res) => {
     { filename: 'meetings.ics' });
 });
 
+// Per-file activity feed (RSS) — must be registered before the greedy route.
+route('GET', /^\/legislation\/(.+)\.rss$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendJson(res, { error: 'Not found' }, 404);
+  const events = [
+    ...repo.matters.history(m.id).map((h) => ({
+      date: h.action_date,
+      title: `${h.action}${h.result ? ' — ' + h.result : ''}`,
+      description: h.notes || undefined,
+    })),
+    ...repo.matters.versions(m.id).map((v) => ({
+      date: v.created_at,
+      title: `Text revised (version ${v.version} archived)`,
+    })),
+  ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 50);
+  sendText(res, feeds.matterRss(m, events, baseUrl(req)), 'application/rss+xml; charset=utf-8');
+});
+
+// Watch / unwatch a file (signed-in users).
+route('POST', /^\/legislation\/(.+)\/watch$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const back = `/legislation/${encodeURIComponent(m.file_number)}`;
+  if (!ctx.user) return redirect(res, '/login?next=' + encodeURIComponent(back));
+  repo.watches.toggle(ctx.user.id, m.id);
+  redirect(res, back);
+});
+route('GET', /^\/watching\/?$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fwatching');
+  sendHtml(res, member.watchingPage(ctx.user));
+});
+
 // Amendment comparison — must be registered before the greedy matter route.
 route('GET', /^\/legislation\/(.+)\/compare$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
@@ -199,7 +231,7 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.matterDetail(m, ctx.query));
+  sendHtml(res, pages.matterDetail(m, ctx.query, ctx.user));
 });
 
 // Public comment submission (eComment) — throttled per IP, honeypot-filtered,

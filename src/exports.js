@@ -129,4 +129,31 @@ ${items}
 `;
 }
 
-module.exports = { icalCalendar, mattersCsv, legislationRss };
+// Activity feed for a single legislative file: history actions and text
+// revisions, newest first. `events` = [{ date, title, description? }].
+function matterRss(matter, events, baseUrl) {
+  const link = `${baseUrl}/legislation/${encodeURIComponent(matter.file_number)}`;
+  const items = events.map((e, i) => [
+    '    <item>',
+    `      <title>${xmlEscape(e.title)}</title>`,
+    `      <link>${xmlEscape(link)}</link>`,
+    `      <guid isPermaLink="false">${xmlEscape(matter.file_number + ':' + (e.date || '') + ':' + i)}</guid>`,
+    `      <pubDate>${rfc822(e.date)}</pubDate>`,
+    e.description ? `      <description>${xmlEscape(e.description)}</description>` : null,
+    '    </item>',
+  ].filter(Boolean).join('\n')).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>${xmlEscape(matter.file_number + ': ' + matter.title)}</title>
+    <link>${xmlEscape(link)}</link>
+    <description>${xmlEscape('Activity on file ' + matter.file_number + ' (' + matter.type + ', ' + matter.status + ')')}</description>
+    <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
+${items}
+  </channel>
+</rss>
+`;
+}
+
+module.exports = { icalCalendar, mattersCsv, legislationRss, matterRss };
