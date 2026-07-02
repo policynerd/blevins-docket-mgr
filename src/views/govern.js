@@ -343,10 +343,75 @@ John Doe,john.doe@blevinsholdings.com,member,Committee on Enterprise Operations,
   const body = html`
     <p class="crumbs"><a href="/admin">Admin</a> / Import roster</p>
     <h1>Import roster (CSV)</h1>
+    <p class="muted">Importing legislative files instead? <a href="/admin/import/matters">Import legislative files</a>.</p>
     ${result ? raw(summary) : ''}
     ${raw(card('Bulk import', form))}
     <script src="/assets/csv-fill.js" defer></script>`;
   return layout({ title: 'Import roster', active: '/admin', body });
 }
 
-module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage };
+function mattersImportPage({ result = null } = {}) {
+  const example = `file_number,type,title,status,body,intro_date,final_date,summary,sponsors,topics
+,Ordinance,Trash collection schedule update,Enacted,Board of Governors,2026-03-04,2026-04-01,Updates residential pickup days.,Jane Smith;John Doe,Public Works;Sanitation
+,Resolution,FY27 budget adoption,Passed,Board of Governors,2026-05-12,,Adopts the FY27 operating budget.,Jane Smith,Budget
+260601,Motion,Adopt meeting calendar,Draft,,,,,,`;
+
+  let summary = '';
+  if (result) {
+    const errs = result.errors.length
+      ? `<div class="form-error"><strong>${result.errors.length} row(s) skipped:</strong>
+         <ul>${result.errors.map((e) => `<li>${escapeText(e)}</li>`).join('')}</ul></div>`
+      : '';
+    const warns = (result.warnings || []).length
+      ? `<div class="form-warn"><strong>${result.warnings.length} warning(s):</strong>
+         <ul>${result.warnings.map((e) => `<li>${escapeText(e)}</li>`).join('')}</ul></div>`
+      : '';
+    summary = `<div class="import-result">
+      ${result.errors.length ? '' : '<p class="form-ok">Import complete.</p>'}
+      <ul class="import-stats">
+        <li>Rows processed: <strong>${result.rows}</strong></li>
+        <li>Files created: <strong>${result.created}</strong></li>
+        <li>Sponsors linked: <strong>${result.sponsorsLinked}</strong></li>
+        <li>History entries added: <strong>${result.historyAdded}</strong></li>
+      </ul>${errs}${warns}
+    </div>`;
+  }
+
+  const form = html`
+    <form class="form" method="post" action="/admin/import/matters">
+      <p class="muted">Bulk-create legislative files (matters) from a spreadsheet export —
+        for migrating historical records into the system.</p>
+      <label>Choose a CSV file
+        <input type="file" id="csvfile" accept=".csv,text/csv">
+      </label>
+      <label>CSV data (filled from the file above, or paste/edit directly)
+        <textarea id="csvtext" name="csv" rows="10" required placeholder="${escapeText(example)}"></textarea>
+      </label>
+      <div class="form-actions"><button type="submit" class="btn primary">Import files</button></div>
+    </form>
+    <details class="import-help">
+      <summary>CSV format &amp; example</summary>
+      <p>A header row, then one row per legislative file. Columns:</p>
+      <ul>
+        <li><code>file_number</code> — blank to auto-assign the next YYMMXX number; if given, must be unused</li>
+        <li><code>type</code> — Ordinance, Resolution, Motion, Appointment, Public Hearing, Proclamation, Contract, Report, or Communication</li>
+        <li><code>status</code> — e.g. Draft, Introduced, Passed, Enacted (defaults to Draft)</li>
+        <li><code>body</code> — the body in control, matched by name (must already exist)</li>
+        <li><code>intro_date</code> / <code>final_date</code> — YYYY-MM-DD; an intro date also creates an "Introduced" history entry</li>
+        <li><code>summary</code> — short description</li>
+        <li><code>sponsors</code> — semicolon-separated member names (first is Primary); unmatched names are skipped with a warning</li>
+        <li><code>topics</code> — semicolon-separated index terms (created as needed)</li>
+      </ul>
+      <pre class="import-example">${escapeText(example)}</pre>
+    </details>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/admin/import">Import</a> / Legislative files</p>
+    <h1>Import legislative files (CSV)</h1>
+    ${result ? raw(summary) : ''}
+    ${raw(card('Bulk import', form))}
+    <script src="/assets/csv-fill.js" defer></script>`;
+  return layout({ title: 'Import legislative files', active: '/admin', body });
+}
+
+module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage };

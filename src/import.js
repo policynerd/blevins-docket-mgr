@@ -96,4 +96,103 @@ function importRoster(text) {
   return r;
 }
 
-module.exports = { importRoster };
+// --- Legislative file (matter) import ----------------------------------------
+// CSV columns (header row, case-insensitive):
+//   file_number, type, title, status, body, intro_date, final_date,
+//   summary, sponsors, topics
+// file_number blank = auto-assign (YYMMXX). sponsors/topics are
+// semicolon-separated; the first sponsor is Primary. body matches an existing
+// body by name — matters aren't allowed to invent bodies from typos.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function personByName(name) {
+  return db.prepare('SELECT * FROM people WHERE lower(full_name) = lower(?)').get(name);
+}
+function matterByFileNumber(fn) {
+  return db.prepare('SELECT id FROM matters WHERE file_number = ?').get(fn);
+}
+
+function importMatters(text) {
+  const rows = parseCsv(text);
+  const r = {
+    rows: rows.length, created: 0, sponsorsLinked: 0, historyAdded: 0,
+    errors: [], warnings: [],
+  };
+  if (!rows.length) {
+    r.errors.push('No data rows found. Include a header row (file_number,type,title,status,body,intro_date,final_date,summary,sponsors,topics) and at least one data row.');
+    return r;
+  }
+
+  db.exec('SAVEPOINT sp_import_matters');
+  try {
+    rows.forEach((row, idx) => {
+      const line = idx + 2;
+      const title = (row.title || '').trim();
+      const type = (row.type || '').trim();
+      const status = (row.status || 'Draft').trim();
+      const fileNumber = (row.file_number || row['file #'] || '').trim();
+      const bodyName = (row.body || row.committee || '').trim();
+      const introDate = (row.intro_date || row.introduced || '').trim();
+      const finalDate = (row.final_date || '').trim();
+
+      if (!title) { r.errors.push(`Line ${line}: title is required.`); return; }
+      if (!repo.MATTER_TYPES.includes(type)) {
+        r.errors.push(`Line ${line}: invalid type "${type}" (use one of: ${repo.MATTER_TYPES.join(', ')}).`); return;
+      }
+      if (!repo.MATTER_STATUSES.includes(status)) {
+        r.errors.push(`Line ${line}: invalid status "${status}" (use one of: ${repo.MATTER_STATUSES.join(', ')}).`); return;
+      }
+      if (introDate && !DATE_RE.test(introDate)) { r.errors.push(`Line ${line}: intro_date must be YYYY-MM-DD.`); return; }
+      if (finalDate && !DATE_RE.test(finalDate)) { r.errors.push(`Line ${line}: final_date must be YYYY-MM-DD.`); return; }
+      if (fileNumber && matterByFileNumber(fileNumber)) {
+        r.errors.push(`Line ${line}: file number ${fileNumber} already exists — row skipped.`); return;
+      }
+      let body = null;
+      if (bodyName) {
+        body = bodyByName(bodyName);
+        if (!body) { r.errors.push(`Line ${line}: unknown body "${bodyName}" — create it first (Admin → Bodies).`); return; }
+      }
+
+      const record = {
+        type, title, status, body_id: body ? body.id : null,
+        intro_date: introDate || null, summary: (row.summary || '').trim() || null,
+        full_text: (row.full_text || '').trim() || null,
+      };
+      let id;
+      if (fileNumber) {
+        id = repo.matters.insert({ ...record, file_number: fileNumber });
+      } else {
+        id = repo.matters.insertNumbered(record).id;
+      }
+      if (finalDate) db.prepare('UPDATE matters SET final_date = ? WHERE id = ?').run(finalDate, id);
+      r.created++;
+
+      // Sponsors: semicolon-separated full names; first is Primary.
+      const names = String(row.sponsors || '').split(';').map((s) => s.trim()).filter(Boolean);
+      names.forEach((n, i) => {
+        const p = personByName(n);
+        if (!p) { r.warnings.push(`Line ${line}: sponsor "${n}" not found — skipped (file imported).`); return; }
+        repo.matters.addSponsor(id, p.id, i === 0 ? 'Primary' : 'Co-Sponsor');
+        r.sponsorsLinked++;
+      });
+
+      const topicNames = String(row.topics || '').split(';').map((s) => s.trim()).filter(Boolean);
+      if (topicNames.length) repo.topics.setForMatter(id, topicNames);
+
+      if (introDate) {
+        repo.matters.addHistory({
+          matter_id: id, action_date: introDate, body_id: body ? body.id : null,
+          action: 'Introduced', notes: 'Imported record',
+        });
+        r.historyAdded++;
+      }
+    });
+    db.exec('RELEASE sp_import_matters');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_import_matters'); db.exec('RELEASE sp_import_matters');
+    throw e;
+  }
+  return r;
+}
+
+module.exports = { importRoster, importMatters };

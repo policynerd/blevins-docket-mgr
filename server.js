@@ -28,6 +28,9 @@ const sso = require('./src/sso');
 const importer = require('./src/import');
 const pdfGen = require('./src/pdf');
 const org = require('./src/org');
+const backup = require('./src/backup');
+const upload = require('./src/upload');
+const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
 const {
@@ -48,6 +51,8 @@ if (process.env.ENABLE_DEMO_SEED === 'true' && repo.stats().people === 0) {
 try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed failed:', e.message); }
 // Ensure the configured ADMIN_EMAIL is a global admin (promotes existing accounts).
 try { auth.ensureAdminRole(); } catch (e) { console.error('Admin role check failed:', e.message); }
+// Daily on-volume database backups (VACUUM INTO), pruned to the newest 7.
+backup.schedule();
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -79,10 +84,24 @@ route('GET', /^\/login$/, (req, res, ctx) => {
   if (ctx.user) return redirect(res, auth.hasRole(ctx.user, 'clerk') ? '/admin' : '/member');
   sendHtml(res, authView.loginPage({ next: safeNext(ctx.query.next) || '' }));
 });
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  return (fwd ? String(fwd).split(',')[0].trim() : '') || req.socket.remoteAddress || '';
+}
 route('POST', /^\/login$/, (req, res, ctx) => {
   const { email, password, next } = ctx.body;
+  const ip = clientIp(req);
+  if (auth.loginThrottled(ip, email)) {
+    return sendHtml(res, authView.loginPage({
+      next: safeNext(next) || '', error: 'Too many failed attempts. Try again in a few minutes.',
+    }), 429);
+  }
   const sid = auth.login(email, password);
-  if (!sid) return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
+  if (!sid) {
+    auth.recordLoginFailure(ip, email);
+    return sendHtml(res, authView.loginPage({ next: safeNext(next) || '', error: 'Invalid email or password.' }), 401);
+  }
+  auth.clearLoginFailures(ip, email);
   auth.setSessionCookie(res, sid);
   const user = auth.findUserByEmail(email);
   redirect(res, safeNext(next) || (auth.hasRole(user, 'clerk') ? '/admin' : '/member'));
@@ -161,10 +180,46 @@ route('GET', /^\/calendar\.ics$/, (req, res) => {
     { filename: 'meetings.ics' });
 });
 
+// Archived text version — must be registered before the greedy matter route.
+route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const ver = repo.matters.getVersion(m.id, Number(ctx.params[1]));
+  if (!ver) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.matterVersionPage(m, ver));
+});
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.matterDetail(m));
+  sendHtml(res, pages.matterDetail(m, ctx.query));
+});
+
+// Public comment submission (eComment) — throttled per IP, honeypot-filtered,
+// and held for clerk review before publication.
+const commentThrottle = new Map(); // ip -> { count, first }
+route('POST', /^\/legislation\/(.+)\/comments$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const back = `/legislation/${encodeURIComponent(m.file_number)}`;
+  // Honeypot field filled = bot; pretend success without storing anything.
+  if (ctx.body.website) return redirect(res, back + '?commented=1');
+  const ip = clientIp(req);
+  const now = Date.now();
+  const rec = commentThrottle.get(ip) || { count: 0, first: now };
+  if (now - rec.first > 10 * 60 * 1000) { rec.count = 0; rec.first = now; }
+  if (rec.count >= 5) return sendHtml(res, '<h1>429 — Too many comments. Please try again later.</h1>', 429);
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  const body = String(ctx.body.body || '').trim().slice(0, 4000);
+  if (!name || !body) return redirect(res, back);
+  rec.count += 1;
+  commentThrottle.set(ip, rec);
+  if (commentThrottle.size > 10000) commentThrottle.clear();
+  repo.comments.add({
+    matter_id: m.id, name, body,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    position: ctx.body.position,
+  });
+  redirect(res, back + '?commented=1');
 });
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
@@ -426,6 +481,16 @@ route('POST', /^\/admin\/import$/, (req, res, ctx) => {
   const result = importer.importRoster(ctx.body.csv || '');
   sendHtml(res, govern.importPage({ result }));
 });
+// Legislative file (matter) import — historical record migration. ADMIN.
+route('GET', /^\/admin\/import\/matters\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, govern.mattersImportPage());
+});
+route('POST', /^\/admin\/import\/matters$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const result = importer.importMatters(ctx.body.csv || '');
+  sendHtml(res, govern.mattersImportPage({ result }));
+});
 
 // Organization management (clerk)
 route('GET', /^\/admin\/org\/?$/, (req, res) => sendHtml(res, orgView.orgAdmin()));
@@ -565,7 +630,7 @@ route('POST', /^\/admin\/meetings\/(\d+)\/load-template$/, (req, res, ctx) => {
 // Next file-number preview (JSON, for the new-matter form)
 route('GET', /^\/admin\/matters\/next-number$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;
-  sendJson(res, { number: repo.matters.nextFileNumber(ctx.query.type || 'Ordinance') });
+  sendJson(res, { number: repo.matters.nextFileNumber() });
 });
 
 // Editable legal pages — Terms & Privacy (admin) -----------------------------
@@ -598,6 +663,31 @@ route('POST', /^\/admin\/footer$/, (req, res, ctx) => {
   const h = sanitizeHtml(ctx.body.footer_html || '');
   legal.setFooterHtml(blankHtml(h) ? '' : h);
   redirect(res, '/admin/footer?saved=1');
+});
+
+// Public comment moderation (clerk).
+route('GET', /^\/admin\/comments\/?$/, (req, res) => sendHtml(res, admin.commentsAdmin()));
+route('POST', /^\/admin\/comments\/(\d+)\/status$/, (req, res, ctx) => {
+  const c = repo.comments.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  repo.comments.setStatus(c.id, ctx.body.status);
+  redirect(res, '/admin/comments');
+});
+
+// Database backup download (admin): a fresh consistent copy via VACUUM INTO.
+route('GET', /^\/admin\/backup$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  try {
+    const file = backup.runBackup();
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${path.basename(file)}"`,
+    });
+    fs.createReadStream(file).pipe(res);
+  } catch (e) {
+    console.error('Backup download failed:', e);
+    sendHtml(res, '<h1>Backup failed</h1>', 500);
+  }
 });
 
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
@@ -655,9 +745,8 @@ route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matter
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return sendHtml(res, admin.matterForm(null), 400);
-  const fileNumber = repo.matters.nextFileNumber(b.type);
-  const id = repo.matters.insert({
-    file_number: fileNumber, type: b.type, title: b.title,
+  const { id, file_number: fileNumber } = repo.matters.insertNumbered({
+    type: b.type, title: b.title,
     status: b.status || 'Draft', body_id: b.body_id || null,
     intro_date: b.intro_date || null, summary: b.summary || null, full_text: b.full_text || null,
   });
@@ -677,6 +766,8 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
   const m = repo.matters.get(id);
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
+  // Archive the outgoing text as a numbered version when the edit changes it.
+  repo.matters.snapshotIfChanged(id, { full_text: b.full_text || null });
   repo.matters.update(id, {
     type: b.type, title: b.title, status: b.status, body_id: b.body_id || null,
     intro_date: b.intro_date || null, final_date: b.final_date || null,
@@ -732,10 +823,44 @@ route('POST', /^\/admin\/matters\/(\d+)\/attachments$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   const m = repo.matters.get(id);
   if (!m) return sendHtml(res, pages.notFound(), 404);
-  if (ctx.body.name) {
+  const file = (ctx.files || []).find((f) => f.field === 'file' && f.filename);
+  if (file) {
+    const saved = upload.saveUpload(`matter-${id}`, file);
+    if (!saved.error) {
+      repo.matters.addAttachment({
+        matter_id: id, name: ctx.body.name || saved.name, note: ctx.body.note,
+        file_path: saved.rel, size: saved.size, content_type: saved.contentType,
+      });
+    }
+  } else if (ctx.body.name) {
     repo.matters.addAttachment({ matter_id: id, name: ctx.body.name, url: ctx.body.url, note: ctx.body.note });
   }
   redirect(res, `/admin/matters/${id}/edit`);
+});
+route('POST', /^\/admin\/attachments\/(\d+)\/delete$/, (req, res, ctx) => {
+  const a = repo.matters.getAttachment(Number(ctx.params[0]));
+  if (!a) return sendHtml(res, pages.notFound(), 404);
+  if (a.file_path) upload.removeUpload(a.file_path);
+  repo.matters.removeAttachment(a.id);
+  redirect(res, `/admin/matters/${a.matter_id}/edit`);
+});
+
+// Public download of uploaded attachment files (attachments are public record).
+route('GET', /^\/files\/(\d+)$/, (req, res, ctx) => {
+  const a = repo.matters.getAttachment(Number(ctx.params[0]));
+  if (!a || !a.file_path) return sendHtml(res, pages.notFound(), 404);
+  const abs = upload.uploadPath(a.file_path);
+  if (!abs) return sendHtml(res, pages.notFound(), 404);
+  const inline = /^(application\/pdf|image\/|text\/plain)/.test(a.content_type || '');
+  const ext = path.extname(a.file_path);
+  let fname = String(a.name || 'file').replace(/["\r\n]/g, '');
+  if (ext && !fname.toLowerCase().endsWith(ext.toLowerCase())) fname += ext;
+  res.writeHead(200, {
+    'Content-Type': a.content_type || 'application/octet-stream',
+    'Content-Length': fs.statSync(abs).size,
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${fname}"`,
+  });
+  fs.createReadStream(abs).pipe(res);
 });
 
 route('GET', /^\/admin\/meetings\/new$/, (req, res) => sendHtml(res, admin.meetingForm()));
@@ -889,9 +1014,8 @@ route('GET', /^\/member\/files\/new$/, (req, res, ctx) => sendHtml(res, member.m
 route('POST', /^\/member\/files$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title || !b.type) return redirect(res, '/member/files/new');
-  const fileNumber = repo.matters.nextFileNumber(b.type);
-  const id = repo.matters.insert({
-    file_number: fileNumber, type: b.type, title: b.title, status: 'Draft',
+  const { id, file_number: fileNumber } = repo.matters.insertNumbered({
+    type: b.type, title: b.title, status: 'Draft',
     summary: b.summary || null,
   });
   repo.matters.setBodyHtml(id, sanitizeHtml(b.body_html));
@@ -1092,20 +1216,52 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+// Baseline security headers on every response. Inline scripts/styles are part
+// of the rendering approach (small per-page enhancement scripts), hence
+// 'unsafe-inline'; images allow https: for externally hosted seals/photos.
+function securityHeaders(req, res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' data: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
+  if ((req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+}
+
 // --- Server -----------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
+
+  securityHeaders(req, res);
 
   // Static assets
   if (pathname === '/styles.css' || pathname.startsWith('/assets/') || pathname === '/favicon.ico') {
     return serveStatic(req, res, pathname === '/styles.css' ? '/styles.css' : pathname);
   }
 
+  // CSRF guard: state-changing requests must originate from this site. All
+  // mutating routes are same-origin browser forms/fetches, which always carry
+  // an Origin (or Referer) header; cross-site submissions are rejected.
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    return sendHtml(res, forbidden(), 403);
+  }
+
   const query = parseQuery(url.search.replace(/^\?/, ''));
   let body = {};
+  let files = [];
   if (req.method === 'POST' || req.method === 'PUT') {
-    body = await parseBody(req);
+    if ((req.headers['content-type'] || '').startsWith('multipart/form-data')) {
+      const mp = await upload.parseMultipart(req);
+      body = mp.fields;
+      files = mp.files;
+      if (mp.tooLarge) body.__too_large = true;
+    } else {
+      body = await parseBody(req);
+    }
   }
 
   // Resolve the current user and gate protected areas. Set the user for the
@@ -1121,7 +1277,7 @@ const server = http.createServer(async (req, res) => {
     if (match) {
       const params = match.slice(1);
       try {
-        return r.handler(req, res, { params, query, body, user, pathname });
+        return r.handler(req, res, { params, query, body, files, user, pathname });
       } catch (err) {
         console.error('Handler error:', err);
         if (pathname.startsWith('/api/')) return sendJson(res, { error: 'Internal error' }, 500);

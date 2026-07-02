@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS matter_history (
   meeting_id INTEGER REFERENCES meetings(id)
 );
 
+-- Archived text versions of a matter. The matters row always holds the current
+-- text; editing snapshots the previous text here first (Legistar-style
+-- introduced/amended/adopted history). Current version = COUNT(versions) + 1.
+CREATE TABLE IF NOT EXISTS matter_versions (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  full_text TEXT,
+  body_html TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY,
   matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
@@ -193,6 +206,27 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   notes TEXT
 );
 
+-- Login sessions (hashed cookie ids) persisted so deploys and machine
+-- auto-stop/start cycles don't log everyone out.
+CREATE TABLE IF NOT EXISTS sessions (
+  sid_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+
+-- Public comments on legislative files (eComment). Held for clerk review;
+-- only Approved comments are displayed publicly.
+CREATE TABLE IF NOT EXISTS public_comments (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  position TEXT,                            -- Support | Oppose | Neutral
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Approved | Rejected
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -273,6 +307,9 @@ CREATE TABLE IF NOT EXISTS office_staff (
 );
 
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
+CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
+CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
+CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
@@ -307,6 +344,11 @@ const COLUMN_MIGRATIONS = {
     fiscal_impact: 'REAL',                         // dollar impact of this item
     budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
   },
+  attachments: {
+    file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
+    size: 'INTEGER',
+    content_type: 'TEXT',
+  },
   meetings: {
     minutes_html: 'TEXT',
     minutes_status: "TEXT NOT NULL DEFAULT 'none'",
@@ -330,6 +372,84 @@ function migrate() {
   // Backfill: matter-linked items existed before requires_vote was added (DEFAULT 0).
   // They should require a vote, so flip them to 1 if they haven't been explicitly toggled off.
   db.exec(`UPDATE agenda_items SET requires_vote=1 WHERE matter_id IS NOT NULL AND requires_vote=0`);
+  renumberLegacyFileNumbers();
+  setupFullTextSearch();
+}
+
+// Full-text index over legislative files, kept in sync with triggers so every
+// writer (admin forms, member submissions, imports, seeds) is covered. If this
+// build of SQLite lacks FTS5 the app silently falls back to LIKE search.
+let FTS_ENABLED = false;
+function ftsEnabled() { return FTS_ENABLED; }
+
+function setupFullTextSearch() {
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS matters_fts USING fts5(
+      file_number, title, summary, full_text, body_html)`);
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS matters_fts_ai AFTER INSERT ON matters BEGIN
+        INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        VALUES (new.id, new.file_number, new.title, new.summary, new.full_text, new.body_html);
+      END;
+      CREATE TRIGGER IF NOT EXISTS matters_fts_ad AFTER DELETE ON matters BEGIN
+        DELETE FROM matters_fts WHERE rowid = old.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS matters_fts_au AFTER UPDATE ON matters BEGIN
+        DELETE FROM matters_fts WHERE rowid = old.id;
+        INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        VALUES (new.id, new.file_number, new.title, new.summary, new.full_text, new.body_html);
+      END;`);
+    // Backfill rows created before the index/triggers existed.
+    const indexed = db.prepare('SELECT COUNT(*) AS n FROM matters_fts').get().n;
+    const total = db.prepare('SELECT COUNT(*) AS n FROM matters').get().n;
+    if (indexed === 0 && total > 0) {
+      db.exec(`INSERT INTO matters_fts(rowid, file_number, title, summary, full_text, body_html)
+        SELECT id, file_number, title, summary, full_text, body_html FROM matters`);
+    }
+    FTS_ENABLED = true;
+  } catch (e) {
+    console.error('FTS5 unavailable, falling back to LIKE search:', e.message);
+  }
+}
+
+// One-time data migration: rewrite legacy prefix-style file numbers
+// (ORD-2026-0001, RES-2026-0002, ...) into the all-numeric YYMMXX scheme.
+// Files are bucketed by the month they were received (intro_date, falling back
+// to created_at) and sequenced within each month in receipt order. Rows already
+// all-numeric are left untouched, so this is a no-op on subsequent boots.
+function renumberLegacyFileNumbers() {
+  const legacy = db.prepare(`
+    SELECT id, COALESCE(intro_date, created_at) AS received
+    FROM matters WHERE file_number GLOB '*[^0-9]*'
+    ORDER BY received, id`).all();
+  if (!legacy.length) return;
+
+  const update = db.prepare('UPDATE matters SET file_number = ? WHERE id = ?');
+  // Per-month counters, seeded past any numbers already issued in the new scheme.
+  const counters = new Map();
+  const maxSeq = db.prepare(`
+    SELECT MAX(CAST(substr(file_number, 5) AS INTEGER)) AS m
+    FROM matters
+    WHERE file_number NOT GLOB '*[^0-9]*' AND file_number LIKE ? || '%'`);
+
+  db.exec('SAVEPOINT sp_renumber');
+  try {
+    const today = new Date().toISOString();
+    for (const row of legacy) {
+      // received is ISO-ish text (YYYY-MM-DD...); fall back to today if malformed.
+      const d = /^\d{4}-\d{2}/.test(String(row.received || '')) ? String(row.received) : today;
+      const prefix = d.slice(2, 4) + d.slice(5, 7);
+      if (!counters.has(prefix)) counters.set(prefix, (maxSeq.get(prefix).m || 0));
+      const next = counters.get(prefix) + 1;
+      counters.set(prefix, next);
+      update.run(`${prefix}${String(next).padStart(2, '0')}`, row.id);
+    }
+    db.exec('RELEASE sp_renumber');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_renumber');
+    db.exec('RELEASE sp_renumber');
+    throw e;
+  }
 }
 
 function init() {
@@ -339,8 +459,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
-    'org_units', 'workflow_steps', 'matter_topics',
+  const tables = ['matters_fts', 'sessions', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+    'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
@@ -350,4 +470,4 @@ function reset() {
   init();
 }
 
-module.exports = { db, init, reset, DB_PATH };
+module.exports = { db, init, reset, DB_PATH, ftsEnabled };

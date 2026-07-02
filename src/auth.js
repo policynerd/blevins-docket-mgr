@@ -8,7 +8,13 @@ const { ORG, orgEmail } = require('./org');
 
 const COOKIE = 'docket_sid';
 const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 12;
-const sessions = new Map(); // sid -> { userId, created }
+
+// Sessions are persisted in SQLite (hashed, so a DB copy can't be replayed as
+// a cookie) — in-memory sessions were wiped by every deploy and by Fly's
+// auto-stop/start cycle, logging everyone out.
+function sidHash(sid) {
+  return crypto.createHash('sha256').update(String(sid)).digest('hex');
+}
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(String(password), salt, 32).toString('hex');
@@ -34,7 +40,10 @@ function getUser(id) {
 // Create a session for an already-authenticated user id; returns the cookie sid.
 function createSession(userId) {
   const sid = crypto.randomBytes(24).toString('hex');
-  sessions.set(sid, { userId, created: Date.now() });
+  // Opportunistically purge expired rows so the table can't grow unbounded.
+  db.prepare('DELETE FROM sessions WHERE created_at < ?').run(Date.now() - SESSION_MAX_AGE_MS);
+  db.prepare('INSERT INTO sessions (sid_hash, user_id, created_at) VALUES (?,?,?)')
+    .run(sidHash(sid), userId, Date.now());
   return sid;
 }
 
@@ -42,6 +51,44 @@ function login(email, password) {
   const user = findUserByEmail(email);
   if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) return null;
   return createSession(user.id);
+}
+
+// --- Login throttling ---------------------------------------------------------
+// In-memory failure counter per client+account. scrypt hashing is synchronous,
+// so unthrottled guessing both brute-forces credentials and stalls the event
+// loop; after MAX_FAILURES within WINDOW_MS the pair is blocked until the
+// window expires. Resets on process restart, which is fine for this purpose.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 8;
+const loginFailures = new Map(); // key -> { count, first }
+
+function throttleKey(ip, email) {
+  return `${ip || '?'}|${String(email || '').toLowerCase()}`;
+}
+
+function loginThrottled(ip, email) {
+  const rec = loginFailures.get(throttleKey(ip, email));
+  if (!rec) return false;
+  if (Date.now() - rec.first > LOGIN_WINDOW_MS) {
+    loginFailures.delete(throttleKey(ip, email));
+    return false;
+  }
+  return rec.count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginFailure(ip, email) {
+  const key = throttleKey(ip, email);
+  const rec = loginFailures.get(key);
+  if (!rec || Date.now() - rec.first > LOGIN_WINDOW_MS) {
+    loginFailures.set(key, { count: 1, first: Date.now() });
+  } else {
+    rec.count += 1;
+  }
+  if (loginFailures.size > 10000) loginFailures.clear(); // memory guard
+}
+
+function clearLoginFailures(ip, email) {
+  loginFailures.delete(throttleKey(ip, email));
 }
 
 function findUserBySsoSubject(subject) {
@@ -75,7 +122,7 @@ function ssoSignIn({ subject, email, name }) {
 }
 
 function logout(sid) {
-  if (sid) sessions.delete(sid);
+  if (sid) db.prepare('DELETE FROM sessions WHERE sid_hash = ?').run(sidHash(sid));
 }
 
 function parseCookies(req) {
@@ -93,13 +140,14 @@ function parseCookies(req) {
 function currentUser(req) {
   const sid = parseCookies(req)[COOKIE];
   if (!sid) return null;
-  const sess = sessions.get(sid);
+  const hash = sidHash(sid);
+  const sess = db.prepare('SELECT * FROM sessions WHERE sid_hash = ?').get(hash);
   if (!sess) return null;
-  if (Date.now() - sess.created > SESSION_MAX_AGE_MS) {
-    sessions.delete(sid);
+  if (Date.now() - sess.created_at > SESSION_MAX_AGE_MS) {
+    db.prepare('DELETE FROM sessions WHERE sid_hash = ?').run(hash);
     return null;
   }
-  const user = getUser(sess.userId);
+  const user = getUser(sess.user_id);
   return user && user.active ? user : null;
 }
 
@@ -186,4 +234,5 @@ module.exports = {
   hashPassword, verifyPassword, login, logout, currentUser, createSession,
   setSessionCookie, clearSessionCookie, sidFromReq, hasRole, getUser,
   findUserByEmail, findUserBySsoSubject, ssoSignIn, ensureSeedAccounts, ensureAdminRole, ROLE_RANK,
+  loginThrottled, recordLoginFailure, clearLoginFailures,
 };

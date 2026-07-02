@@ -26,6 +26,8 @@ function adminHome(user) {
       <a class="btn" href="/govern/members">Board membership</a>
       <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
       <a class="btn" href="/admin/agenda-template">Agenda template</a>
+      <a class="btn" href="/admin/comments">Public comments${repo.comments.pendingCount()
+        ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
@@ -82,13 +84,9 @@ function matterForm(matter, opts = {}) {
     <p class="muted file-num-preview">File # will be auto-assigned: <strong id="fn-preview">…</strong></p>
     <script>
       (function(){
-        var sel = document.querySelector('select[name="type"]');
         var out = document.getElementById('fn-preview');
-        if(!sel||!out) return;
-        var seq=0;
-        function refresh(){ var s=++seq; fetch('/admin/matters/next-number?type='+encodeURIComponent(sel.value)).then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){if(s===seq)out.textContent=d.number;}).catch(function(){if(s===seq)out.textContent='—';}); }
-        sel.addEventListener('change', refresh);
-        refresh();
+        if(!out) return;
+        fetch('/admin/matters/next-number').then(function(r){return r.ok?r.json():Promise.reject(r.status);}).then(function(d){out.textContent=d.number;}).catch(function(){out.textContent='—';});
       })();
     </script>`) : '';
 
@@ -223,17 +221,28 @@ function documentsPanel(matter) {
 
 function attachmentForm(matter) {
   const attachments = repo.matters.attachments(matter.id);
+  const sizeLabel = (n) => (n > 1024 * 1024 ? (n / (1024 * 1024)).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
   const list = attachments.length
-    ? `<ul class="attach-list">${attachments.map((a) => html`<li>${a.name}${a.url ? raw(` — <a href="${escapeText(a.url)}">link</a>`) : ''}</li>`).join('')}</ul>`
+    ? `<ul class="attach-list">${attachments.map((a) => html`<li>
+        ${a.file_path
+    ? raw(`<a href="/files/${a.id}">${escapeText(a.name)}</a> <span class="muted">(${escapeText(sizeLabel(a.size || 0))})</span>`)
+    : (a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a> <span class="muted">(link)</span>`) : a.name)}
+        <form method="post" action="/admin/attachments/${a.id}/delete" class="inline">
+          <button type="submit" class="btn-link danger" title="Remove attachment">remove</button>
+        </form></li>`).join('')}</ul>`
     : emptyState('No attachments yet.');
   const form = html`
-    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/attachments">
+    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/attachments"
+      enctype="multipart/form-data">
+      <label>Upload a file<input type="file" name="file"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.txt,.csv,.rtf"></label>
       <div class="form-row">
-        <label>Name<input type="text" name="name" required placeholder="Staff report.pdf"></label>
-        <label>URL<input type="url" name="url" placeholder="https://…"></label>
+        <label>Name<input type="text" name="name" placeholder="Defaults to the file name"></label>
+        <label>…or link a URL<input type="url" name="url" placeholder="https://…"></label>
       </div>
       <label>Note<input type="text" name="note" placeholder="Optional"></label>
       <button type="submit" class="btn">Add attachment</button>
+      <p class="muted">Upload a file (stored with the record, max 20 MB) or provide an external link with a name.</p>
     </form>
     ${raw(list)}`;
   return card('Attachments', form);
@@ -491,6 +500,58 @@ function agendaTemplateAdmin(saved) {
   return layout({ title: 'Agenda template', active: '/admin', body });
 }
 
+// --- Public comment moderation ------------------------------------------------
+function commentsAdmin() {
+  const pending = repo.comments.pending();
+  const decided = repo.comments.recentDecided();
+  const positionBadge = (p) => (p ? `<span class="badge pos-${p.toLowerCase()}">${escapeText(p)}</span>` : '');
+  const row = (c, actions) => html`
+    <li class="comment-mod">
+      <div class="comment-head">
+        <strong>${c.name}</strong> ${raw(positionBadge(c.position))}
+        on <a href="/legislation/${encodeURIComponent(c.file_number)}">${c.file_number}</a>
+        <span class="muted">— ${c.matter_title}</span>
+        <span class="muted">· ${raw(formatDate(c.created_at))}${c.email ? ' · ' + c.email : ''}</span>
+      </div>
+      <p class="comment-body">${c.body}</p>
+      ${raw(actions)}
+    </li>`;
+
+  const pendingList = pending.length
+    ? `<ul class="comment-list">${pending.map((c) => row(c, `
+        <div class="form-actions">
+          <form method="post" action="/admin/comments/${c.id}/status" class="inline">
+            <input type="hidden" name="status" value="Approved">
+            <button type="submit" class="btn primary">Approve &amp; publish</button>
+          </form>
+          <form method="post" action="/admin/comments/${c.id}/status" class="inline">
+            <input type="hidden" name="status" value="Rejected">
+            <button type="submit" class="btn">Reject</button>
+          </form>
+        </div>`)).join('')}</ul>`
+    : emptyState('No comments waiting for review.');
+
+  const decidedList = decided.length
+    ? `<ul class="comment-list">${decided.map((c) => row(c, `
+        <div class="form-actions">
+          ${statusBadge(c.status)}
+          <form method="post" action="/admin/comments/${c.id}/status" class="inline">
+            <input type="hidden" name="status" value="${c.status === 'Approved' ? 'Rejected' : 'Approved'}">
+            <button type="submit" class="btn-link">${c.status === 'Approved' ? 'Unpublish' : 'Publish'}</button>
+          </form>
+        </div>`)).join('')}</ul>`
+    : emptyState('No decided comments yet.');
+
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Public comments</p>
+    <h1>Public comment review</h1>
+    <p class="muted">Comments submitted on legislative files are held here until approved. Approved comments
+      are published on the file's public page; email addresses are never shown publicly.</p>
+    ${raw(card(`Awaiting review (${pending.length})`, pendingList))}
+    ${raw(card('Recently decided', decidedList))}`;
+  return layout({ title: 'Public comments', active: '/admin', body });
+}
+
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
 };

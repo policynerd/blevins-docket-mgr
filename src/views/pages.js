@@ -136,7 +136,7 @@ function legislationList(query) {
       ${topic ? raw(`<input type="hidden" name="topic" value="${escapeText(topic)}">`) : ''}
       <div class="sp-grid">
         <label class="sp-field">Words or file number
-          <input type="search" name="q" value="${q}" placeholder="e.g. zoning, ORD-2026-0003">
+          <input type="search" name="q" value="${q}" placeholder="e.g. zoning, 260603">
         </label>
         <label class="sp-field">Type
           <select name="type">${raw('<option value="">— All types —</option>' + repo.MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>
@@ -218,7 +218,7 @@ function legislationList(query) {
 }
 
 // --- Matter detail -----------------------------------------------------------
-function matterDetail(matter) {
+function matterDetail(matter, query = {}) {
   const sponsors = repo.matters.sponsors(matter.id);
   const history = repo.matters.history(matter.id);
   const attachments = repo.matters.attachments(matter.id);
@@ -239,7 +239,9 @@ function matterDetail(matter) {
 
   const attachmentList = attachments.length
     ? `<ul class="attach-list">${attachments.map((a) => html`
-        <li>${a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a>`) : a.name}
+        <li>${a.file_path
+    ? raw(`<a href="/files/${a.id}">${escapeText(a.name)}</a>`)
+    : (a.url ? raw(`<a href="${escapeText(a.url)}">${escapeText(a.name)}</a>`) : a.name)}
         ${a.note ? raw(`<span class="muted"> — ${escapeText(a.note)}</span>`) : ''}</li>`).join('')}</ul>`
     : emptyState('No attachments.');
 
@@ -271,10 +273,13 @@ function matterDetail(matter) {
         ? ` · <a href="/budget/${fiscalLine.budget_id}">${escapeText(fiscalLine.fiscal_year)} budget — ${escapeText((fiscalLine.category ? fiscalLine.category + ' / ' : '') + fiscalLine.name)}</a>` : ''}</dd>`)
     : '';
 
+  const versions = repo.matters.versions(matter.id);
+  const currentVersion = versions.length + 1;
+
   const meta = html`
     <dl class="meta record-header">
       <dt>File #</dt><dd>${matter.file_number}</dd>
-      <dt>Version</dt><dd>1</dd>
+      <dt>Version</dt><dd>${currentVersion}</dd>
       <dt>Type</dt><dd>${typeBadge(matter.type)}</dd>
       <dt>Status</dt><dd>${statusBadge(matter.status)}</dd>
       <dt>File created</dt><dd>${raw(formatDate(matter.created_at)) || '—'}</dd>
@@ -288,13 +293,19 @@ function matterDetail(matter) {
       ${fiscalRow}
     </dl>`;
 
+  // Version in effect on a given date: one more than the number of texts
+  // already archived by then (versions are archived when the text changes).
+  const versionAt = (date) => (date
+    ? 1 + versions.filter((v) => v.created_at && v.created_at.slice(0, 10) <= date).length
+    : currentVersion);
+
   // Tab panels (History default, mirroring the conventional record layout).
   const historyPanel = historyRows
     ? `<table class="data"><thead><tr><th>Date</th><th>Ver.</th><th>Action By</th><th>Action</th><th>Result</th><th></th></tr></thead><tbody>${
         history.map((h) => html`
           <tr>
             <td>${raw(formatDate(h.action_date))}</td>
-            <td>1</td>
+            <td>${versionAt(h.action_date)}</td>
             <td>${h.body_name || ''}</td>
             <td>${h.action}${h.notes ? raw(`<div class="sub">${escapeText(h.notes)}</div>`) : ''}</td>
             <td>${h.result ? statusBadge(h.result) : ''}</td>
@@ -302,10 +313,19 @@ function matterDetail(matter) {
           </tr>`).join('')}</tbody></table>`
     : emptyState('No recorded actions yet.');
 
+  const versionList = versions.length
+    ? `<h3 class="tab-h">Text versions</h3><ul class="version-list">
+        <li><strong>Version ${currentVersion}</strong> <span class="badge st-active">current</span></li>
+        ${versions.map((v) => html`<li>Version ${v.version} — archived ${raw(formatDate(v.created_at))}
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a></li>`).join('')}
+      </ul>`
+    : '';
+
   const textPanel = ((matter.summary ? `<h3 class="tab-h">Summary</h3><p>${escapeText(matter.summary)}</p>` : '')
     + (matter.body_html
       ? `<h3 class="tab-h">Legislation text</h3><div class="doc-body">${matter.body_html}</div>`
-      : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : '')))
+      : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : ''))
+    + versionList)
     || emptyState('No text on file.');
 
   const docsPanel = `<h3 class="tab-h">Documents &amp; reports</h3>${reportList}`
@@ -317,16 +337,52 @@ function matterDetail(matter) {
 
   const wfSteps = repo.workflow.forMatter(matter.id);
 
+  // Public comment (eComment): approved comments + submission form.
+  const approvedComments = repo.comments.approvedForMatter(matter.id);
+  const ctally = repo.comments.tally(matter.id);
+  const positionBadge = (p) => (p ? `<span class="badge pos-${p.toLowerCase()}">${escapeText(p)}</span>` : '');
+  const commentItems = approvedComments.length
+    ? `<p class="muted">Positions: ${ctally.Support} support · ${ctally.Oppose} oppose · ${ctally.Neutral} neutral</p>
+       <ul class="comment-list">${approvedComments.map((c) => html`
+        <li><div class="comment-head"><strong>${c.name}</strong> ${raw(positionBadge(c.position))}
+          <span class="muted">${raw(formatDate(c.created_at))}</span></div>
+          <p class="comment-body">${c.body}</p></li>`).join('')}</ul>`
+    : emptyState('No public comments yet.');
+  const commentForm = html`
+    <h3 class="tab-h">Submit a comment</h3>
+    <form class="form" method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/comments">
+      <div class="form-row">
+        <label>Name<input type="text" name="name" required maxlength="100"></label>
+        <label>Email (not published)<input type="email" name="email" maxlength="200"></label>
+        <label>Position
+          <select name="position"><option value="">—</option>
+            ${raw(repo.COMMENT_POSITIONS.map((p) => `<option>${p}</option>`).join(''))}
+          </select>
+        </label>
+      </div>
+      <input type="text" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label>Comment<textarea name="body" rows="4" required maxlength="4000"></textarea></label>
+      <button type="submit" class="btn primary">Submit comment</button>
+      <p class="muted">Comments are reviewed by the ${ORG.clerkOffice} before publication and become part of the public record.</p>
+    </form>`;
+  const commentsPanel = commentItems + commentForm;
+
   const tabbed = tabs([
     { id: 'history', label: 'History', count: history.length, html: historyPanel },
     { id: 'text', label: 'Text', html: textPanel },
     { id: 'docs', label: 'Reports & Attachments', count: reports.length + attachments.length, html: docsPanel },
     { id: 'workflow', label: 'Workflow', count: wfSteps.length || null, html: workflowStepper(wfSteps) },
     { id: 'agenda', label: 'Agenda appearances', count: appearances.length, html: appearancesPanel },
+    { id: 'comments', label: 'Public comment', count: approvedComments.length || null, html: commentsPanel },
   ]);
+
+  const commentedNotice = query.commented === '1'
+    ? raw('<p class="form-ok">Thank you — your comment has been received and will appear once reviewed by the Clerk’s office.</p>')
+    : '';
 
   const body = html`
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
+    ${commentedNotice}
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">
@@ -341,6 +397,23 @@ function matterDetail(matter) {
     <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: matter.file_number, active: '/legislation', body });
+}
+
+// Archived text version of a matter (public record, like the current text).
+function matterVersionPage(matter, ver) {
+  const currentVersion = repo.matters.versions(matter.id).length + 1;
+  const text = ver.body_html
+    ? `<div class="doc-body">${ver.body_html}</div>`
+    : (ver.full_text ? `<pre class="fulltext">${escapeText(ver.full_text)}</pre>` : emptyState('This version had no text.'));
+  const body = html`
+    <p class="crumbs"><a href="/legislation">Legislation</a> /
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Version ${ver.version}</p>
+    <h1>${matter.title}</h1>
+    <div class="form-warn">You are viewing <strong>archived version ${ver.version}</strong> of ${matter.file_number}
+      (archived ${raw(formatDate(ver.created_at))}). The current text is
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">version ${currentVersion}</a>.</div>
+    ${raw(card(`Text — version ${ver.version}`, text))}`;
+  return layout({ title: `${matter.file_number} v${ver.version}`, active: '/legislation', body });
 }
 
 // --- Calendar ----------------------------------------------------------------
@@ -566,11 +639,12 @@ function agendaPacket(meeting) {
           ` — ${itemVotes.map((v) => `${escapeText(v.full_name)} (${v.vote})`).join('; ')}</p>`
         : '';
       const attachLine = attachments.length
-        ? `<p class="pk-meta"><strong>Attachments:</strong></p><ul class="pk-attachments">${attachments.map((a) =>
-            `<li>${a.url
-              ? `<a href="${escapeText(a.url)}" target="_blank" rel="noopener">${escapeText(a.name)}</a>`
-              : escapeText(a.name)}${a.note ? ` <span class="muted">— ${escapeText(a.note)}</span>` : ''}</li>`
-          ).join('')}</ul>`
+        ? `<p class="pk-meta"><strong>Attachments:</strong></p><ul class="pk-attachments">${attachments.map((a) => {
+    const href = a.file_path ? `/files/${a.id}` : a.url;
+    return `<li>${href
+      ? `<a href="${escapeText(href)}" target="_blank" rel="noopener">${escapeText(a.name)}</a>`
+      : escapeText(a.name)}${a.note ? ` <span class="muted">— ${escapeText(a.note)}</span>` : ''}</li>`;
+  }).join('')}</ul>`
         : '';
       detail = `<div class="pk-title"><span class="pk-file">${escapeText(it.file_number)}</span> ${escapeText(it.matter_title)}</div>`
         + summary + sponsorLine + actionLine + voteLine + attachLine;
@@ -932,6 +1006,6 @@ function notFound() {
 }
 
 module.exports = {
-  dashboard, legislationList, matterDetail, calendar, meetingDetail, agendaPacket,
+  dashboard, legislationList, matterDetail, matterVersionPage, calendar, meetingDetail, agendaPacket,
   peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
 };

@@ -1,6 +1,6 @@
 'use strict';
 
-const { db } = require('./db');
+const { db, ftsEnabled } = require('./db');
 const { ORG } = require('./org');
 
 // ---------------------------------------------------------------------------
@@ -185,15 +185,32 @@ const bodies = {
 // ---------------------------------------------------------------------------
 // Matters (legislative files)
 // ---------------------------------------------------------------------------
+// Turn free text into a safe FTS5 MATCH expression: each token becomes a
+// quoted prefix phrase ("zoning"*), which sidesteps FTS query syntax entirely
+// (AND/OR/NEAR/parens in user input can't cause errors).
+function ftsQuery(q) {
+  return String(q).split(/\s+/).filter(Boolean).slice(0, 12)
+    .map((t) => `"${t.replace(/"/g, '')}"*`)
+    .join(' ');
+}
+
 const matters = {
   // Build the shared WHERE clause + bound args for search/count.
   _filter({ q, type, status, bodyId, sponsorId, topicId, from, to } = {}) {
     const clauses = [];
     const args = [];
     if (q) {
-      clauses.push('(m.title LIKE ? OR m.file_number LIKE ? OR m.summary LIKE ?)');
-      const like = `%${q}%`;
-      args.push(like, like, like);
+      const match = ftsEnabled() ? ftsQuery(q) : '';
+      if (match) {
+        // Full text (title, summary, full text, document body) OR a partial
+        // file-number match, which FTS prefix queries don't cover mid-string.
+        clauses.push('(m.id IN (SELECT rowid FROM matters_fts WHERE matters_fts MATCH ?) OR m.file_number LIKE ?)');
+        args.push(match, `%${q}%`);
+      } else {
+        clauses.push('(m.title LIKE ? OR m.file_number LIKE ? OR m.summary LIKE ?)');
+        const like = `%${q}%`;
+        args.push(like, like, like);
+      }
     }
     if (type) { clauses.push('m.type = ?'); args.push(type); }
     if (status) { clauses.push('m.status = ?'); args.push(status); }
@@ -267,23 +284,30 @@ const matters = {
       WHERE ai.matter_id = ?
       ORDER BY mt.meeting_date DESC`).all(matterId);
   },
-  nextFileNumber(type) {
-    const prefix = ({
-      Ordinance: 'ORD', Resolution: 'RES', Motion: 'MOT', Appointment: 'APT',
-      'Public Hearing': 'PH', Proclamation: 'PRO', Contract: 'CON',
-      Report: 'RPT', Communication: 'COM',
-    })[type] || 'FILE';
-    const year = new Date().getFullYear();
-    const like = `${prefix}-${year}-%`;
-    const row = db.prepare(
-      `SELECT file_number FROM matters WHERE file_number LIKE ?
-       ORDER BY file_number DESC LIMIT 1`).get(like);
-    let next = 1;
-    if (row) {
-      const m = row.file_number.match(/(\d+)$/);
-      if (m) next = parseInt(m[1], 10) + 1;
+  nextFileNumber() {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `${yy}${mm}`;
+    // Max sequence computed numerically: lexicographic ordering would rank
+    // 260799 above 2607100 once a month passes 99 files and mint a duplicate.
+    const { m } = db.prepare(
+      `SELECT MAX(CAST(substr(file_number, 5) AS INTEGER)) AS m
+       FROM matters
+       WHERE file_number LIKE ? || '%' AND file_number NOT GLOB '*[^0-9]*'`).get(prefix);
+    return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
+  },
+  // Insert with an auto-assigned file number, retrying if a concurrent request
+  // claimed the same number between generation and insert (UNIQUE constraint).
+  insertNumbered(m) {
+    for (let attempt = 0; ; attempt++) {
+      const file_number = this.nextFileNumber();
+      try {
+        return { id: this.insert({ ...m, file_number }), file_number };
+      } catch (e) {
+        if (attempt >= 2 || !/UNIQUE/i.test(String(e.message))) throw e;
+      }
     }
-    return `${prefix}-${year}-${String(next).padStart(4, '0')}`;
   },
   insert(m) {
     const id = db.prepare(`INSERT INTO matters
@@ -319,8 +343,15 @@ const matters = {
       h.result || null, h.notes || null, h.meeting_id || null).lastInsertRowid;
   },
   addAttachment(a) {
-    return db.prepare(`INSERT INTO attachments (matter_id, name, url, note)
-      VALUES (?,?,?,?)`).run(a.matter_id, a.name, a.url || null, a.note || null).lastInsertRowid;
+    return db.prepare(`INSERT INTO attachments (matter_id, name, url, note, file_path, size, content_type)
+      VALUES (?,?,?,?,?,?,?)`).run(a.matter_id, a.name, a.url || null, a.note || null,
+      a.file_path || null, a.size || null, a.content_type || null).lastInsertRowid;
+  },
+  getAttachment(id) {
+    return db.prepare('SELECT * FROM attachments WHERE id = ?').get(id);
+  },
+  removeAttachment(id) {
+    db.prepare('DELETE FROM attachments WHERE id = ?').run(id);
   },
 };
 
@@ -657,6 +688,37 @@ const reports = {
 matters.setBodyHtml = function (id, bodyHtml) {
   db.prepare(`UPDATE matters SET body_html=?, updated_at=datetime('now') WHERE id=?`)
     .run(bodyHtml || null, id);
+};
+
+// --- Text versioning ---------------------------------------------------------
+// The matters row holds the current text; before an edit changes it, the
+// outgoing text is archived as the next numbered version.
+matters.versions = function (matterId) {
+  return db.prepare('SELECT * FROM matter_versions WHERE matter_id = ? ORDER BY version DESC')
+    .all(matterId);
+};
+matters.getVersion = function (matterId, version) {
+  return db.prepare('SELECT * FROM matter_versions WHERE matter_id = ? AND version = ?')
+    .get(matterId, version);
+};
+matters.currentVersion = function (matterId) {
+  return 1 + db.prepare('SELECT COUNT(*) AS n FROM matter_versions WHERE matter_id = ?')
+    .get(matterId).n;
+};
+// Snapshot the current text if the incoming text differs. Fields left
+// undefined are treated as "unchanged". Returns true when a version was cut.
+matters.snapshotIfChanged = function (id, next = {}) {
+  const cur = this.get(id);
+  if (!cur) return false;
+  const nextFull = next.full_text === undefined ? (cur.full_text || null) : (next.full_text || null);
+  const nextHtml = next.body_html === undefined ? (cur.body_html || null) : (next.body_html || null);
+  if ((cur.full_text || null) === nextFull && (cur.body_html || null) === nextHtml) return false;
+  // Don't archive an all-empty state (first real text isn't an "amendment").
+  if (!cur.full_text && !cur.body_html) return false;
+  const version = db.prepare('SELECT COUNT(*) AS n FROM matter_versions WHERE matter_id = ?').get(id).n + 1;
+  db.prepare(`INSERT INTO matter_versions (matter_id, version, full_text, body_html, note)
+    VALUES (?,?,?,?,?)`).run(id, version, cur.full_text || null, cur.body_html || null, next.note || null);
+  return true;
 };
 
 // Fiscal impact of a matter, optionally tied to a budget line (rolls up there).
@@ -1102,10 +1164,59 @@ function purgeDomainData() {
   db.exec('PRAGMA foreign_keys = ON;');
 }
 
+// ---------------------------------------------------------------------------
+// Public comments on legislative files (eComment) — clerk-moderated.
+// ---------------------------------------------------------------------------
+const COMMENT_POSITIONS = ['Support', 'Oppose', 'Neutral'];
+
+const comments = {
+  add(c) {
+    return db.prepare(`INSERT INTO public_comments (matter_id, name, email, position, body)
+      VALUES (?,?,?,?,?)`).run(
+      c.matter_id, c.name, c.email || null,
+      COMMENT_POSITIONS.includes(c.position) ? c.position : null,
+      c.body).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM public_comments WHERE id = ?').get(id);
+  },
+  approvedForMatter(matterId) {
+    return db.prepare(`SELECT * FROM public_comments
+      WHERE matter_id = ? AND status = 'Approved'
+      ORDER BY created_at DESC`).all(matterId);
+  },
+  pending() {
+    return db.prepare(`SELECT c.*, m.file_number, m.title AS matter_title
+      FROM public_comments c JOIN matters m ON m.id = c.matter_id
+      WHERE c.status = 'Pending' ORDER BY c.created_at`).all();
+  },
+  recentDecided(limit = 25) {
+    return db.prepare(`SELECT c.*, m.file_number, m.title AS matter_title
+      FROM public_comments c JOIN matters m ON m.id = c.matter_id
+      WHERE c.status != 'Pending' ORDER BY c.created_at DESC LIMIT ?`).all(limit);
+  },
+  pendingCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM public_comments WHERE status = 'Pending'").get().n;
+  },
+  setStatus(id, status) {
+    if (!['Approved', 'Rejected', 'Pending'].includes(status)) return;
+    db.prepare('UPDATE public_comments SET status = ? WHERE id = ?').run(status, id);
+  },
+  // Position tally over approved comments (shown with the public list).
+  tally(matterId) {
+    const out = { Support: 0, Oppose: 0, Neutral: 0 };
+    for (const r of db.prepare(`SELECT position, COUNT(*) AS n FROM public_comments
+      WHERE matter_id = ? AND status = 'Approved' GROUP BY position`).all(matterId)) {
+      if (out[r.position] != null) out[r.position] = r.n;
+    }
+    return out;
+  },
+};
+
 module.exports = {
   MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
-  BUDGET_STATUSES, BUDGET_KINDS, workflowTemplate,
+  BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, stats, statusBuckets, purgeDomainData,
 };
