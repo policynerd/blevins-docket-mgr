@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS matter_history (
   meeting_id INTEGER REFERENCES meetings(id)
 );
 
+-- Archived text versions of a matter. The matters row always holds the current
+-- text; editing snapshots the previous text here first (Legistar-style
+-- introduced/amended/adopted history). Current version = COUNT(versions) + 1.
+CREATE TABLE IF NOT EXISTS matter_versions (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  full_text TEXT,
+  body_html TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY,
   matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
@@ -281,6 +294,7 @@ CREATE TABLE IF NOT EXISTS office_staff (
 );
 
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
+CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
@@ -431,7 +445,7 @@ function init() {
 
 function reset() {
   const tables = ['matters_fts', 'sessions', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
-    'org_units', 'workflow_steps', 'matter_topics',
+    'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];

@@ -690,6 +690,37 @@ matters.setBodyHtml = function (id, bodyHtml) {
     .run(bodyHtml || null, id);
 };
 
+// --- Text versioning ---------------------------------------------------------
+// The matters row holds the current text; before an edit changes it, the
+// outgoing text is archived as the next numbered version.
+matters.versions = function (matterId) {
+  return db.prepare('SELECT * FROM matter_versions WHERE matter_id = ? ORDER BY version DESC')
+    .all(matterId);
+};
+matters.getVersion = function (matterId, version) {
+  return db.prepare('SELECT * FROM matter_versions WHERE matter_id = ? AND version = ?')
+    .get(matterId, version);
+};
+matters.currentVersion = function (matterId) {
+  return 1 + db.prepare('SELECT COUNT(*) AS n FROM matter_versions WHERE matter_id = ?')
+    .get(matterId).n;
+};
+// Snapshot the current text if the incoming text differs. Fields left
+// undefined are treated as "unchanged". Returns true when a version was cut.
+matters.snapshotIfChanged = function (id, next = {}) {
+  const cur = this.get(id);
+  if (!cur) return false;
+  const nextFull = next.full_text === undefined ? (cur.full_text || null) : (next.full_text || null);
+  const nextHtml = next.body_html === undefined ? (cur.body_html || null) : (next.body_html || null);
+  if ((cur.full_text || null) === nextFull && (cur.body_html || null) === nextHtml) return false;
+  // Don't archive an all-empty state (first real text isn't an "amendment").
+  if (!cur.full_text && !cur.body_html) return false;
+  const version = db.prepare('SELECT COUNT(*) AS n FROM matter_versions WHERE matter_id = ?').get(id).n + 1;
+  db.prepare(`INSERT INTO matter_versions (matter_id, version, full_text, body_html, note)
+    VALUES (?,?,?,?,?)`).run(id, version, cur.full_text || null, cur.body_html || null, next.note || null);
+  return true;
+};
+
 // Fiscal impact of a matter, optionally tied to a budget line (rolls up there).
 matters.setFiscal = function (id, { fiscal_impact, budget_line_id } = {}) {
   const amt = (fiscal_impact == null || fiscal_impact === '') ? null : Number(fiscal_impact);

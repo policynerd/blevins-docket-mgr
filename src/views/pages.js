@@ -273,10 +273,13 @@ function matterDetail(matter) {
         ? ` · <a href="/budget/${fiscalLine.budget_id}">${escapeText(fiscalLine.fiscal_year)} budget — ${escapeText((fiscalLine.category ? fiscalLine.category + ' / ' : '') + fiscalLine.name)}</a>` : ''}</dd>`)
     : '';
 
+  const versions = repo.matters.versions(matter.id);
+  const currentVersion = versions.length + 1;
+
   const meta = html`
     <dl class="meta record-header">
       <dt>File #</dt><dd>${matter.file_number}</dd>
-      <dt>Version</dt><dd>1</dd>
+      <dt>Version</dt><dd>${currentVersion}</dd>
       <dt>Type</dt><dd>${typeBadge(matter.type)}</dd>
       <dt>Status</dt><dd>${statusBadge(matter.status)}</dd>
       <dt>File created</dt><dd>${raw(formatDate(matter.created_at)) || '—'}</dd>
@@ -290,13 +293,19 @@ function matterDetail(matter) {
       ${fiscalRow}
     </dl>`;
 
+  // Version in effect on a given date: one more than the number of texts
+  // already archived by then (versions are archived when the text changes).
+  const versionAt = (date) => (date
+    ? 1 + versions.filter((v) => v.created_at && v.created_at.slice(0, 10) <= date).length
+    : currentVersion);
+
   // Tab panels (History default, mirroring the conventional record layout).
   const historyPanel = historyRows
     ? `<table class="data"><thead><tr><th>Date</th><th>Ver.</th><th>Action By</th><th>Action</th><th>Result</th><th></th></tr></thead><tbody>${
         history.map((h) => html`
           <tr>
             <td>${raw(formatDate(h.action_date))}</td>
-            <td>1</td>
+            <td>${versionAt(h.action_date)}</td>
             <td>${h.body_name || ''}</td>
             <td>${h.action}${h.notes ? raw(`<div class="sub">${escapeText(h.notes)}</div>`) : ''}</td>
             <td>${h.result ? statusBadge(h.result) : ''}</td>
@@ -304,10 +313,19 @@ function matterDetail(matter) {
           </tr>`).join('')}</tbody></table>`
     : emptyState('No recorded actions yet.');
 
+  const versionList = versions.length
+    ? `<h3 class="tab-h">Text versions</h3><ul class="version-list">
+        <li><strong>Version ${currentVersion}</strong> <span class="badge st-active">current</span></li>
+        ${versions.map((v) => html`<li>Version ${v.version} — archived ${raw(formatDate(v.created_at))}
+          · <a href="/legislation/${encodeURIComponent(matter.file_number)}/v/${v.version}">view</a></li>`).join('')}
+      </ul>`
+    : '';
+
   const textPanel = ((matter.summary ? `<h3 class="tab-h">Summary</h3><p>${escapeText(matter.summary)}</p>` : '')
     + (matter.body_html
       ? `<h3 class="tab-h">Legislation text</h3><div class="doc-body">${matter.body_html}</div>`
-      : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : '')))
+      : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : ''))
+    + versionList)
     || emptyState('No text on file.');
 
   const docsPanel = `<h3 class="tab-h">Documents &amp; reports</h3>${reportList}`
@@ -343,6 +361,23 @@ function matterDetail(matter) {
     <script src="/assets/tabs.js" defer></script>
   `;
   return layout({ title: matter.file_number, active: '/legislation', body });
+}
+
+// Archived text version of a matter (public record, like the current text).
+function matterVersionPage(matter, ver) {
+  const currentVersion = repo.matters.versions(matter.id).length + 1;
+  const text = ver.body_html
+    ? `<div class="doc-body">${ver.body_html}</div>`
+    : (ver.full_text ? `<pre class="fulltext">${escapeText(ver.full_text)}</pre>` : emptyState('This version had no text.'));
+  const body = html`
+    <p class="crumbs"><a href="/legislation">Legislation</a> /
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Version ${ver.version}</p>
+    <h1>${matter.title}</h1>
+    <div class="form-warn">You are viewing <strong>archived version ${ver.version}</strong> of ${matter.file_number}
+      (archived ${raw(formatDate(ver.created_at))}). The current text is
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">version ${currentVersion}</a>.</div>
+    ${raw(card(`Text — version ${ver.version}`, text))}`;
+  return layout({ title: `${matter.file_number} v${ver.version}`, active: '/legislation', body });
 }
 
 // --- Calendar ----------------------------------------------------------------
@@ -935,6 +970,6 @@ function notFound() {
 }
 
 module.exports = {
-  dashboard, legislationList, matterDetail, calendar, meetingDetail, agendaPacket,
+  dashboard, legislationList, matterDetail, matterVersionPage, calendar, meetingDetail, agendaPacket,
   peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound,
 };

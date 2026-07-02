@@ -180,6 +180,14 @@ route('GET', /^\/calendar\.ics$/, (req, res) => {
     { filename: 'meetings.ics' });
 });
 
+// Archived text version — must be registered before the greedy matter route.
+route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const ver = repo.matters.getVersion(m.id, Number(ctx.params[1]));
+  if (!ver) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.matterVersionPage(m, ver));
+});
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
@@ -721,6 +729,8 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
   const m = repo.matters.get(id);
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
+  // Archive the outgoing text as a numbered version when the edit changes it.
+  repo.matters.snapshotIfChanged(id, { full_text: b.full_text || null });
   repo.matters.update(id, {
     type: b.type, title: b.title, status: b.status, body_id: b.body_id || null,
     intro_date: b.intro_date || null, final_date: b.final_date || null,
