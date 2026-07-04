@@ -722,8 +722,10 @@ matters.snapshotIfChanged = function (id, next = {}) {
 };
 
 // Fiscal impact of a matter, optionally tied to a budget line (rolls up there).
-matters.setFiscal = function (id, { fiscal_impact, budget_line_id } = {}) {
+matters.setFiscal = function (id, { fiscal_impact, budget_line_id, fiscal_recurring, fiscal_note } = {}) {
   const amt = (fiscal_impact == null || fiscal_impact === '') ? null : Number(fiscal_impact);
+  db.prepare(`UPDATE matters SET fiscal_recurring=?, fiscal_note=? WHERE id=?`)
+    .run(fiscal_recurring ? 1 : 0, (fiscal_note || '').trim() || null, id);
   db.prepare(`UPDATE matters SET fiscal_impact=?, budget_line_id=?, updated_at=datetime('now') WHERE id=?`)
     .run(Number.isFinite(amt) ? amt : null, budget_line_id || null, id);
 };
@@ -747,17 +749,90 @@ const budget = {
       .run(b.fiscal_year, b.status || 'Draft', b.notes || null).lastInsertRowid;
   },
   update(id, b) {
-    db.prepare('UPDATE budgets SET fiscal_year=?, status=?, notes=? WHERE id=?')
-      .run(b.fiscal_year, b.status || 'Draft', b.notes || null, id);
+    db.prepare('UPDATE budgets SET fiscal_year=?, status=?, notes=?, adopted_matter_id=? WHERE id=?')
+      .run(b.fiscal_year, b.status || 'Draft', b.notes || null,
+        b.adopted_matter_id || null, id);
   },
   remove(id) { db.prepare('DELETE FROM budgets WHERE id = ?').run(id); }, // cascades lines
-  // Lines with committed rollup (sum of linked matters' fiscal_impact).
+  // Lines with rollups. amount = ADOPTED figure (never overwritten by
+  // amendments); amended = SUM(amendments); current = adopted + amended;
+  // committed = linked legislation's fiscal impact; actual = ledger total.
   lines(budgetId) {
     return db.prepare(`SELECT bl.*,
       COALESCE((SELECT SUM(m.fiscal_impact) FROM matters m WHERE m.budget_line_id = bl.id), 0) AS committed,
-      (SELECT COUNT(*) FROM matters m WHERE m.budget_line_id = bl.id) AS item_count
+      (SELECT COUNT(*) FROM matters m WHERE m.budget_line_id = bl.id) AS item_count,
+      COALESCE((SELECT SUM(a.amount) FROM budget_amendments a WHERE a.budget_line_id = bl.id), 0) AS amended,
+      (SELECT COUNT(*) FROM budget_amendments a WHERE a.budget_line_id = bl.id) AS amendment_count,
+      COALESCE((SELECT SUM(t.amount) FROM budget_transactions t WHERE t.budget_line_id = bl.id), 0) AS actual,
+      (SELECT COUNT(*) FROM budget_transactions t WHERE t.budget_line_id = bl.id) AS tx_count
       FROM budget_lines bl WHERE bl.budget_id = ?
       ORDER BY bl.category IS NULL, bl.category, bl.sort_order, bl.id`).all(budgetId);
+  },
+  // A single line with the same rollups (for the drill-down page).
+  lineFull(lineId) {
+    return db.prepare(`SELECT bl.*, b.fiscal_year, b.status AS budget_status,
+      COALESCE((SELECT SUM(m.fiscal_impact) FROM matters m WHERE m.budget_line_id = bl.id), 0) AS committed,
+      COALESCE((SELECT SUM(a.amount) FROM budget_amendments a WHERE a.budget_line_id = bl.id), 0) AS amended,
+      COALESCE((SELECT SUM(t.amount) FROM budget_transactions t WHERE t.budget_line_id = bl.id), 0) AS actual
+      FROM budget_lines bl JOIN budgets b ON b.id = bl.budget_id WHERE bl.id = ?`).get(lineId);
+  },
+  // --- Amendments (adopted amounts are immutable history) --------------------
+  addAmendment(a) {
+    return db.prepare(`INSERT INTO budget_amendments (budget_line_id, matter_id, amount, note, author_id)
+      VALUES (?,?,?,?,?)`).run(a.budget_line_id, a.matter_id || null, Number(a.amount) || 0,
+      a.note || null, a.author_id || null).lastInsertRowid;
+  },
+  amendments(lineId) {
+    return db.prepare(`SELECT a.*, m.file_number, m.title AS matter_title
+      FROM budget_amendments a LEFT JOIN matters m ON m.id = a.matter_id
+      WHERE a.budget_line_id = ? ORDER BY a.created_at DESC, a.id DESC`).all(lineId);
+  },
+  amendmentsForBudget(budgetId) {
+    return db.prepare(`SELECT a.*, bl.name AS line_name, bl.category AS line_category,
+      m.file_number, m.title AS matter_title
+      FROM budget_amendments a
+      JOIN budget_lines bl ON bl.id = a.budget_line_id
+      LEFT JOIN matters m ON m.id = a.matter_id
+      WHERE bl.budget_id = ? ORDER BY a.created_at DESC, a.id DESC`).all(budgetId);
+  },
+  // --- Actuals ledger ---------------------------------------------------------
+  addTransaction(t) {
+    return db.prepare(`INSERT INTO budget_transactions (budget_line_id, tx_date, description, amount)
+      VALUES (?,?,?,?)`).run(t.budget_line_id, t.tx_date, t.description || null,
+      Number(t.amount) || 0).lastInsertRowid;
+  },
+  transactions(lineId) {
+    return db.prepare(`SELECT * FROM budget_transactions WHERE budget_line_id = ?
+      ORDER BY tx_date DESC, id DESC`).all(lineId);
+  },
+  getTransaction(id) {
+    return db.prepare(`SELECT t.*, bl.budget_id FROM budget_transactions t
+      JOIN budget_lines bl ON bl.id = t.budget_line_id WHERE t.id = ?`).get(id);
+  },
+  removeTransaction(id) {
+    db.prepare('DELETE FROM budget_transactions WHERE id = ?').run(id);
+  },
+  // --- Reporting ---------------------------------------------------------------
+  // Actual spend/receipts per month (expense lines only for the spend trend).
+  monthlyActuals(budgetId) {
+    return db.prepare(`SELECT substr(t.tx_date, 1, 7) AS month,
+      SUM(CASE WHEN bl.kind != 'Revenue' THEN t.amount ELSE 0 END) AS spent,
+      SUM(CASE WHEN bl.kind = 'Revenue' THEN t.amount ELSE 0 END) AS received
+      FROM budget_transactions t JOIN budget_lines bl ON bl.id = t.budget_line_id
+      WHERE bl.budget_id = ? GROUP BY month ORDER BY month`).all(budgetId);
+  },
+  // Match two budgets' lines by category+name for year-over-year comparison.
+  compareYears(aId, bId) {
+    const key = (l) => `${(l.category || '').toLowerCase()}|${l.name.toLowerCase()}`;
+    const a = new Map(budget.lines(aId).map((l) => [key(l), l]));
+    const b = new Map(budget.lines(bId).map((l) => [key(l), l]));
+    const keys = [...new Set([...a.keys(), ...b.keys()])].sort();
+    return keys.map((k) => {
+      const la = a.get(k) || null;
+      const lb = b.get(k) || null;
+      const ref = la || lb;
+      return { category: ref.category, name: ref.name, kind: ref.kind, a: la, b: lb };
+    });
   },
   getLine(id) {
     return db.prepare(`SELECT bl.*, b.fiscal_year FROM budget_lines bl
@@ -787,14 +862,22 @@ const budget = {
     const lines = budget.lines(budgetId);
     const s = {
       expBudgeted: 0, expCommitted: 0, revBudgeted: 0, revCommitted: 0,
+      expAmended: 0, revAmended: 0, expActual: 0, revActual: 0,
       lineCount: lines.length, hasRevenue: false,
     };
     for (const l of lines) {
-      if (l.kind === 'Revenue') { s.revBudgeted += l.amount; s.revCommitted += l.committed; s.hasRevenue = true; }
-      else { s.expBudgeted += l.amount; s.expCommitted += l.committed; }
+      if (l.kind === 'Revenue') {
+        s.revBudgeted += l.amount; s.revCommitted += l.committed;
+        s.revAmended += l.amended; s.revActual += l.actual; s.hasRevenue = true;
+      } else {
+        s.expBudgeted += l.amount; s.expCommitted += l.committed;
+        s.expAmended += l.amended; s.expActual += l.actual;
+      }
     }
-    s.expRemaining = s.expBudgeted - s.expCommitted;
-    s.revRemaining = s.revBudgeted - s.revCommitted;
+    s.expCurrent = s.expBudgeted + s.expAmended;
+    s.revCurrent = s.revBudgeted + s.revAmended;
+    s.expRemaining = s.expCurrent - s.expActual;
+    s.revRemaining = s.revCurrent - s.revActual;
     return s;
   },
   // Matters linked to a line (for drill-down).

@@ -195,4 +195,74 @@ function importMatters(text) {
   return r;
 }
 
-module.exports = { importRoster, importMatters };
+// --- Budget imports -----------------------------------------------------------
+// Lines CSV: category, name, kind, amount — one row per line item.
+function importBudgetLines(budgetId, text) {
+  const rows = parseCsv(text);
+  const r = { rows: rows.length, created: 0, errors: [] };
+  if (!rows.length) {
+    r.errors.push('No data rows found. Include a header row (category,name,kind,amount).');
+    return r;
+  }
+  db.exec('SAVEPOINT sp_import_blines');
+  try {
+    rows.forEach((row, idx) => {
+      const line = idx + 2;
+      const name = (row.name || row.line || '').trim();
+      if (!name) { r.errors.push(`Line ${line}: name is required.`); return; }
+      const kind = /^rev/i.test(row.kind || '') ? 'Revenue' : 'Expense';
+      const amount = Number(String(row.amount || '0').replace(/[$,]/g, ''));
+      if (!Number.isFinite(amount)) { r.errors.push(`Line ${line}: amount "${row.amount}" is not a number.`); return; }
+      repo.budget.addLine({ budget_id: budgetId, category: (row.category || '').trim() || null, name, kind, amount });
+      r.created++;
+    });
+    db.exec('RELEASE sp_import_blines');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_import_blines'); db.exec('RELEASE sp_import_blines');
+    throw e;
+  }
+  return r;
+}
+
+// Transactions CSV: date, line, description, amount — matched to the budget's
+// lines by name (optionally "Category — Name" / "Category - Name").
+function importBudgetTransactions(budgetId, text) {
+  const rows = parseCsv(text);
+  const r = { rows: rows.length, created: 0, errors: [] };
+  if (!rows.length) {
+    r.errors.push('No data rows found. Include a header row (date,line,description,amount).');
+    return r;
+  }
+  const lines = repo.budget.lines(budgetId);
+  const byName = new Map();
+  for (const l of lines) {
+    byName.set(l.name.toLowerCase(), l);
+    if (l.category) byName.set(`${l.category} — ${l.name}`.toLowerCase(), l);
+    if (l.category) byName.set(`${l.category} - ${l.name}`.toLowerCase(), l);
+  }
+  db.exec('SAVEPOINT sp_import_btx');
+  try {
+    rows.forEach((row, idx) => {
+      const n = idx + 2;
+      const date = (row.date || row.tx_date || '').trim();
+      const lineName = (row.line || row.name || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { r.errors.push(`Line ${n}: date must be YYYY-MM-DD.`); return; }
+      const target = byName.get(lineName.toLowerCase());
+      if (!target) { r.errors.push(`Line ${n}: no budget line named "${lineName}".`); return; }
+      const amount = Number(String(row.amount || '').replace(/[$,]/g, ''));
+      if (!Number.isFinite(amount)) { r.errors.push(`Line ${n}: amount "${row.amount}" is not a number.`); return; }
+      repo.budget.addTransaction({
+        budget_line_id: target.id, tx_date: date,
+        description: (row.description || '').trim() || null, amount,
+      });
+      r.created++;
+    });
+    db.exec('RELEASE sp_import_btx');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_import_btx'); db.exec('RELEASE sp_import_btx');
+    throw e;
+  }
+  return r;
+}
+
+module.exports = { importRoster, importMatters, importBudgetLines, importBudgetTransactions };

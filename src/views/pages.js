@@ -269,9 +269,11 @@ function matterDetail(matter, query = {}, user = null) {
 
   const fiscalLine = matter.budget_line_id ? repo.budget.getLine(matter.budget_line_id) : null;
   const fiscalRow = (matter.fiscal_impact != null && matter.fiscal_impact !== '')
-    ? raw(`<dt>Fiscal impact</dt><dd>${money(matter.fiscal_impact)}${fiscalLine
-        ? ` · <a href="/budget/${fiscalLine.budget_id}">${escapeText(fiscalLine.fiscal_year)} budget — ${escapeText((fiscalLine.category ? fiscalLine.category + ' / ' : '') + fiscalLine.name)}</a>` : ''}</dd>`)
-    : '';
+    ? raw(`<dt>Fiscal impact</dt><dd>${money(matter.fiscal_impact)}
+        <span class="muted">(${matter.fiscal_recurring ? 'recurring annual' : 'one-time'})</span>${fiscalLine
+        ? ` · <a href="/budget/lines/${fiscalLine.id}">${escapeText(fiscalLine.fiscal_year)} budget — ${escapeText((fiscalLine.category ? fiscalLine.category + ' / ' : '') + fiscalLine.name)}</a>` : ''}${
+        matter.fiscal_note ? `<div class="sub">${escapeText(matter.fiscal_note)}</div>` : ''}</dd>`)
+    : (matter.fiscal_note ? raw(`<dt>Fiscal note</dt><dd>${escapeText(matter.fiscal_note)}</dd>`) : '');
 
   const versions = repo.matters.versions(matter.id);
   const currentVersion = versions.length + 1;
