@@ -556,6 +556,11 @@ function voteBlock(meeting, it) {
       <form class="inline" method="post" action="/admin/agenda-items/${it.id}/toggle-vote">
         <button type="submit" class="btn-link${needsVote ? ' vote-on' : ' vote-off'}" title="${toggleTitle}">${toggleLabel}</button>
       </form>
+      <form class="inline video-ts-form" method="post" action="/admin/agenda-items/${it.id}/video"
+        title="Timestamp of this item in the meeting video (h:mm:ss)">
+        <input type="text" name="video_ts" value="${escapeText(it.video_ts || '')}" placeholder="▶ 0:14:32" size="8">
+        <button type="submit" class="btn-link">set</button>
+      </form>
       <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
         <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>

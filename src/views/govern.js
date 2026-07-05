@@ -84,6 +84,7 @@ function bodyForm(b) {
       <div class="form-row">
         <label>Type<select name="type">${raw(selectOptions(types, b ? b.type : ORG.primaryBodyType, { includeBlank: '—' }))}</select></label>
         <label>Meets<input type="text" name="meets" value="${b && b.meets ? b.meets : ''}" placeholder="2nd Mondays, 4:00 PM"></label>
+        <label>Authorized seats<input type="number" min="0" name="seats" value="${b && b.seats != null ? b.seats : ''}" placeholder="7"></label>
       </div>
       <label>Meeting location<input type="text" name="meeting_location" value="${b && b.meeting_location ? b.meeting_location : ''}" placeholder="${escapeText(ORG.meetingLocation)}"></label>
       <label>Description<textarea name="description" rows="3">${b ? (b.description || '') : ''}</textarea></label>
@@ -166,6 +167,32 @@ function membersPage(user) {
     ? pending.map((m) => motionCard(m, user)).join('')
     : emptyState('No pending membership changes.');
 
+  // Terms & vacancies: expiring/expired terms plus unfilled authorized seats.
+  const expiring = repo.bodies.expiringTerms(120);
+  const vacancies = repo.bodies.vacancies();
+  const today = new Date().toISOString().slice(0, 10);
+  const expRows = expiring.length ? expiring.map((t) => html`
+    <tr class="${t.end_date < today ? 'over-row' : ''}">
+      <td><a href="/people/${t.person_id}">${t.full_name}</a></td>
+      <td>${t.body_name}</td>
+      <td>${t.role || 'Member'}</td>
+      <td>${raw(formatDate(t.end_date))}${t.end_date < today ? raw(' <span class="badge st-failed">expired</span>') : ''}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="4" class="muted">No terms end within 120 days.</td></tr>';
+  const vacRows = vacancies.length ? vacancies.map((v) => html`
+    <tr><td><a href="/bodies/${v.id}">${v.name}</a></td>
+      <td>${v.filled} of ${v.seats} seats filled</td>
+      <td><span class="badge st-failed">${v.seats - v.filled} vacant</span></td></tr>`).join('')
+    : '<tr><td colspan="3" class="muted">No vacancies — all authorized seats are filled.</td></tr>';
+  const termsCard = card('Terms & vacancies', `
+    <h3 class="tab-h">Terms ending soon</h3>
+    <table class="data compact"><thead><tr><th>Member</th><th>Body</th><th>Role</th><th>Term ends</th></tr></thead>
+      <tbody>${expRows}</tbody></table>
+    <h3 class="tab-h">Vacant seats</h3>
+    <table class="data compact"><thead><tr><th>Body</th><th>Filled</th><th></th></tr></thead>
+      <tbody>${vacRows}</tbody></table>
+    <p class="muted">Set authorized seats on each body (Admin → Bodies), and term dates in the rosters below.</p>`);
+
   // Current rosters with remove-propose (clerk only)
   const rosterCards = allBodies.map((b) => {
     const members = repo.bodies.members(b.id);
@@ -173,6 +200,12 @@ function membersPage(user) {
       <tr>
         <td><a href="/people/${mm.person_id}">${mm.full_name}</a></td>
         <td>${mm.role || 'Member'}</td>
+        <td>${isClerk ? raw(`
+          <form class="inline term-form" method="post" action="/govern/members/${mm.id}/term" title="Term dates">
+            <input type="date" name="start_date" value="${escapeText(mm.start_date || '')}" aria-label="Term start">
+            <input type="date" name="end_date" value="${escapeText(mm.end_date || '')}" aria-label="Term end">
+            <button type="submit" class="btn-link">save term</button>
+          </form>`) : raw(mm.end_date ? `Term ends ${escapeText(mm.end_date)}` : '')}</td>
         <td>${isClerk ? raw(`
           <form class="inline remove-form" method="post" action="/govern/members/nominate">
             <input type="hidden" name="action" value="remove">
@@ -182,8 +215,11 @@ function membersPage(user) {
             <input type="text" name="reason" placeholder="Reason (optional)" class="reason-inp">
             <button type="submit" class="btn-link danger">Propose removal</button>
           </form>`) : ''}</td>
-      </tr>`).join('') : `<tr><td colspan="3" class="muted">No members.</td></tr>`;
-    return card(b.name, `<table class="data compact"><thead><tr><th>Member</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
+      </tr>`).join('') : `<tr><td colspan="4" class="muted">No members.</td></tr>`;
+    const seatNote = b.seats != null
+      ? ` — ${members.length}/${b.seats} seats${b.seats > members.length ? `, ${b.seats - members.length} vacant` : ''}` : '';
+    return card(b.name + seatNote,
+      `<table class="data compact"><thead><tr><th>Member</th><th>Role</th><th>Term</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
   }).join('');
 
   // Nominate-to-seat form (clerk only)
@@ -217,6 +253,7 @@ function membersPage(user) {
     <h1>Board membership</h1>
     <p class="muted">Changes follow <strong>Nominate → Approve → Seat</strong>. The Clerk nominates and executes; approval must come from someone other than the nominator.</p>
     ${raw(card('Pending changes', pendingHtml))}
+    ${raw(termsCard)}
     ${raw(nominateForm)}
     <h2 class="section-title">Current rosters</h2>
     ${raw(rosterCards)}`;

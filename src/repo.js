@@ -127,10 +127,10 @@ const bodies = {
   },
   insert(b) {
     return db.prepare(`INSERT INTO bodies
-      (name, type, description, meeting_location, meets, active)
-      VALUES (?,?,?,?,?,?)`).run(
+      (name, type, description, meeting_location, meets, active, seats)
+      VALUES (?,?,?,?,?,?,?)`).run(
       b.name, b.type ?? null, b.description ?? null, b.meeting_location ?? null,
-      b.meets ?? null, b.active == null ? 1 : b.active).lastInsertRowid;
+      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null).lastInsertRowid;
   },
   addMember(bodyId, personId, role = 'Member', voting = 1) {
     return db.prepare(`INSERT INTO body_members (body_id, person_id, role, voting)
@@ -146,10 +146,35 @@ const bodies = {
     db.prepare('DELETE FROM body_members WHERE id = ?').run(memberId);
   },
   update(id, b) {
-    db.prepare(`UPDATE bodies SET name=?, type=?, description=?, meeting_location=?, meets=?, active=?
+    db.prepare(`UPDATE bodies SET name=?, type=?, description=?, meeting_location=?, meets=?, active=?, seats=?
       WHERE id=?`).run(
       b.name, b.type ?? null, b.description ?? null, b.meeting_location ?? null,
-      b.meets ?? null, b.active == null ? 1 : b.active, id);
+      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null, id);
+  },
+  // Members whose terms end within the window (or already ended), plus
+  // seat vacancies, for the membership workspace.
+  expiringTerms(days = 120) {
+    return db.prepare(`
+      SELECT bm.*, p.full_name, b.name AS body_name
+      FROM body_members bm
+      JOIN people p ON p.id = bm.person_id
+      JOIN bodies b ON b.id = bm.body_id
+      WHERE bm.end_date IS NOT NULL
+        AND date(bm.end_date) <= date('now', '+' || ? || ' days')
+      ORDER BY bm.end_date`).all(days);
+  },
+  vacancies() {
+    return db.prepare(`
+      SELECT b.id, b.name, b.seats,
+        (SELECT COUNT(*) FROM body_members bm WHERE bm.body_id = b.id) AS filled
+      FROM bodies b
+      WHERE b.active = 1 AND b.seats IS NOT NULL
+        AND b.seats > (SELECT COUNT(*) FROM body_members bm WHERE bm.body_id = b.id)
+      ORDER BY b.name`).all();
+  },
+  setMemberTerm(memberId, { start_date, end_date }) {
+    db.prepare('UPDATE body_members SET start_date=?, end_date=? WHERE id=?')
+      .run(start_date || null, end_date || null, memberId);
   },
   setActive(id, active) {
     db.prepare('UPDATE bodies SET active=? WHERE id=?').run(active ? 1 : 0, id);
@@ -514,6 +539,9 @@ const meetings = {
   setItemResult(itemId, action, result) {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
+  },
+  setItemVideoTs(itemId, ts) {
+    db.prepare('UPDATE agenda_items SET video_ts=? WHERE id=?').run(ts, itemId);
   },
   setRequiresVote(itemId, val) {
     db.prepare('UPDATE agenda_items SET requires_vote=? WHERE id=?').run(val ? 1 : 0, itemId);

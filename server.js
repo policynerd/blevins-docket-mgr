@@ -297,6 +297,17 @@ route('POST', /^\/meetings\/(\d+)\/speak$/, (req, res, ctx) => {
   });
   redirect(res, back + '?speak=1');
 });
+// Per-item video timestamp (clerk): deep link into the meeting recording.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/video$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  const ts = String(ctx.body.video_ts || '').trim().replace(/^▶\s*/, '');
+  if (ts === '' || /^(\d+:)?[0-5]?\d:[0-5]\d$|^\d+$/.test(ts)) {
+    repo.meetings.setItemVideoTs(item.id, ts || null);
+  }
+  redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
+});
+
 // Speaker queue moderation (clerk).
 route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   const s = repo.speakers.get(Number(ctx.params[0]));
@@ -731,6 +742,7 @@ route('POST', /^\/admin\/bodies$/, (req, res, ctx) => {
   const id = repo.bodies.insert({
     name: b.name, type: b.type || null, description: b.description || null,
     meeting_location: b.meeting_location || null, meets: b.meets || null,
+    seats: b.seats ? Number(b.seats) : null,
   });
   redirect(res, `/bodies/${id}`);
 });
@@ -747,8 +759,19 @@ route('POST', /^\/admin\/bodies\/(\d+)$/, (req, res, ctx) => {
   repo.bodies.update(b.id, {
     name: f.name, type: f.type || null, description: f.description || null,
     meeting_location: f.meeting_location || null, meets: f.meets || null, active: b.active,
+    seats: f.seats ? Number(f.seats) : null,
   });
   redirect(res, `/bodies/${b.id}`);
+});
+// Membership term dates (staff+ via /govern gate).
+route('POST', /^\/govern\/members\/(\d+)\/term$/, (req, res, ctx) => {
+  const m = repo.bodies.memberById(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const ok = (d) => !d || /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (ok(ctx.body.start_date) && ok(ctx.body.end_date)) {
+    repo.bodies.setMemberTerm(m.id, { start_date: ctx.body.start_date, end_date: ctx.body.end_date });
+  }
+  redirect(res, '/govern/members');
 });
 route('POST', /^\/admin\/bodies\/(\d+)\/active$/, (req, res, ctx) => {
   const b = repo.bodies.get(Number(ctx.params[0]));

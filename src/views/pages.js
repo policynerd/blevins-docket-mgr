@@ -562,6 +562,17 @@ function calendar(query = {}) {
 }
 
 // --- Meeting detail ----------------------------------------------------------
+// Deep link into a meeting recording at a timestamp ("h:mm:ss" or seconds).
+function videoHref(url, ts) {
+  if (!url || !ts) return null;
+  let secs = 0;
+  for (const p of String(ts).split(':')) secs = secs * 60 + (Number(p) || 0);
+  if (/youtube\.com|youtu\.be/.test(url)) {
+    return url + (url.includes('?') ? '&' : '?') + 't=' + secs + 's';
+  }
+  return url + '#t=' + secs;
+}
+
 function meetingDetail(meeting, query = {}) {
   const items = repo.meetings.items(meeting.id);
 
@@ -584,8 +595,12 @@ function meetingDetail(meeting, query = {}) {
     const typeCell = it.item_type
       ? `<span class="item-type it-${String(it.item_type).toLowerCase()}">${escapeText(it.item_type)}</span>`
       : '';
+    const vhref = videoHref(meeting.video_url, it.video_ts);
+    const videoLine = vhref
+      ? `<div class="sub"><a href="${escapeText(vhref)}" target="_blank" rel="noopener">▶ Watch this item (${escapeText(it.video_ts)})</a></div>`
+      : '';
     const titleCell = (it.matter_id ? escapeText(it.matter_title) : escapeText(it.title || '(item)'))
-      + motionLine;
+      + motionLine + videoLine;
     const resultCell = it.result
       ? `<span class="badge st-${String(it.result).toLowerCase().replace(/[^a-z]+/g, '-')}">${escapeText(it.result)}</span>` : '';
 
@@ -987,7 +1002,7 @@ function bodyDetail(b, query = {}) {
       <dt>Type</dt><dd>${b.type || '—'}</dd>
       <dt>Meeting schedule</dt><dd>${b.meets || '—'}</dd>
       <dt>Location</dt><dd>${b.meeting_location || '—'}</dd>
-      <dt>Members</dt><dd>${members.length} (${members.filter((m) => m.voting).length} voting)</dd>
+      <dt>Members</dt><dd>${members.length}${b.seats != null ? ` of ${b.seats} authorized seats` : ''} (${members.filter((m) => m.voting).length} voting)${b.seats != null && b.seats > members.length ? raw(` · <span class="badge st-failed">${b.seats - members.length} vacant</span>`) : ''}</dd>
       <dt>Status</dt><dd>${b.active ? 'Active' : 'Inactive'}</dd>
     </dl>`;
 

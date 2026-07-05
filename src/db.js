@@ -428,6 +428,7 @@ const COLUMN_MIGRATIONS = {
     vote_threshold: "TEXT NOT NULL DEFAULT 'majority'", // majority | two_thirds | majority_full
     requires_vote: 'INTEGER NOT NULL DEFAULT 0',
     item_type: 'TEXT', // 'Action' | 'Discussion' | 'Information' | NULL
+    video_ts: 'TEXT',  // timestamp into the meeting video, "h:mm:ss" or seconds
   },
   matters: {
     body_html: 'TEXT',
@@ -438,6 +439,9 @@ const COLUMN_MIGRATIONS = {
   },
   budgets: {
     adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
+  },
+  bodies: {
+    seats: 'INTEGER', // authorized seat count (vacancies = seats - active members)
   },
   attachments: {
     file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
