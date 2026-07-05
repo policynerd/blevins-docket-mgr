@@ -41,6 +41,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/branding">Branding</a>
       <a class="btn" href="/admin/audit">Audit log</a>
+      <a class="btn" href="/admin/mail">Email</a>
       <a class="btn" href="/admin/footer">Footer</a>
       <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
     </div>
@@ -555,6 +556,11 @@ function voteBlock(meeting, it) {
       <form class="inline" method="post" action="/admin/agenda-items/${it.id}/toggle-vote">
         <button type="submit" class="btn-link${needsVote ? ' vote-on' : ' vote-off'}" title="${toggleTitle}">${toggleLabel}</button>
       </form>
+      <form class="inline video-ts-form" method="post" action="/admin/agenda-items/${it.id}/video"
+        title="Timestamp of this item in the meeting video (h:mm:ss)">
+        <input type="text" name="video_ts" value="${escapeText(it.video_ts || '')}" placeholder="▶ 0:14:32" size="8">
+        <button type="submit" class="btn-link">set</button>
+      </form>
       <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
         <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>
@@ -722,7 +728,50 @@ function auditAdmin() {
   return layout({ title: 'Audit log', active: '/admin', body });
 }
 
+// --- Email / notifications ------------------------------------------------------
+function mailAdmin({ sent = false } = {}) {
+  const smtp = require('../smtp');
+  const notify = require('../notify');
+  const configured = smtp.isConfigured();
+  const c = smtp.config();
+  const statusCard = configured
+    ? `<p class="form-ok">SMTP is configured — notifications are active.</p>
+       <dl class="meta"><dt>Relay</dt><dd>${escapeText(c.host)}:${escapeText(String(c.port))} (${escapeText(c.secure)})</dd>
+       <dt>From</dt><dd>${escapeText(c.from)}</dd>
+       <dt>Site link base</dt><dd>${escapeText(notify.baseUrl() || '(APP_BASE_URL not set — emails use relative links)')}</dd></dl>`
+    : `<p class="muted">Not configured — notifications are silently disabled. Set these secrets on the app
+       (e.g. <code>fly secrets set …</code>) to activate:</p>
+       <ul>
+         <li><code>SMTP_HOST</code>, <code>SMTP_PORT</code> (587 STARTTLS or 465 implicit TLS)</li>
+         <li><code>SMTP_USER</code> / <code>SMTP_PASS</code> (relay credentials)</li>
+         <li><code>SMTP_FROM</code> (sender address) and <code>APP_BASE_URL</code> (for links in emails)</li>
+       </ul>
+       <p class="muted">Notifications sent: approval routed to you · activity on watched files ·
+       application decisions · speaker confirmations.</p>`;
+  const testForm = configured ? `
+    <form class="form inline-form" method="post" action="/admin/mail/test">
+      <div class="form-row">
+        <label>Send a test message to<input type="email" name="to" required placeholder="you@example.gov"></label>
+      </div>
+      <button type="submit" class="btn">Queue test email</button>
+    </form>${sent ? '<p class="form-ok">Test message queued — it should arrive within a minute.</p>' : ''}` : '';
+  const rows = notify.recent();
+  const outbox = rows.length
+    ? `<table class="data compact"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th><th>Error</th></tr></thead>
+       <tbody>${rows.map((m) => html`<tr>
+         <td>${m.created_at}</td><td>${m.to_email}</td><td>${m.subject}</td>
+         <td>${statusBadge(m.status)}${m.attempts > 1 ? raw(` <span class="muted">×${m.attempts}</span>`) : ''}</td>
+         <td class="muted">${m.last_error || ''}</td></tr>`).join('')}</tbody></table>`
+    : emptyState('No messages queued yet.');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Email</p>
+    <h1>Email notifications</h1>
+    ${raw(card('Status', statusCard + testForm))}
+    ${raw(card('Outbox (most recent 50)', outbox))}`;
+  return layout({ title: 'Email', active: '/admin', body });
+}
+
 module.exports = {
   adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
-  matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin,
+  matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin, mailAdmin,
 };

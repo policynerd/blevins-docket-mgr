@@ -214,6 +214,20 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Outgoing email queue. Rows are only created when SMTP is configured;
+-- a background loop delivers with retries and records the outcome.
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id INTEGER PRIMARY KEY,
+  to_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Sent | Failed
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  sent_at TEXT
+);
+
 -- Audit trail of state-changing requests by signed-in users.
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
@@ -382,6 +396,7 @@ CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
 CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON mail_outbox(status);
 CREATE INDEX IF NOT EXISTS idx_bamend_line ON budget_amendments(budget_line_id);
 CREATE INDEX IF NOT EXISTS idx_btx_line ON budget_transactions(budget_line_id);
 CREATE INDEX IF NOT EXISTS idx_btx_date ON budget_transactions(tx_date);
@@ -413,6 +428,7 @@ const COLUMN_MIGRATIONS = {
     vote_threshold: "TEXT NOT NULL DEFAULT 'majority'", // majority | two_thirds | majority_full
     requires_vote: 'INTEGER NOT NULL DEFAULT 0',
     item_type: 'TEXT', // 'Action' | 'Discussion' | 'Information' | NULL
+    video_ts: 'TEXT',  // timestamp into the meeting video, "h:mm:ss" or seconds
   },
   matters: {
     body_html: 'TEXT',
@@ -423,6 +439,9 @@ const COLUMN_MIGRATIONS = {
   },
   budgets: {
     adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
+  },
+  bodies: {
+    seats: 'INTEGER', // authorized seat count (vacancies = seats - active members)
   },
   attachments: {
     file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
@@ -542,7 +561,7 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'audit_log', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
+  const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',

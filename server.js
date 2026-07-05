@@ -30,6 +30,8 @@ const pdfGen = require('./src/pdf');
 const org = require('./src/org');
 const backup = require('./src/backup');
 const upload = require('./src/upload');
+const notify = require('./src/notify');
+const smtp = require('./src/smtp');
 const approvalsView = require('./src/views/approvals');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
@@ -55,6 +57,8 @@ try { auth.ensureSeedAccounts(); } catch (e) { console.error('Account seed faile
 try { auth.ensureAdminRole(); } catch (e) { console.error('Admin role check failed:', e.message); }
 // Daily on-volume database backups (VACUUM INTO), pruned to the newest 7.
 backup.schedule();
+// Email delivery loop (inert unless SMTP_* env vars are configured).
+notify.schedule();
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -293,11 +297,23 @@ route('POST', /^\/meetings\/(\d+)\/speak$/, (req, res, ctx) => {
   });
   redirect(res, back + '?speak=1');
 });
+// Per-item video timestamp (clerk): deep link into the meeting recording.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/video$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  const ts = String(ctx.body.video_ts || '').trim().replace(/^▶\s*/, '');
+  if (ts === '' || /^(\d+:)?[0-5]?\d:[0-5]\d$|^\d+$/.test(ts)) {
+    repo.meetings.setItemVideoTs(item.id, ts || null);
+  }
+  redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
+});
+
 // Speaker queue moderation (clerk).
 route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   const s = repo.speakers.get(Number(ctx.params[0]));
   if (!s) return sendHtml(res, pages.notFound(), 404);
   repo.speakers.setStatus(s.id, ctx.body.status);
+  if (ctx.body.status === 'Approved') notify.speakerApproved(s.id);
   redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
 });
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
@@ -425,6 +441,7 @@ route('POST', /^\/admin\/applications\/(\d+)\/decide$/, (req, res, ctx) => {
   } else {
     repo.applications.decide(a.id, { status: 'Declined' });
   }
+  notify.applicationDecision(a.id);
   redirect(res, '/admin/applications');
 });
 
@@ -725,6 +742,7 @@ route('POST', /^\/admin\/bodies$/, (req, res, ctx) => {
   const id = repo.bodies.insert({
     name: b.name, type: b.type || null, description: b.description || null,
     meeting_location: b.meeting_location || null, meets: b.meets || null,
+    seats: b.seats ? Number(b.seats) : null,
   });
   redirect(res, `/bodies/${id}`);
 });
@@ -741,8 +759,19 @@ route('POST', /^\/admin\/bodies\/(\d+)$/, (req, res, ctx) => {
   repo.bodies.update(b.id, {
     name: f.name, type: f.type || null, description: f.description || null,
     meeting_location: f.meeting_location || null, meets: f.meets || null, active: b.active,
+    seats: f.seats ? Number(f.seats) : null,
   });
   redirect(res, `/bodies/${b.id}`);
+});
+// Membership term dates (staff+ via /govern gate).
+route('POST', /^\/govern\/members\/(\d+)\/term$/, (req, res, ctx) => {
+  const m = repo.bodies.memberById(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const ok = (d) => !d || /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (ok(ctx.body.start_date) && ok(ctx.body.end_date)) {
+    repo.bodies.setMemberTerm(m.id, { start_date: ctx.body.start_date, end_date: ctx.body.end_date });
+  }
+  redirect(res, '/govern/members');
 });
 route('POST', /^\/admin\/bodies\/(\d+)\/active$/, (req, res, ctx) => {
   const b = repo.bodies.get(Number(ctx.params[0]));
@@ -893,6 +922,21 @@ route('POST', /^\/admin\/comments\/(\d+)\/status$/, (req, res, ctx) => {
   redirect(res, '/admin/comments');
 });
 
+// Email notifications status + outbox + test send (admin).
+route('GET', /^\/admin\/mail\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, admin.mailAdmin({ sent: ctx.query.sent === '1' }));
+});
+route('POST', /^\/admin\/mail\/test$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const to = String(ctx.body.to || '').trim();
+  if (to && smtp.isConfigured()) {
+    notify.queue(to, 'Test message', 'This is a test of the notification system. If you are reading this, delivery works.');
+    notify.processOutbox().catch(() => {});
+  }
+  redirect(res, '/admin/mail?sent=1');
+});
+
 // Audit log viewer (admin).
 route('GET', /^\/admin\/audit\/?$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
@@ -1035,6 +1079,8 @@ route('POST', /^\/admin\/matters\/(\d+)\/route$/, (req, res, ctx) => {
     matter_id: id, action_date: require('./src/util').todayISO(), body_id: m.body_id || null,
     action: 'Introduced to approval route',
   });
+  const first = repo.workflow.current(id);
+  if (first) notify.approvalRouted(first.id);
   redirect(res, `/admin/matters/${id}/edit`);
 });
 
@@ -1059,6 +1105,11 @@ function actOnStep(req, res, ctx, { backTo }) {
     result: status === 'Approved' ? 'Pass' : (status === 'Returned' ? 'Fail' : null),
     notes: ctx.body.notes || null,
   });
+  // Advancing hands the file to the next step's assignee — let them know.
+  if (status === 'Approved' || status === 'Skipped') {
+    const next = repo.workflow.current(step.matter_id);
+    if (next) notify.approvalRouted(next.id);
+  }
   redirect(res, backTo === 'inbox' ? '/approvals' : `/admin/matters/${step.matter_id}/edit`);
 }
 
