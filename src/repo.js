@@ -336,11 +336,18 @@ const matters = {
     db.prepare('DELETE FROM matter_sponsors WHERE matter_id = ?').run(matterId);
   },
   addHistory(h) {
-    return db.prepare(`INSERT INTO matter_history
+    const id = db.prepare(`INSERT INTO matter_history
       (matter_id, action_date, body_id, action, result, notes, meeting_id)
       VALUES (?,?,?,?,?,?,?)`).run(
       h.matter_id, h.action_date, h.body_id || null, h.action,
       h.result || null, h.notes || null, h.meeting_id || null).lastInsertRowid;
+    // Tell watchers (no-op unless SMTP is configured). Lazy require: notify
+    // never imports repo, but keeping the edge lazy avoids load-order surprises.
+    try {
+      require('./notify').matterActivity(h.matter_id,
+        `${h.action}${h.result ? ' — ' + h.result : ''}`);
+    } catch (_) { /* notifications are best-effort */ }
+    return id;
   },
   addAttachment(a) {
     return db.prepare(`INSERT INTO attachments (matter_id, name, url, note, file_path, size, content_type)
