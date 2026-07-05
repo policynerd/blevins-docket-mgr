@@ -340,6 +340,23 @@ route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()))
 
 // Budget (public read; clerk manages via /admin routes below) ----------------
 route('GET', /^\/budget\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetList(ctx.user)));
+route('GET', /^\/budget\/compare\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetComparePage(ctx.query)));
+route('GET', /^\/budget\/(\d+)\/dashboard$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, budgetView.budgetDashboard(b));
+});
+route('GET', /^\/budget\/(\d+)\.csv$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  sendText(res, feeds.budgetCsv(b, repo.budget.lines(b.id)), 'text/csv; charset=utf-8',
+    { filename: `budget-${b.fiscal_year.replace(/[^A-Za-z0-9-]+/g, '')}.csv` });
+});
+route('GET', /^\/budget\/lines\/(\d+)$/, (req, res, ctx) => {
+  const line = repo.budget.lineFull(Number(ctx.params[0]));
+  if (!line) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, budgetView.budgetLinePage(line, ctx.user));
+});
 route('GET', /^\/budget\/(\d+)$/, (req, res, ctx) => {
   const b = repo.budget.get(Number(ctx.params[0]));
   if (!b) return sendHtml(res, pages.notFound(), 404);
@@ -552,7 +569,12 @@ route('POST', /^\/admin\/budget\/(\d+)$/, (req, res, ctx) => {
   const b = repo.budget.get(Number(ctx.params[0]));
   if (!b) return sendHtml(res, pages.notFound(), 404);
   const f = ctx.body;
-  if (f.fiscal_year) repo.budget.update(b.id, { fiscal_year: f.fiscal_year, status: f.status, notes: f.notes });
+  if (f.fiscal_year) {
+    repo.budget.update(b.id, {
+      fiscal_year: f.fiscal_year, status: f.status, notes: f.notes,
+      adopted_matter_id: f.adopted_matter_id ? Number(f.adopted_matter_id) : null,
+    });
+  }
   redirect(res, `/budget/${b.id}`);
 });
 route('POST', /^\/admin\/budget\/(\d+)\/delete$/, (req, res, ctx) => {
@@ -587,6 +609,52 @@ route('POST', /^\/admin\/budget-lines\/(\d+)\/delete$/, (req, res, ctx) => {
   if (!l) return sendHtml(res, pages.notFound(), 404);
   repo.budget.removeLine(l.id);
   redirect(res, `/budget/${l.budget_id}`);
+});
+// Amendments: signed adjustments to a line's adopted amount.
+route('POST', /^\/admin\/budget-lines\/(\d+)\/amend$/, (req, res, ctx) => {
+  const l = repo.budget.getLine(Number(ctx.params[0]));
+  if (!l) return sendHtml(res, pages.notFound(), 404);
+  const amount = Number(ctx.body.amount);
+  if (Number.isFinite(amount) && amount !== 0) {
+    repo.budget.addAmendment({
+      budget_line_id: l.id, amount,
+      matter_id: ctx.body.matter_id ? Number(ctx.body.matter_id) : null,
+      note: ctx.body.note, author_id: ctx.user ? ctx.user.id : null,
+    });
+  }
+  redirect(res, `/budget/lines/${l.id}`);
+});
+// Actuals ledger entries.
+route('POST', /^\/admin\/budget-lines\/(\d+)\/tx$/, (req, res, ctx) => {
+  const l = repo.budget.getLine(Number(ctx.params[0]));
+  if (!l) return sendHtml(res, pages.notFound(), 404);
+  const amount = Number(ctx.body.amount);
+  if (Number.isFinite(amount) && /^\d{4}-\d{2}-\d{2}$/.test(ctx.body.tx_date || '')) {
+    repo.budget.addTransaction({
+      budget_line_id: l.id, tx_date: ctx.body.tx_date,
+      description: ctx.body.description, amount,
+    });
+  }
+  redirect(res, `/budget/lines/${l.id}`);
+});
+route('POST', /^\/admin\/budget-tx\/(\d+)\/delete$/, (req, res, ctx) => {
+  const t = repo.budget.getTransaction(Number(ctx.params[0]));
+  if (!t) return sendHtml(res, pages.notFound(), 404);
+  repo.budget.removeTransaction(t.id);
+  redirect(res, `/budget/lines/${t.budget_line_id}`);
+});
+// Bulk CSV loads for a budget (lines, then transactions from accounting).
+route('POST', /^\/admin\/budget\/(\d+)\/import-lines$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  importer.importBudgetLines(b.id, ctx.body.csv || '');
+  redirect(res, `/budget/${b.id}`);
+});
+route('POST', /^\/admin\/budget\/(\d+)\/import-tx$/, (req, res, ctx) => {
+  const b = repo.budget.get(Number(ctx.params[0]));
+  if (!b) return sendHtml(res, pages.notFound(), 404);
+  importer.importBudgetTransactions(b.id, ctx.body.csv || '');
+  redirect(res, `/budget/${b.id}`);
 });
 
 // Roster import (CSV bulk "data populate" / direct-seat bootstrap) — ADMIN.
@@ -909,7 +977,10 @@ route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   });
   applySponsors(id, b.sponsor_id);
   repo.topics.setForMatter(id, parseTopics(b.topics));
-  repo.matters.setFiscal(id, { fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null });
+  repo.matters.setFiscal(id, {
+    fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
+    fiscal_recurring: b.fiscal_recurring === '1', fiscal_note: b.fiscal_note,
+  });
   redirect(res, `/legislation/${encodeURIComponent(fileNumber)}`);
 });
 
@@ -933,7 +1004,10 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
   repo.matters.clearSponsors(id);
   applySponsors(id, b.sponsor_id);
   repo.topics.setForMatter(id, parseTopics(b.topics));
-  repo.matters.setFiscal(id, { fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null });
+  repo.matters.setFiscal(id, {
+    fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
+    fiscal_recurring: b.fiscal_recurring === '1', fiscal_note: b.fiscal_note,
+  });
   redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
 });
 

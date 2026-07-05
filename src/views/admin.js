@@ -128,7 +128,7 @@ function matterForm(matter, opts = {}) {
         <input type="text" name="topics" value="${isEdit ? repo.topics.forMatter(matter.id).map((t) => t.name).join(', ') : ''}" placeholder="Zoning, Budget, Public Safety">
       </label>
       <fieldset>
-        <legend>Fiscal impact</legend>
+        <legend>Fiscal note</legend>
         <div class="form-row">
           <label>Amount ($)
             <input type="number" step="0.01" name="fiscal_impact" value="${matter && matter.fiscal_impact != null ? matter.fiscal_impact : ''}" placeholder="0.00">
@@ -137,6 +137,11 @@ function matterForm(matter, opts = {}) {
             <select name="budget_line_id">${raw(selectOptions(budgetLines, matter && matter.budget_line_id, { includeBlank: '— none —' }))}</select>
           </label>
         </div>
+        <label class="check-label"><input type="checkbox" name="fiscal_recurring" value="1"
+          ${matter && matter.fiscal_recurring ? raw('checked') : ''}> Recurring (ongoing annual cost/revenue, not one-time)</label>
+        <label>Fiscal note (narrative)
+          <textarea name="fiscal_note" rows="2" placeholder="e.g. $45,000/yr ongoing from the General Fund beginning FY2027…">${matter ? (matter.fiscal_note || '') : ''}</textarea>
+        </label>
       </fieldset>
       <fieldset>
         <legend>Sponsors</legend>

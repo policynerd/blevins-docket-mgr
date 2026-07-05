@@ -333,6 +333,11 @@ body.auth-page { background: #edf2f7; min-height: 100vh; display: flex; flex-dir
 .badge.pos-neutral { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
 .badge.pending-badge { background: #fef9c3; color: #713f12; border-color: #fde68a; }
 .hp-field { position: absolute; left: -9999px; top: -9999px; height: 1px; width: 1px; opacity: 0; }
+/* Budget v2 */
+.line-locked { font-size: 13px; color: #475569; white-space: nowrap; align-self: center; }
+.bar-col { min-width: 120px; }
+tr.over-row td { background: #fdecea; }
+
 /* Amendment redline */
 .redline { line-height: 1.7; }
 ins.df-ins { background: #dcfce7; color: #14532d; text-decoration: none; padding: 0 1px; }

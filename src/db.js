@@ -341,6 +341,30 @@ CREATE TABLE IF NOT EXISTS budget_lines (
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
+-- Budget amendments: signed adjustments to a line's adopted amount, each
+-- ideally linked to the authorizing legislative file. The line's amount column
+-- stays the ADOPTED figure; current amount = adopted + SUM(amendments).
+CREATE TABLE IF NOT EXISTS budget_amendments (
+  id INTEGER PRIMARY KEY,
+  budget_line_id INTEGER NOT NULL REFERENCES budget_lines(id) ON DELETE CASCADE,
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  amount REAL NOT NULL,                     -- signed: + supplemental, - reduction/transfer out
+  note TEXT,
+  author_id INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Actuals ledger: expenditures (expense lines) / receipts (revenue lines),
+-- entered by the clerk or imported from the accounting system.
+CREATE TABLE IF NOT EXISTS budget_transactions (
+  id INTEGER PRIMARY KEY,
+  budget_line_id INTEGER NOT NULL REFERENCES budget_lines(id) ON DELETE CASCADE,
+  tx_date TEXT NOT NULL,
+  description TEXT,
+  amount REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- A governor's office staff: aides/staff listed under a board member (person).
 CREATE TABLE IF NOT EXISTS office_staff (
   id INTEGER PRIMARY KEY,
@@ -358,6 +382,9 @@ CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
 CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
+CREATE INDEX IF NOT EXISTS idx_bamend_line ON budget_amendments(budget_line_id);
+CREATE INDEX IF NOT EXISTS idx_btx_line ON budget_transactions(budget_line_id);
+CREATE INDEX IF NOT EXISTS idx_btx_date ON budget_transactions(tx_date);
 CREATE INDEX IF NOT EXISTS idx_matters_type ON matters(type);
 CREATE INDEX IF NOT EXISTS idx_history_matter ON matter_history(matter_id);
 CREATE INDEX IF NOT EXISTS idx_agenda_meeting ON agenda_items(meeting_id);
@@ -391,6 +418,11 @@ const COLUMN_MIGRATIONS = {
     body_html: 'TEXT',
     fiscal_impact: 'REAL',                         // dollar impact of this item
     budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
+    fiscal_recurring: 'INTEGER NOT NULL DEFAULT 0', // 1 = ongoing annual cost, 0 = one-time
+    fiscal_note: 'TEXT',                            // narrative fiscal note
+  },
+  budgets: {
+    adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
   },
   attachments: {
     file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
@@ -510,7 +542,8 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'audit_log', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
+  const tables = ['matters_fts', 'sessions', 'audit_log', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
+    'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
     'users', 'votes', 'agenda_items', 'attachments', 'matter_history',

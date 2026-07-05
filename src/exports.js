@@ -156,4 +156,18 @@ ${items}
 `;
 }
 
-module.exports = { icalCalendar, mattersCsv, legislationRss, matterRss };
+// Budget lines with all rollups (adopted/amended/current/committed/actual).
+function budgetCsv(b, lines) {
+  const header = ['fiscal_year', 'category', 'line', 'kind', 'adopted', 'amended', 'current', 'committed', 'actual', 'remaining'];
+  const out = [header.map(csvCell).join(',')];
+  for (const l of lines) {
+    const current = l.amount + l.amended;
+    out.push([
+      b.fiscal_year, l.category || '', l.name, l.kind,
+      l.amount, l.amended, current, l.committed, l.actual, current - l.actual,
+    ].map(csvCell).join(','));
+  }
+  return out.join('\r\n') + '\r\n';
+}
+
+module.exports = { icalCalendar, mattersCsv, legislationRss, matterRss, budgetCsv };
