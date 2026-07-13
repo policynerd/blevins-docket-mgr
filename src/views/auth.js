@@ -19,22 +19,26 @@ function loginPage({ next = '', error = '' } = {}) {
       Sign in with Microsoft
     </a>` : '';
 
-  const localBlock = `
-    <details class="local-login"${sso.isConfigured() ? '' : ' open'}>
-      <summary>${sso.isConfigured() ? 'Or use a local account' : 'Sign in with a local account'}</summary>
-      <form class="form local-form" method="post" action="/login">
-        <input type="hidden" name="next" value="${escapeText(next)}">
-        <label>Email
-          <input type="email" name="email" required placeholder="${escapeText(orgEmail('you'))}">
-        </label>
-        <label>Password
-          <input type="password" name="password" required placeholder="••••••••">
-        </label>
-        <div class="form-actions">
-          <button type="submit" class="btn primary">Sign in</button>
-        </div>
-      </form>
-    </details>`;
+  const loginForm = `
+    <form class="form local-form" method="post" action="/login">
+      <input type="hidden" name="next" value="${escapeText(next)}">
+      <label>Email
+        <input type="email" name="email" required autofocus placeholder="${escapeText(orgEmail('you'))}">
+      </label>
+      <label>Password
+        <input type="password" name="password" required placeholder="••••••••">
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="btn primary btn-block">Sign in</button>
+      </div>
+    </form>`;
+
+  // With SSO configured, the local form is a secondary option behind a
+  // disclosure. Without it, the form IS the login — show it plainly, no
+  // pointless collapsible or orphaned divider.
+  const localBlock = sso.isConfigured()
+    ? `<details class="local-login"><summary>Or use a local account</summary>${loginForm}</details>`
+    : loginForm;
 
   const demoBlock = process.env.ENABLE_DEMO_SEED === 'true' ? `
     <div class="auth-hint">
