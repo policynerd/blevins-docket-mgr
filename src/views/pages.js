@@ -92,7 +92,7 @@ function dashboard() {
 // --- Legislation list --------------------------------------------------------
 const PAGE_SIZE = 25;
 
-function legislationList(query) {
+function legislationList(query, user = null) {
   const { q = '', type = '', status = '', body_id = '', sponsor_id = '', topic = '',
     from = '', to = '' } = query;
   const sort = repo.SORT_COLUMNS[query.sort] ? query.sort : 'intro_date';
@@ -212,6 +212,13 @@ function legislationList(query) {
         <a class="btn-link" href="/legislation.rss">🔔 RSS</a>
       </span>
     </div>
+    ${user ? raw(`
+    <form class="form inline-form save-search" method="post" action="/legislation/save-search">
+      ${['q', 'type', 'status', 'body_id', 'sponsor_id', 'topic', 'from', 'to']
+    .map((k) => `<input type="hidden" name="${k}" value="${escapeText(String((baseParams[k] ?? '')))}">`).join('')}
+      <input type="text" name="name" required maxlength="80" placeholder="Name this search…">
+      <button type="submit" class="btn">🔔 Save search &amp; alert me on new matches</button>
+    </form>`) : ''}
     ${raw(table)}
     ${raw(pager)}`;
   return layout({ title: 'Legislation', active: '/legislation', body });
@@ -278,6 +285,24 @@ function matterDetail(matter, query = {}, user = null) {
   const versions = repo.matters.versions(matter.id);
   const currentVersion = versions.length + 1;
 
+  // Congress.gov-style progress tracker. Terminal negative statuses render
+  // the pipeline inert with a red terminal chip instead of a current stage.
+  const TRACK_STAGES = ['Draft', 'Introduced', 'In Committee', 'On Agenda', 'Passed', 'Enacted'];
+  const FAILED_STATUSES = ['Failed', 'Vetoed', 'Withdrawn', 'Tabled'];
+  const stageIdx = TRACK_STAGES.indexOf(matter.status);
+  const failed = FAILED_STATUSES.includes(matter.status);
+  const tracker = `<ol class="track${failed ? ' track-dead' : ''}">${TRACK_STAGES.map((s, i) => {
+    const cls = failed ? 'todo' : (i < stageIdx ? 'done' : (i === stageIdx ? 'current' : 'todo'));
+    return `<li class="tk-${cls}"><span class="tk-dot"></span><span class="tk-label">${escapeText(s)}</span></li>`;
+  }).join('')}${failed ? `<li class="tk-failed"><span class="tk-dot"></span><span class="tk-label">${escapeText(matter.status)}</span></li>` : ''}</ol>`;
+
+  const relations = repo.matters.relationsFor(matter.id);
+  const relatedRow = relations.length
+    ? raw(`<dt>Related files</dt><dd class="chips">${relations.map((r) => `
+        <a href="/legislation/${encodeURIComponent(r.file_number)}">${escapeText(r.file_number)}</a>
+        <span class="muted">(${escapeText(r.outgoing ? r.relation : reverseRelation(r.relation))})</span>`).join(' · ')}</dd>`)
+    : '';
+
   const meta = html`
     <dl class="meta record-header">
       <dt>File #</dt><dd>${matter.file_number}</dd>
@@ -293,6 +318,7 @@ function matterDetail(matter, query = {}, user = null) {
       <dt>Sponsors</dt><dd class="chips">${sponsorHtml}</dd>
       <dt>Indexes</dt><dd class="chips">${topicChips}</dd>
       ${fiscalRow}
+      ${relatedRow}
     </dl>`;
 
   // Version in effect on a given date: one more than the number of texts
@@ -315,6 +341,12 @@ function matterDetail(matter, query = {}, user = null) {
           </tr>`).join('')}</tbody></table>`
     : emptyState('No recorded actions yet.');
 
+  const amendsPolicy = matter.amends_policy_id ? repo.policies.get(matter.amends_policy_id) : null;
+  const changesLink = amendsPolicy
+    ? `<p><a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}/changes">📑 View as changes to
+        ${escapeText(amendsPolicy.policy_number ? amendsPolicy.policy_number + ' — ' : '')}${escapeText(amendsPolicy.title)}</a></p>`
+    : '';
+
   const versionList = versions.length
     ? `<h3 class="tab-h">Text versions</h3><ul class="version-list">
         <li><strong>Version ${currentVersion}</strong> <span class="badge st-active">current</span></li>
@@ -324,7 +356,8 @@ function matterDetail(matter, query = {}, user = null) {
       </ul>`
     : '';
 
-  const textPanel = ((matter.summary ? `<h3 class="tab-h">Summary</h3><p>${escapeText(matter.summary)}</p>` : '')
+  const textPanel = (changesLink
+    + (matter.summary ? `<h3 class="tab-h">Summary</h3><p>${escapeText(matter.summary)}</p>` : '')
     + (matter.body_html
       ? `<h3 class="tab-h">Legislation text</h3><div class="doc-body">${matter.body_html}</div>`
       : (matter.full_text ? `<h3 class="tab-h">Full text</h3><pre class="fulltext">${escapeText(matter.full_text)}</pre>` : ''))
@@ -370,6 +403,14 @@ function matterDetail(matter, query = {}, user = null) {
     </form>`;
   const commentsPanel = commentItems + commentForm;
 
+  const implUpdates = repo.implementation.forMatter(matter.id);
+  const implPanel = implUpdates.length
+    ? `${progressBar(implUpdates[0].progress)}<p class="muted">${implUpdates[0].progress}% complete</p>
+       <ul class="version-list">${implUpdates.map((u) => html`
+        <li><strong>${u.progress}%</strong> — ${u.note || 'progress update'}
+          <span class="muted">· ${raw(formatDate(u.created_at))}</span></li>`).join('')}</ul>`
+    : null;
+
   const tabbed = tabs([
     { id: 'history', label: 'History', count: history.length, html: historyPanel },
     { id: 'text', label: 'Text', html: textPanel },
@@ -377,6 +418,7 @@ function matterDetail(matter, query = {}, user = null) {
     { id: 'workflow', label: 'Workflow', count: wfSteps.length || null, html: workflowStepper(wfSteps) },
     { id: 'agenda', label: 'Agenda appearances', count: appearances.length, html: appearancesPanel },
     { id: 'comments', label: 'Public comment', count: approvedComments.length || null, html: commentsPanel },
+    ...(implPanel ? [{ id: 'impl', label: 'Implementation', count: implUpdates.length, html: implPanel }] : []),
   ]);
 
   const commentedNotice = query.commented === '1'
@@ -386,6 +428,7 @@ function matterDetail(matter, query = {}, user = null) {
   const body = html`
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
     ${commentedNotice}
+    ${raw(tracker)}
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">
@@ -446,6 +489,25 @@ function matterComparePage(matter, query = {}) {
     <h1>${matter.title}</h1>
     ${raw(card('Compare versions', picker + `<div class="doc-body redline">${diff.diffHtml(from.text, to.text) || emptyState('Neither version has text.')}</div>`))}`;
   return layout({ title: `${matter.file_number} — compare`, active: '/legislation', body });
+}
+
+// Comparative print: the proposed text as a redline against the current
+// policy it amends ("changes to existing law").
+function matterChangesPage(matter, policy) {
+  const diff = require('../diff');
+  const current = diff.stripHtml(policy.body_html);
+  const proposed = matter.body_html ? diff.stripHtml(matter.body_html) : (matter.full_text || '');
+  const st = diff.stats(current, proposed);
+  const body = html`
+    <p class="crumbs"><a href="/legislation">Legislation</a> /
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Changes to existing policy</p>
+    <h1>${matter.title}</h1>
+    <p class="muted">Showing ${matter.file_number} as changes to
+      <a href="/policies/${policy.id}">${policy.policy_number ? policy.policy_number + ' — ' : ''}${policy.title}</a>:
+      <ins class="df-ins">added</ins> and <del class="df-del">removed</del> text ·
+      <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>
+    ${raw(card('Comparative print', `<div class="doc-body redline">${diff.diffHtml(current, proposed) || emptyState('No text to compare.')}</div>`))}`;
+  return layout({ title: `${matter.file_number} — changes`, active: '/legislation', body });
 }
 
 // Archived text version of a matter (public record, like the current text).
@@ -562,6 +624,44 @@ function calendar(query = {}) {
 }
 
 // --- Meeting detail ----------------------------------------------------------
+// Accountability: implementation progress on enacted/passed legislation.
+function progressBar(pct) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  return `<div class="budget-bar impl-bar"><span style="width:${p}%"></span></div>`;
+}
+
+function accountabilityPage() {
+  const rows = repo.implementation.overview();
+  const table = rows.length
+    ? `<table class="data"><thead><tr><th>File #</th><th>Title</th><th>Status</th><th>Final action</th>
+        <th>Implementation</th><th>Latest update</th></tr></thead>
+       <tbody>${rows.map((m) => html`
+        <tr>
+          <td><a href="/legislation/${encodeURIComponent(m.file_number)}">${m.file_number}</a></td>
+          <td class="title-cell">${m.title}</td>
+          <td>${statusBadge(m.status)}</td>
+          <td>${raw(formatDate(m.final_date))}</td>
+          <td class="bar-col">${m.progress != null
+    ? raw(`${progressBar(m.progress)} <span class="muted">${m.progress}%</span>`)
+    : raw('<span class="muted">not started</span>')}</td>
+          <td>${m.last_note ? raw(`${escapeText(m.last_note)} <span class="muted">· ${escapeText(formatDate(m.last_update))}</span>`) : ''}</td>
+        </tr>`).join('')}</tbody></table>`
+    : emptyState('No enacted legislation to track yet.');
+  const body = html`
+    <h1>Accountability</h1>
+    <p class="muted">What happened after adoption: implementation progress for enacted and passed legislation,
+      updated by the ${ORG.clerkOffice}.</p>
+    ${raw(card('Implementation tracker', table))}`;
+  return layout({ title: 'Accountability', active: '/accountability',
+    subtitle: 'Following legislation through to delivery.', body });
+}
+
+// Reading a relation from the other end: "A supersedes B" reads on B's page
+// as "superseded by"; symmetric labels pass through.
+function reverseRelation(rel) {
+  return ({ Amends: 'Amended by', Supersedes: 'Superseded by' })[rel] || rel;
+}
+
 // Deep link into a meeting recording at a timestamp ("h:mm:ss" or seconds).
 function videoHref(url, ts) {
   if (!url || !ts) return null;
@@ -1128,6 +1228,7 @@ function notFound() {
 }
 
 module.exports = {
-  dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, calendar, meetingDetail, agendaPacket,
+  dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, matterChangesPage,
+  calendar, meetingDetail, agendaPacket, accountabilityPage,
   peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound, acceptsSpeakers,
 };

@@ -725,6 +725,37 @@ matters.setBodyHtml = function (id, bodyHtml) {
     .run(bodyHtml || null, id);
 };
 
+matters.setAmendsPolicy = function (id, policyId) {
+  db.prepare('UPDATE matters SET amends_policy_id=? WHERE id=?').run(policyId || null, id);
+};
+
+// --- Related files -------------------------------------------------------------
+const RELATION_TYPES = ['Related', 'Companion', 'Amends', 'Supersedes'];
+
+matters.addRelation = function (matterId, relatedId, relation) {
+  if (Number(matterId) === Number(relatedId)) return;
+  try {
+    db.prepare('INSERT INTO matter_relations (matter_id, related_id, relation) VALUES (?,?,?)')
+      .run(matterId, relatedId, RELATION_TYPES.includes(relation) ? relation : 'Related');
+  } catch (_) { /* duplicate pair — already linked */ }
+};
+matters.getRelation = function (id) {
+  return db.prepare('SELECT * FROM matter_relations WHERE id = ?').get(id);
+};
+matters.removeRelation = function (id) {
+  db.prepare('DELETE FROM matter_relations WHERE id = ?').run(id);
+};
+// Both directions: links this file created and links pointing at it.
+matters.relationsFor = function (matterId) {
+  return db.prepare(`
+    SELECT r.id, r.relation, 1 AS outgoing, m.id AS other_id, m.file_number, m.title, m.status
+    FROM matter_relations r JOIN matters m ON m.id = r.related_id WHERE r.matter_id = ?
+    UNION ALL
+    SELECT r.id, r.relation, 0 AS outgoing, m.id AS other_id, m.file_number, m.title, m.status
+    FROM matter_relations r JOIN matters m ON m.id = r.matter_id WHERE r.related_id = ?
+    ORDER BY file_number`).all(matterId, matterId);
+};
+
 // --- Text versioning ---------------------------------------------------------
 // The matters row holds the current text; before an edit changes it, the
 // outgoing text is archived as the next numbered version.
@@ -1249,6 +1280,9 @@ const users = {
   byEmail(email) {
     return db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
   },
+  setDigest(id, on) {
+    db.prepare('UPDATE users SET digest = ? WHERE id = ?').run(on ? 1 : 0, id);
+  },
   setRole(id, role) {
     if (!USER_ROLES.includes(role)) return;
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
@@ -1437,6 +1471,113 @@ const speakers = {
 };
 
 // ---------------------------------------------------------------------------
+// Citizen proposals (Decidim-style) with endorsements
+// ---------------------------------------------------------------------------
+const PROPOSAL_THRESHOLD_DEFAULT = 10;
+
+const proposals = {
+  threshold() {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'proposals.threshold'").get();
+    const n = row ? Number(row.value) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : PROPOSAL_THRESHOLD_DEFAULT;
+  },
+  add(p) {
+    return db.prepare('INSERT INTO proposals (title, body, name, email) VALUES (?,?,?,?)')
+      .run(p.title, p.body, p.name, p.email || null).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare(`SELECT p.*, m.file_number,
+      (SELECT COUNT(*) FROM proposal_endorsements e WHERE e.proposal_id = p.id) AS endorsements
+      FROM proposals p LEFT JOIN matters m ON m.id = p.matter_id WHERE p.id = ?`).get(id);
+  },
+  list(status = null) {
+    const where = status ? 'WHERE p.status = ?' : '';
+    return db.prepare(`SELECT p.*, m.file_number,
+      (SELECT COUNT(*) FROM proposal_endorsements e WHERE e.proposal_id = p.id) AS endorsements
+      FROM proposals p LEFT JOIN matters m ON m.id = p.matter_id ${where}
+      ORDER BY endorsements DESC, p.id DESC`).all(...(status ? [status] : []));
+  },
+  endorse(proposalId, name, email) {
+    try {
+      db.prepare('INSERT INTO proposal_endorsements (proposal_id, name, email) VALUES (?,?,?)')
+        .run(proposalId, name, email.toLowerCase());
+      return true;
+    } catch (_) { return false; } // duplicate email for this proposal
+  },
+  decide(id, { status, matterId = null }) {
+    if (!['Accepted', 'Declined', 'Open'].includes(status)) return;
+    db.prepare('UPDATE proposals SET status = ?, matter_id = ? WHERE id = ?')
+      .run(status, matterId, id);
+  },
+  openCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE status = 'Open'").get().n;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Accountability: implementation progress on enacted legislation
+// ---------------------------------------------------------------------------
+const implementation = {
+  add(matterId, progress, note) {
+    const p = Math.max(0, Math.min(100, Number(progress) || 0));
+    return db.prepare('INSERT INTO implementation_updates (matter_id, progress, note) VALUES (?,?,?)')
+      .run(matterId, p, note || null).lastInsertRowid;
+  },
+  forMatter(matterId) {
+    return db.prepare(`SELECT * FROM implementation_updates WHERE matter_id = ?
+      ORDER BY created_at DESC, id DESC`).all(matterId);
+  },
+  // Enacted/passed matters with their latest progress, for the public page.
+  overview() {
+    return db.prepare(`
+      SELECT m.id, m.file_number, m.title, m.status, m.final_date,
+        (SELECT i.progress FROM implementation_updates i WHERE i.matter_id = m.id
+         ORDER BY i.id DESC LIMIT 1) AS progress,
+        (SELECT i.note FROM implementation_updates i WHERE i.matter_id = m.id
+         ORDER BY i.id DESC LIMIT 1) AS last_note,
+        (SELECT i.created_at FROM implementation_updates i WHERE i.matter_id = m.id
+         ORDER BY i.id DESC LIMIT 1) AS last_update
+      FROM matters m
+      WHERE m.status IN ('Enacted', 'Passed')
+      ORDER BY m.final_date DESC, m.id DESC`).all();
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Saved legislation searches (alert when new files match)
+// ---------------------------------------------------------------------------
+const savedSearches = {
+  add(userId, name, filters) {
+    const maxId = db.prepare('SELECT COALESCE(MAX(id),0) AS m FROM matters').get().m;
+    return db.prepare(`INSERT INTO saved_searches (user_id, name, query_json, last_matter_id)
+      VALUES (?,?,?,?)`).run(userId, name, JSON.stringify(filters || {}), maxId).lastInsertRowid;
+  },
+  forUser(userId) {
+    return db.prepare('SELECT * FROM saved_searches WHERE user_id = ? ORDER BY id DESC').all(userId);
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM saved_searches WHERE id = ?').get(id);
+  },
+  remove(id, userId) {
+    db.prepare('DELETE FROM saved_searches WHERE id = ? AND user_id = ?').run(id, userId);
+  },
+  all() {
+    return db.prepare(`SELECT s.*, u.email, u.active FROM saved_searches s
+      JOIN users u ON u.id = s.user_id WHERE u.active = 1 AND u.email IS NOT NULL`).all();
+  },
+  // New matters (created after the saved high-water mark) matching the query.
+  newMatches(saved) {
+    let filters = {};
+    try { filters = JSON.parse(saved.query_json); } catch (_) { /* legacy/corrupt */ }
+    const results = matters.search({ ...filters, limit: 100 });
+    return results.filter((m) => m.id > saved.last_matter_id);
+  },
+  bump(id, lastMatterId) {
+    db.prepare('UPDATE saved_searches SET last_matter_id = ? WHERE id = ?').run(lastMatterId, id);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Watch lists (follow a legislative file)
 // ---------------------------------------------------------------------------
 const watches = {
@@ -1472,5 +1613,7 @@ module.exports = {
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
-  policies, users, budget, comments, watches, speakers, applications, audit, stats, statusBuckets, purgeDomainData,
+  policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
+  proposals, implementation,
+  RELATION_TYPES, stats, statusBuckets, purgeDomainData,
 };
