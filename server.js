@@ -32,7 +32,9 @@ const backup = require('./src/backup');
 const upload = require('./src/upload');
 const notify = require('./src/notify');
 const smtp = require('./src/smtp');
+const alerts = require('./src/alerts');
 const approvalsView = require('./src/views/approvals');
+const proposalsView = require('./src/views/proposals');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
@@ -59,6 +61,8 @@ try { auth.ensureAdminRole(); } catch (e) { console.error('Admin role check fail
 backup.schedule();
 // Email delivery loop (inert unless SMTP_* env vars are configured).
 notify.schedule();
+// Saved-search alerts + daily digest (also inert without SMTP).
+alerts.schedule();
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -162,7 +166,30 @@ route('GET', /^\/auth\/sso\/callback$/, async (req, res, ctx) => {
 // Public portal --------------------------------------------------------------
 route('GET', /^\/$/, (req, res) => sendHtml(res, pages.dashboard()));
 route('GET', /^\/docket\/?$/, (req, res) => sendHtml(res, pages.docket()));
-route('GET', /^\/legislation\/?$/, (req, res, ctx) => sendHtml(res, pages.legislationList(ctx.query)));
+route('GET', /^\/legislation\/?$/, (req, res, ctx) => sendHtml(res, pages.legislationList(ctx.query, ctx.user)));
+// Save the current legislation search as a named alert (signed-in users).
+route('POST', /^\/legislation\/save-search$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Flegislation');
+  const name = String(ctx.body.name || '').trim().slice(0, 80);
+  if (name) {
+    const keep = ['q', 'type', 'status', 'body_id', 'sponsor_id', 'topic', 'from', 'to'];
+    const filters = {};
+    for (const k of keep) if (ctx.body[k]) filters[k] = String(ctx.body[k]);
+    repo.savedSearches.add(ctx.user.id, name, filters);
+  }
+  redirect(res, '/watching');
+});
+route('POST', /^\/watching\/searches\/(\d+)\/delete$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fwatching');
+  repo.savedSearches.remove(Number(ctx.params[0]), ctx.user.id);
+  redirect(res, '/watching');
+});
+// Daily digest opt-in/out.
+route('POST', /^\/watching\/digest$/, (req, res, ctx) => {
+  if (!ctx.user) return redirect(res, '/login?next=%2Fwatching');
+  repo.users.setDigest(ctx.user.id, ctx.body.digest === '1');
+  redirect(res, '/watching');
+});
 
 // Feeds & exports -----------------------------------------------------------
 route('GET', /^\/legislation\.csv$/, (req, res, ctx) => {
@@ -216,6 +243,68 @@ route('POST', /^\/legislation\/(.+)\/watch$/, (req, res, ctx) => {
 route('GET', /^\/watching\/?$/, (req, res, ctx) => {
   if (!ctx.user) return redirect(res, '/login?next=%2Fwatching');
   sendHtml(res, member.watchingPage(ctx.user));
+});
+
+// --- Citizen proposals (Decidim-style) --------------------------------------
+route('GET', /^\/proposals\/?$/, (req, res, ctx) => sendHtml(res, proposalsView.proposalsList(ctx.query)));
+route('GET', /^\/proposals\/(\d+)$/, (req, res, ctx) => {
+  const p = repo.proposals.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, proposalsView.proposalDetail(p, ctx.query));
+});
+route('POST', /^\/proposals$/, (req, res, ctx) => {
+  if (ctx.body.website) return redirect(res, '/proposals?submitted=1'); // honeypot
+  const title = String(ctx.body.title || '').trim().slice(0, 140);
+  const bodyText = String(ctx.body.body || '').trim().slice(0, 6000);
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  if (!title || !bodyText || !name) return redirect(res, '/proposals');
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.proposals.add({ title, body: bodyText, name, email: String(ctx.body.email || '').trim().slice(0, 200) || null });
+  redirect(res, '/proposals?submitted=1');
+});
+route('POST', /^\/proposals\/(\d+)\/endorse$/, (req, res, ctx) => {
+  const p = repo.proposals.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  const back = `/proposals/${p.id}`;
+  if (ctx.body.website) return redirect(res, back + '?endorsed=1'); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  const email = String(ctx.body.email || '').trim().slice(0, 200);
+  if (!name || !email) return redirect(res, back);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  const ok = repo.proposals.endorse(p.id, name, email);
+  redirect(res, back + (ok ? '?endorsed=1' : '?endorsed=0'));
+});
+
+// Accountability (public implementation tracker).
+route('GET', /^\/accountability\/?$/, (req, res) => sendHtml(res, pages.accountabilityPage()));
+
+// Comparative print ("changes to existing law") — before the greedy route.
+route('GET', /^\/legislation\/(.+)\/changes$/, (req, res, ctx) => {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
+  if (!m || !m.amends_policy_id) return sendHtml(res, pages.notFound(), 404);
+  const policy = repo.policies.get(m.amends_policy_id);
+  if (!policy) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, pages.matterChangesPage(m, policy));
+});
+
+// Related-file links (clerk).
+route('POST', /^\/admin\/matters\/(\d+)\/relations$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.related_id) {
+    repo.matters.addRelation(m.id, Number(ctx.body.related_id), ctx.body.relation);
+  }
+  redirect(res, `/admin/matters/${m.id}/edit`);
+});
+route('POST', /^\/admin\/relations\/(\d+)\/delete$/, (req, res, ctx) => {
+  const r = repo.matters.getRelation(Number(ctx.params[0]));
+  if (!r) return sendHtml(res, pages.notFound(), 404);
+  repo.matters.removeRelation(r.id);
+  redirect(res, `/admin/matters/${r.matter_id}/edit`);
 });
 
 // Amendment comparison — must be registered before the greedy matter route.
@@ -937,6 +1026,36 @@ route('POST', /^\/admin\/mail\/test$/, (req, res, ctx) => {
   redirect(res, '/admin/mail?sent=1');
 });
 
+// Citizen proposal review (clerk): accept → create a Draft file from the text.
+route('GET', /^\/admin\/proposals\/?$/, (req, res) => sendHtml(res, proposalsView.proposalsAdmin()));
+route('POST', /^\/admin\/proposals\/(\d+)\/decide$/, (req, res, ctx) => {
+  const p = repo.proposals.get(Number(ctx.params[0]));
+  if (!p) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.decision === 'accept') {
+    const { id, file_number } = repo.matters.insertNumbered({
+      type: 'Communication', title: p.title, status: 'Draft',
+      summary: `Citizen proposal by ${p.name}`, full_text: p.body,
+    });
+    repo.proposals.decide(p.id, { status: 'Accepted', matterId: id });
+    repo.matters.addHistory({
+      matter_id: id, action_date: require('./src/util').todayISO(),
+      action: 'Introduced from citizen proposal', notes: `Proposal #${p.id}`,
+    });
+    void file_number;
+  } else {
+    repo.proposals.decide(p.id, { status: 'Declined' });
+  }
+  notify.proposalDecision(p.id);
+  redirect(res, '/admin/proposals');
+});
+// Implementation progress update (clerk).
+route('POST', /^\/admin\/matters\/(\d+)\/implementation$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  repo.implementation.add(m.id, ctx.body.progress, ctx.body.note);
+  redirect(res, `/admin/matters/${m.id}/edit`);
+});
+
 // Audit log viewer (admin).
 route('GET', /^\/admin\/audit\/?$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
@@ -1025,6 +1144,7 @@ route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
     fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
     fiscal_recurring: b.fiscal_recurring === '1', fiscal_note: b.fiscal_note,
   });
+  repo.matters.setAmendsPolicy(id, b.amends_policy_id ? Number(b.amends_policy_id) : null);
   redirect(res, `/legislation/${encodeURIComponent(fileNumber)}`);
 });
 
@@ -1052,6 +1172,7 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
     fiscal_impact: b.fiscal_impact, budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
     fiscal_recurring: b.fiscal_recurring === '1', fiscal_note: b.fiscal_note,
   });
+  repo.matters.setAmendsPolicy(id, b.amends_policy_id ? Number(b.amends_policy_id) : null);
   redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
 });
 

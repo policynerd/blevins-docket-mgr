@@ -154,11 +154,38 @@ function watchingPage(user) {
           </td>
         </tr>`).join('')}</tbody></table>`
     : emptyState('You are not watching any files yet. Use the ☆ Watch button on any legislative file.');
+  const searches = repo.savedSearches.forUser(user.id);
+  const describe = (s) => {
+    let f = {};
+    try { f = JSON.parse(s.query_json); } catch (_) { /* legacy */ }
+    const parts = Object.entries(f).map(([k, v]) => `${k}: ${v}`);
+    return parts.length ? parts.join(' · ') : 'all files';
+  };
+  const searchList = searches.length
+    ? `<ul class="attach-list">${searches.map((s) => html`
+        <li><strong>${s.name}</strong> <span class="muted">(${describe(s)})</span>
+          <form method="post" action="/watching/searches/${s.id}/delete" class="inline">
+            <button type="submit" class="btn-link danger">remove</button>
+          </form></li>`).join('')}</ul>`
+    : emptyState('No saved searches. Run a search on the Legislation page and save it.');
+
+  const me = repo.users.get(user.id) || user;
+  const digestCard = card('Daily digest', `
+    <p class="muted">One email a day with recent actions and today's meetings.</p>
+    <form method="post" action="/watching/digest" class="inline">
+      <input type="hidden" name="digest" value="${me.digest ? 0 : 1}">
+      <button type="submit" class="btn${me.digest ? '' : ' primary'}">
+        ${me.digest ? 'Unsubscribe from the daily digest' : 'Subscribe to the daily digest'}</button>
+    </form>
+    ${me.digest ? '<p class="form-ok">Subscribed.</p>' : ''}`);
+
   const body = html`
     <h1>Watching</h1>
     <p class="muted">Files you follow, with their most recent recorded action. Each file also has an
       RSS activity feed you can subscribe to from its page.</p>
-    ${raw(card(`Watched files (${rows.length})`, table))}`;
+    ${raw(card(`Watched files (${rows.length})`, table))}
+    ${raw(card(`Saved searches (${searches.length})`, searchList))}
+    ${raw(digestCard)}`;
   return layout({ title: 'Watching', active: '/watching', body });
 }
 

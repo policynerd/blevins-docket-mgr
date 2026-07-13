@@ -33,6 +33,8 @@ function adminHome(user) {
         ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/applications">Applications${repo.applications.pendingCount()
         ? raw(` <span class="badge pending-badge">${repo.applications.pendingCount()}</span>`) : ''}</a>
+      <a class="btn" href="/admin/proposals">Proposals${repo.proposals.openCount()
+        ? raw(` <span class="badge pending-badge">${repo.proposals.openCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
       <a class="btn" href="/admin/org">Manage organization</a>
@@ -144,6 +146,12 @@ function matterForm(matter, opts = {}) {
           <textarea name="fiscal_note" rows="2" placeholder="e.g. $45,000/yr ongoing from the General Fund beginning FY2027…">${matter ? (matter.fiscal_note || '') : ''}</textarea>
         </label>
       </fieldset>
+      <label>Amends existing policy (enables the "changes to existing law" view)
+        <select name="amends_policy_id">
+          <option value="">— none —</option>
+          ${raw(repo.policies.all().map((p) => `<option value="${p.id}"${matter && matter.amends_policy_id === p.id ? ' selected' : ''}>${escapeText((p.policy_number ? p.policy_number + ' — ' : '') + p.title)}</option>`).join(''))}
+        </select>
+      </label>
       <fieldset>
         <legend>Sponsors</legend>
         <div class="chk-grid">${raw(sponsorChecks)}</div>
@@ -156,7 +164,8 @@ function matterForm(matter, opts = {}) {
 
   let extras = '';
   if (isEdit) {
-    extras = workflowPanel(matter) + actionRecorder(matter) + documentsPanel(matter) + attachmentForm(matter);
+    extras = workflowPanel(matter) + actionRecorder(matter) + documentsPanel(matter)
+      + relationsPanel(matter) + implementationPanel(matter) + attachmentForm(matter);
   }
 
   const body = html`
@@ -298,6 +307,53 @@ function docTemplatesAdmin(type, { saved = false } = {}) {
     <div class="admin-actions">${raw(pills)}</div>
     ${raw(card(`Edit the ${active} form`, form))}`;
   return layout({ title: 'Document templates', active: '/admin', body });
+}
+
+// Link related files (companion / amends / supersedes) — Congress.gov-style.
+function relationsPanel(matter) {
+  const relations = repo.matters.relationsFor(matter.id);
+  const list = relations.length
+    ? `<ul class="attach-list">${relations.map((r) => html`
+        <li><a href="/legislation/${encodeURIComponent(r.file_number)}">${r.file_number}</a>
+          — ${r.title} <span class="muted">(${r.outgoing ? r.relation : 'linked from'})</span>
+          <form method="post" action="/admin/relations/${r.id}/delete" class="inline">
+            <button type="submit" class="btn-link danger">unlink</button>
+          </form></li>`).join('')}</ul>`
+    : emptyState('No related files linked.');
+  const options = repo.matters.search({ limit: 300 })
+    .filter((m) => m.id !== matter.id)
+    .map((m) => `<option value="${m.id}">${escapeText(m.file_number + ' — ' + m.title.slice(0, 70))}</option>`).join('');
+  const form = `
+    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/relations">
+      <div class="form-row">
+        <label>File<select name="related_id" required><option value="">Select…</option>${options}</select></label>
+        <label>Relation<select name="relation">${repo.RELATION_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></label>
+      </div>
+      <button type="submit" class="btn">Link file</button>
+    </form>`;
+  return card('Related files', form + list);
+}
+
+// Accountability: record implementation progress on enacted/passed legislation.
+function implementationPanel(matter) {
+  const updates = repo.implementation.forMatter(matter.id);
+  const eligible = ['Enacted', 'Passed'].includes(matter.status);
+  const list = updates.length
+    ? `<ul class="version-list">${updates.map((u) => html`
+        <li><strong>${u.progress}%</strong> — ${u.note || 'progress update'}
+          <span class="muted">· ${raw(formatDate(u.created_at))}</span></li>`).join('')}</ul>`
+    : emptyState('No implementation updates yet.');
+  const form = eligible ? `
+    <form class="form inline-form" method="post" action="/admin/matters/${matter.id}/implementation">
+      <div class="form-row">
+        <label>Progress %<input type="number" name="progress" min="0" max="100" required
+          value="${updates.length ? updates[0].progress : 0}"></label>
+        <label>Note<input type="text" name="note" placeholder="Contract awarded / rules drafted…"></label>
+      </div>
+      <button type="submit" class="btn">Record update</button>
+    </form>`
+    : '<p class="muted">Implementation tracking becomes available once this file is Enacted or Passed.</p>';
+  return card('Implementation (accountability)', form + list);
 }
 
 function attachmentForm(matter) {

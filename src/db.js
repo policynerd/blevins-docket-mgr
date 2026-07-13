@@ -265,6 +265,59 @@ CREATE TABLE IF NOT EXISTS speaker_requests (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Citizen proposals (Decidim-style): public ideas gather endorsements; past
+-- the threshold they surface for clerk review, and accepting one creates a
+-- legislative file linked back to the proposal.
+CREATE TABLE IF NOT EXISTS proposals (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  name TEXT NOT NULL,
+  email TEXT,
+  status TEXT NOT NULL DEFAULT 'Open',      -- Open | Accepted | Declined
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS proposal_endorsements (
+  id INTEGER PRIMARY KEY,
+  proposal_id INTEGER NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,                       -- dedupe key; never shown publicly
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (proposal_id, email)
+);
+
+-- Accountability (Decidim-style): implementation progress updates on
+-- enacted/passed legislation, shown publicly.
+CREATE TABLE IF NOT EXISTS implementation_updates (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  progress INTEGER NOT NULL DEFAULT 0,       -- 0..100
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Related files (companion / amends / supersedes), Congress.gov-style.
+CREATE TABLE IF NOT EXISTS matter_relations (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  related_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL DEFAULT 'Related',   -- Related | Companion | Amends | Supersedes
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (matter_id, related_id)
+);
+
+-- Saved legislation searches; new matching files trigger an email alert.
+CREATE TABLE IF NOT EXISTS saved_searches (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  query_json TEXT NOT NULL,
+  last_matter_id INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Watch list: signed-in users following a legislative file.
 CREATE TABLE IF NOT EXISTS watches (
   id INTEGER PRIMARY KEY,
@@ -397,6 +450,8 @@ CREATE INDEX IF NOT EXISTS idx_pcomments_status ON public_comments(status);
 CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON mail_outbox(status);
+CREATE INDEX IF NOT EXISTS idx_endorse_proposal ON proposal_endorsements(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_impl_matter ON implementation_updates(matter_id);
 CREATE INDEX IF NOT EXISTS idx_bamend_line ON budget_amendments(budget_line_id);
 CREATE INDEX IF NOT EXISTS idx_btx_line ON budget_transactions(budget_line_id);
 CREATE INDEX IF NOT EXISTS idx_btx_date ON budget_transactions(tx_date);
@@ -436,6 +491,7 @@ const COLUMN_MIGRATIONS = {
     budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
     fiscal_recurring: 'INTEGER NOT NULL DEFAULT 0', // 1 = ongoing annual cost, 0 = one-time
     fiscal_note: 'TEXT',                            // narrative fiscal note
+    amends_policy_id: 'INTEGER REFERENCES policies(id) ON DELETE SET NULL', // comparative print target
   },
   budgets: {
     adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
@@ -455,6 +511,7 @@ const COLUMN_MIGRATIONS = {
   users: {
     sso_subject: 'TEXT',          // stable Entra object id (oid) for SSO accounts
     auth_provider: 'TEXT',        // 'local' | 'entra'
+    digest: 'INTEGER NOT NULL DEFAULT 0', // opted into the daily email digest
   },
   people: {
     office_name: 'TEXT',          // e.g. "Office of Governor Smith"
@@ -561,7 +618,9 @@ function init() {
 }
 
 function reset() {
-  const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
+  const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'saved_searches', 'matter_relations',
+    'proposal_endorsements', 'proposals', 'implementation_updates',
+    'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',

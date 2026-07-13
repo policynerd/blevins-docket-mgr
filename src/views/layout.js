@@ -13,6 +13,8 @@ const NAV = [
   { href: '/bodies', label: 'Bodies & Committees' },
   { href: '/policies', label: 'Policies' },
   { href: '/budget', label: 'Budget' },
+  { href: '/proposals', label: 'Proposals' },
+  { href: '/accountability', label: 'Accountability' },
   { href: '/org', label: 'Organization' },
 ];
 
