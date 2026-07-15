@@ -174,7 +174,7 @@ function procurementAdmin() {
   const body = html`
     <p class="crumbs"><a href="/admin">Admin</a> / Procurement</p>
     <div class="detail-head"><h1>Procurement</h1>
-      <span class="head-actions"><a class="btn" href="/admin/vendors">Vendor registry</a></span></div>
+      <span class="head-actions">${rows.length ? raw('<a class="btn" href="/admin/procurement.csv">Export CSV</a>') : ''}<a class="btn" href="/admin/vendors">Vendor registry</a></span></div>
     ${raw(card('Solicitations', table))}
     ${raw(card('New solicitation', createForm))}`;
   return layout({ title: 'Procurement', active: '/admin', body });
@@ -246,7 +246,7 @@ function solicitationManage(s) {
       <span class="head-actions"><a class="btn" href="/procurement/${s.id}">View public</a></span></div>
     ${raw(card('Edit solicitation', editForm))}
     ${raw(card(`Questions (${questions.length})`, qList))}
-    ${raw(card(`Bids received (${bids.length})`, bidRows))}
+    ${raw(card(`Bids received (${bids.length})`, bidRows + (bids.length ? `<p class="muted"><a href="/admin/procurement/${s.id}/bids.csv">Download bids CSV →</a></p>` : '')))}
     ${raw(card('Award', awardState + awardForm))}`;
   return layout({ title: s.number, active: '/admin', body });
 }

@@ -600,7 +600,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .cat-row th { background: #eef3f9; color: var(--accent-dark); text-align: left;
   font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; padding: 7px 10px; }
 .policy-table .pol-no { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
-.budget-table .subtotal td { font-weight: 600; background: #fafbfd; }
+.budget-table .subtotal td, .data tr.subtotal td { font-weight: 600; background: #fafbfd; }
+/* Over-committed appropriation (negative available balance). */
+.num.over, dd.over { color: #b4232a; }
 .budget-table .grand td { font-weight: 800; color: var(--accent-dark); border-top: 2px solid var(--accent-dark); }
 .line-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0;
   border-bottom: 1px solid var(--line); }
