@@ -265,6 +265,56 @@ CREATE TABLE IF NOT EXISTS speaker_requests (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Procurement (vendor/RFP portal): registered vendors, solicitations
+-- (RFP/RFQ/IFB/bid notices), public Q&A, and bid submissions. Awarding a
+-- solicitation can spawn a Contract legislative file and a budget commitment.
+CREATE TABLE IF NOT EXISTS vendors (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_name TEXT,
+  email TEXT,
+  phone TEXT,
+  categories TEXT,
+  status TEXT NOT NULL DEFAULT 'Registered',   -- Registered | Suspended
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS solicitations (
+  id INTEGER PRIMARY KEY,
+  number TEXT UNIQUE NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'RFP',            -- RFP | RFQ | IFB | Bid
+  title TEXT NOT NULL,
+  body_html TEXT,
+  status TEXT NOT NULL DEFAULT 'Draft',        -- Draft | Open | Closed | Awarded | Cancelled
+  open_date TEXT,
+  close_date TEXT,
+  budget_line_id INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL,
+  awarded_vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+  award_amount REAL,
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS solicitation_questions (
+  id INTEGER PRIMARY KEY,
+  solicitation_id INTEGER NOT NULL REFERENCES solicitations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  question TEXT NOT NULL,
+  answer TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS bids (
+  id INTEGER PRIMARY KEY,
+  solicitation_id INTEGER NOT NULL REFERENCES solicitations(id) ON DELETE CASCADE,
+  vendor_name TEXT NOT NULL,
+  email TEXT,
+  amount REAL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Citizen proposals (Decidim-style): public ideas gather endorsements; past
 -- the threshold they surface for clerk review, and accepting one creates a
 -- legislative file linked back to the proposal.
@@ -451,6 +501,9 @@ CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON mail_outbox(status);
 CREATE INDEX IF NOT EXISTS idx_endorse_proposal ON proposal_endorsements(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_solic_status ON solicitations(status);
+CREATE INDEX IF NOT EXISTS idx_solq_solic ON solicitation_questions(solicitation_id);
+CREATE INDEX IF NOT EXISTS idx_bids_solic ON bids(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_impl_matter ON implementation_updates(matter_id);
 CREATE INDEX IF NOT EXISTS idx_bamend_line ON budget_amendments(budget_line_id);
 CREATE INDEX IF NOT EXISTS idx_btx_line ON budget_transactions(budget_line_id);
@@ -498,6 +551,10 @@ const COLUMN_MIGRATIONS = {
   },
   bodies: {
     seats: 'INTEGER', // authorized seat count (vacancies = seats - active members)
+  },
+  budget_lines: {
+    appropriation_code: 'TEXT', // legal appropriation account (e.g. 100-4200-51000)
+    project_code: 'TEXT',       // capital project / grant tracking code
   },
   attachments: {
     file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
@@ -619,6 +676,7 @@ function init() {
 
 function reset() {
   const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'saved_searches', 'matter_relations',
+    'bids', 'solicitation_questions', 'solicitations', 'vendors',
     'proposal_endorsements', 'proposals', 'implementation_updates',
     'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',

@@ -35,6 +35,7 @@ const smtp = require('./src/smtp');
 const alerts = require('./src/alerts');
 const approvalsView = require('./src/views/approvals');
 const proposalsView = require('./src/views/proposals');
+const procurementView = require('./src/views/procurement');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
@@ -281,6 +282,65 @@ route('POST', /^\/proposals\/(\d+)\/endorse$/, (req, res, ctx) => {
 
 // Accountability (public implementation tracker).
 route('GET', /^\/accountability\/?$/, (req, res) => sendHtml(res, pages.accountabilityPage()));
+
+// --- Procurement / vendor portal (public) -----------------------------------
+route('GET', /^\/procurement\/?$/, (req, res) => sendHtml(res, procurementView.procurementList()));
+route('GET', /^\/vendors\/register\/?$/, (req, res, ctx) => sendHtml(res, procurementView.vendorRegister(ctx.query)));
+route('POST', /^\/vendors\/register$/, (req, res, ctx) => {
+  if (ctx.body.website) return redirect(res, '/vendors/register?registered=1'); // honeypot
+  const name = String(ctx.body.name || '').trim().slice(0, 140);
+  if (!name) return redirect(res, '/vendors/register');
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.vendors.register({
+    name,
+    contact_name: String(ctx.body.contact_name || '').trim().slice(0, 100) || null,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    phone: String(ctx.body.phone || '').trim().slice(0, 40) || null,
+    categories: String(ctx.body.categories || '').trim().slice(0, 300) || null,
+  });
+  redirect(res, '/vendors/register?registered=1');
+});
+route('GET', /^\/procurement\/(\d+)$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s || s.status === 'Draft') return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, procurementView.solicitationDetail(s, ctx.query));
+});
+route('POST', /^\/procurement\/(\d+)\/questions$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  const back = `/procurement/${s.id}`;
+  if (ctx.body.website) return redirect(res, back + '?asked=1');
+  const name = String(ctx.body.name || '').trim().slice(0, 100);
+  const question = String(ctx.body.question || '').trim().slice(0, 2000);
+  if (s.status !== 'Open' || !name || !question) return redirect(res, back);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.procurement.addQuestion({
+    solicitation_id: s.id, name, question,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+  });
+  redirect(res, back + '?asked=1');
+});
+route('POST', /^\/procurement\/(\d+)\/bids$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  const back = `/procurement/${s.id}`;
+  if (ctx.body.website) return redirect(res, back + '?bid=1');
+  const vendor = String(ctx.body.vendor_name || '').trim().slice(0, 140);
+  if (s.status !== 'Open' || !vendor) return redirect(res, back);
+  if (publicFormThrottled(clientIp(req))) {
+    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
+  }
+  repo.procurement.addBid({
+    solicitation_id: s.id, vendor_name: vendor,
+    email: String(ctx.body.email || '').trim().slice(0, 200) || null,
+    amount: ctx.body.amount, note: String(ctx.body.note || '').trim().slice(0, 4000) || null,
+  });
+  redirect(res, back + '?bid=1');
+});
 
 // Comparative print ("changes to existing law") — before the greedy route.
 route('GET', /^\/legislation\/(.+)\/changes$/, (req, res, ctx) => {
@@ -696,6 +756,7 @@ route('POST', /^\/admin\/budget\/(\d+)\/lines$/, (req, res, ctx) => {
     repo.budget.addLine({
       budget_id: b.id, category: ctx.body.category, name: ctx.body.name,
       kind: ctx.body.kind, amount: ctx.body.amount,
+      appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
     });
   }
   redirect(res, `/budget/${b.id}`);
@@ -706,6 +767,7 @@ route('POST', /^\/admin\/budget-lines\/(\d+)$/, (req, res, ctx) => {
   if (ctx.body.name) {
     repo.budget.updateLine(l.id, {
       category: ctx.body.category, name: ctx.body.name, kind: ctx.body.kind, amount: ctx.body.amount,
+      appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
     });
   }
   redirect(res, `/budget/${l.budget_id}`);
@@ -1048,6 +1110,79 @@ route('POST', /^\/admin\/proposals\/(\d+)\/decide$/, (req, res, ctx) => {
   notify.proposalDecision(p.id);
   redirect(res, '/admin/proposals');
 });
+// --- Procurement management (clerk) -----------------------------------------
+route('GET', /^\/admin\/procurement\/?$/, (req, res) => sendHtml(res, procurementView.procurementAdmin()));
+route('POST', /^\/admin\/procurement$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.title) return redirect(res, '/admin/procurement');
+  const { id } = repo.procurement.create({
+    kind: b.kind, title: String(b.title).slice(0, 200), body_html: sanitizeHtml(b.body_html || ''),
+    status: b.status, open_date: b.open_date || null, close_date: b.close_date || null,
+    budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
+  });
+  redirect(res, `/admin/procurement/${id}`);
+});
+route('GET', /^\/admin\/procurement\/(\d+)$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, procurementView.solicitationManage(s));
+});
+route('POST', /^\/admin\/procurement\/(\d+)$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  repo.procurement.update(s.id, {
+    kind: b.kind, title: String(b.title || s.title).slice(0, 200), body_html: sanitizeHtml(b.body_html || ''),
+    status: b.status, open_date: b.open_date || null, close_date: b.close_date || null,
+    budget_line_id: b.budget_line_id ? Number(b.budget_line_id) : null,
+  });
+  redirect(res, `/admin/procurement/${s.id}`);
+});
+route('POST', /^\/admin\/procurement\/(\d+)\/questions\/(\d+)\/answer$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  const q = repo.procurement.getQuestion(Number(ctx.params[1]));
+  if (!s || !q || q.solicitation_id !== s.id) return sendHtml(res, pages.notFound(), 404);
+  repo.procurement.answerQuestion(q.id, String(ctx.body.answer || '').trim().slice(0, 4000));
+  redirect(res, `/admin/procurement/${s.id}`);
+});
+route('POST', /^\/admin\/procurement\/(\d+)\/award$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  let vendorId = ctx.body.vendor_id ? Number(ctx.body.vendor_id) : null;
+  let amount = ctx.body.amount;
+  // Award straight from a received bid: match/create the vendor, take its amount.
+  if (ctx.body.bid_id) {
+    const bid = repo.procurement.bids(s.id).find((b) => b.id === Number(ctx.body.bid_id));
+    if (bid) { vendorId = repo.vendors.findOrCreate(bid.vendor_name); amount = bid.amount; }
+  }
+  if (!vendorId) return redirect(res, `/admin/procurement/${s.id}`);
+  let matterId = null;
+  if (ctx.body.make_contract === '1') {
+    const vendor = repo.vendors.get(vendorId);
+    const { id } = repo.matters.insertNumbered({
+      type: 'Contract', title: `${s.title} — award to ${vendor ? vendor.name : 'vendor'}`,
+      status: 'Draft', summary: `Contract award for solicitation ${s.number}`,
+    });
+    matterId = id;
+    if (amount != null && amount !== '') {
+      repo.matters.setFiscal(id, { fiscal_impact: amount, budget_line_id: s.budget_line_id || null });
+    }
+    repo.matters.addHistory({
+      matter_id: id, action_date: require('./src/util').todayISO(),
+      action: `Contract awarded from ${s.number}`,
+    });
+  }
+  repo.procurement.award(s.id, { vendorId, amount, matterId });
+  redirect(res, `/admin/procurement/${s.id}`);
+});
+route('GET', /^\/admin\/vendors\/?$/, (req, res) => sendHtml(res, procurementView.vendorsAdmin()));
+route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
+  const v = repo.vendors.get(Number(ctx.params[0]));
+  if (!v) return sendHtml(res, pages.notFound(), 404);
+  repo.vendors.setStatus(v.id, ctx.body.status);
+  redirect(res, '/admin/vendors');
+});
+
 // Implementation progress update (clerk).
 route('POST', /^\/admin\/matters\/(\d+)\/implementation$/, (req, res, ctx) => {
   const m = repo.matters.get(Number(ctx.params[0]));

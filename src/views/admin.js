@@ -37,6 +37,8 @@ function adminHome(user) {
         ? raw(` <span class="badge pending-badge">${repo.proposals.openCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/policies">Policies</a>
       <a class="btn" href="/budget">Budget</a>
+      <a class="btn" href="/admin/procurement">Procurement${repo.procurement.openCount()
+        ? raw(` <span class="badge pending-badge">${repo.procurement.openCount()}</span>`) : ''}</a>
       <a class="btn" href="/admin/org">Manage organization</a>
       ${isAdmin ? raw(`
       <a class="btn" href="/admin/users">Users &amp; roles</a>

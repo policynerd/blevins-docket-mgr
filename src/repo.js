@@ -907,13 +907,16 @@ const budget = {
   addLine(l) {
     const max = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM budget_lines WHERE budget_id = ?')
       .get(l.budget_id).m;
-    return db.prepare(`INSERT INTO budget_lines (budget_id, category, name, kind, amount, notes, sort_order)
-      VALUES (?,?,?,?,?,?,?)`).run(l.budget_id, l.category || null, l.name, l.kind || 'Expense',
-      Number(l.amount) || 0, l.notes || null, l.sort_order || (max + 1)).lastInsertRowid;
+    return db.prepare(`INSERT INTO budget_lines
+      (budget_id, category, name, kind, amount, notes, sort_order, appropriation_code, project_code)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(l.budget_id, l.category || null, l.name, l.kind || 'Expense',
+      Number(l.amount) || 0, l.notes || null, l.sort_order || (max + 1),
+      l.appropriation_code || null, l.project_code || null).lastInsertRowid;
   },
   updateLine(id, l) {
-    db.prepare('UPDATE budget_lines SET category=?, name=?, kind=?, amount=?, notes=? WHERE id=?')
-      .run(l.category || null, l.name, l.kind || 'Expense', Number(l.amount) || 0, l.notes || null, id);
+    db.prepare(`UPDATE budget_lines SET category=?, name=?, kind=?, amount=?, notes=?, appropriation_code=?, project_code=?
+      WHERE id=?`).run(l.category || null, l.name, l.kind || 'Expense', Number(l.amount) || 0,
+      l.notes || null, l.appropriation_code || null, l.project_code || null, id);
   },
   removeLine(id) { db.prepare('DELETE FROM budget_lines WHERE id = ?').run(id); },
   // Selectable lines for the matter fiscal-impact field (open budgets only).
@@ -1392,6 +1395,120 @@ const comments = {
 };
 
 // ---------------------------------------------------------------------------
+// Procurement: vendors, solicitations (RFP/RFQ/IFB/bid), Q&A, bids
+// ---------------------------------------------------------------------------
+const SOLICITATION_KINDS = ['RFP', 'RFQ', 'IFB', 'Bid'];
+const SOLICITATION_STATUSES = ['Draft', 'Open', 'Closed', 'Awarded', 'Cancelled'];
+
+const vendors = {
+  register(v) {
+    return db.prepare(`INSERT INTO vendors (name, contact_name, email, phone, categories)
+      VALUES (?,?,?,?,?)`).run(v.name, v.contact_name || null, v.email || null,
+      v.phone || null, v.categories || null).lastInsertRowid;
+  },
+  all() {
+    return db.prepare('SELECT * FROM vendors ORDER BY name').all();
+  },
+  get(id) { return db.prepare('SELECT * FROM vendors WHERE id = ?').get(id); },
+  byName(name) { return db.prepare('SELECT * FROM vendors WHERE lower(name) = lower(?)').get(name); },
+  findOrCreate(name) {
+    const existing = this.byName(name);
+    return existing ? existing.id : this.register({ name });
+  },
+  setStatus(id, status) {
+    if (!['Registered', 'Suspended'].includes(status)) return;
+    db.prepare('UPDATE vendors SET status = ? WHERE id = ?').run(status, id);
+  },
+  count() { return db.prepare('SELECT COUNT(*) AS n FROM vendors').get().n; },
+};
+
+const procurement = {
+  KINDS: SOLICITATION_KINDS,
+  STATUSES: SOLICITATION_STATUSES,
+  // Solicitation numbers: SOL-YYMM## (monthly sequence), numeric-safe.
+  nextNumber() {
+    const now = new Date();
+    const prefix = `SOL-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const { m } = db.prepare(
+      `SELECT MAX(CAST(substr(number, 8) AS INTEGER)) AS m FROM solicitations WHERE number LIKE ? || '%'`)
+      .get(prefix);
+    return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
+  },
+  create(s) {
+    const number = this.nextNumber();
+    const id = db.prepare(`INSERT INTO solicitations (number, kind, title, body_html, status, open_date, close_date, budget_line_id)
+      VALUES (?,?,?,?,?,?,?,?)`).run(number,
+      SOLICITATION_KINDS.includes(s.kind) ? s.kind : 'RFP', s.title, s.body_html || null,
+      SOLICITATION_STATUSES.includes(s.status) ? s.status : 'Draft',
+      s.open_date || null, s.close_date || null, s.budget_line_id || null).lastInsertRowid;
+    return { id, number };
+  },
+  update(id, s) {
+    db.prepare(`UPDATE solicitations SET kind=?, title=?, body_html=?, status=?, open_date=?, close_date=?, budget_line_id=?
+      WHERE id=?`).run(
+      SOLICITATION_KINDS.includes(s.kind) ? s.kind : 'RFP', s.title, s.body_html || null,
+      SOLICITATION_STATUSES.includes(s.status) ? s.status : 'Draft',
+      s.open_date || null, s.close_date || null, s.budget_line_id || null, id);
+  },
+  get(id) {
+    return db.prepare(`SELECT s.*, v.name AS awarded_vendor_name, bl.name AS budget_line_name,
+      b.fiscal_year, m.file_number,
+      (SELECT COUNT(*) FROM bids bd WHERE bd.solicitation_id = s.id) AS bid_count,
+      (SELECT COUNT(*) FROM solicitation_questions q WHERE q.solicitation_id = s.id AND q.answer IS NULL) AS open_questions
+      FROM solicitations s
+      LEFT JOIN vendors v ON v.id = s.awarded_vendor_id
+      LEFT JOIN budget_lines bl ON bl.id = s.budget_line_id
+      LEFT JOIN budgets b ON b.id = bl.budget_id
+      LEFT JOIN matters m ON m.id = s.matter_id
+      WHERE s.id = ?`).get(id);
+  },
+  // Public listing excludes Draft; admin listing shows everything.
+  list({ includeAll = false } = {}) {
+    const where = includeAll ? '' : "WHERE s.status != 'Draft'";
+    return db.prepare(`SELECT s.*, v.name AS awarded_vendor_name,
+      (SELECT COUNT(*) FROM bids bd WHERE bd.solicitation_id = s.id) AS bid_count
+      FROM solicitations s LEFT JOIN vendors v ON v.id = s.awarded_vendor_id
+      ${where}
+      ORDER BY CASE s.status WHEN 'Open' THEN 0 WHEN 'Closed' THEN 1 WHEN 'Awarded' THEN 2 ELSE 3 END,
+        s.close_date, s.id DESC`).all();
+  },
+  setStatus(id, status) {
+    if (!SOLICITATION_STATUSES.includes(status)) return;
+    db.prepare('UPDATE solicitations SET status = ? WHERE id = ?').run(status, id);
+  },
+  openCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM solicitations WHERE status = 'Open'").get().n;
+  },
+  award(id, { vendorId, amount, matterId = null }) {
+    db.prepare(`UPDATE solicitations SET awarded_vendor_id=?, award_amount=?, matter_id=?, status='Awarded'
+      WHERE id=?`).run(vendorId || null, amount == null || amount === '' ? null : Number(amount), matterId, id);
+  },
+  // --- Q&A ---
+  addQuestion(q) {
+    return db.prepare(`INSERT INTO solicitation_questions (solicitation_id, name, email, question)
+      VALUES (?,?,?,?)`).run(q.solicitation_id, q.name, q.email || null, q.question).lastInsertRowid;
+  },
+  questions(solicitationId) {
+    return db.prepare(`SELECT * FROM solicitation_questions WHERE solicitation_id = ?
+      ORDER BY created_at`).all(solicitationId);
+  },
+  getQuestion(id) { return db.prepare('SELECT * FROM solicitation_questions WHERE id = ?').get(id); },
+  answerQuestion(id, answer) {
+    db.prepare('UPDATE solicitation_questions SET answer = ? WHERE id = ?').run(answer || null, id);
+  },
+  // --- Bids ---
+  addBid(b) {
+    return db.prepare(`INSERT INTO bids (solicitation_id, vendor_name, email, amount, note)
+      VALUES (?,?,?,?,?)`).run(b.solicitation_id, b.vendor_name, b.email || null,
+      b.amount == null || b.amount === '' ? null : Number(b.amount), b.note || null).lastInsertRowid;
+  },
+  bids(solicitationId) {
+    return db.prepare(`SELECT * FROM bids WHERE solicitation_id = ? ORDER BY amount IS NULL, amount, id`)
+      .all(solicitationId);
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Audit log (state-changing requests by signed-in users)
 // ---------------------------------------------------------------------------
 const audit = {
@@ -1614,6 +1731,6 @@ module.exports = {
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
-  proposals, implementation,
-  RELATION_TYPES, stats, statusBuckets, purgeDomainData,
+  proposals, implementation, vendors, procurement,
+  RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, stats, statusBuckets, purgeDomainData,
 };
