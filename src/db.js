@@ -315,6 +315,26 @@ CREATE TABLE IF NOT EXISTS bids (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Treasury Account Symbol register: a federal-style chart of accounts that is
+-- the source of truth for appropriation structure. A budget line's
+-- appropriation_code joins to tas (the full composite symbol); this register
+-- enriches it with agency, title, fund type, and availability. Maintained by
+-- import, independent of any fiscal year.
+CREATE TABLE IF NOT EXISTS tas_accounts (
+  id INTEGER PRIMARY KEY,
+  tas TEXT NOT NULL UNIQUE,             -- full composite symbol (join key)
+  aid TEXT,                             -- agency identifier
+  main TEXT,                            -- main account code
+  avail TEXT,                           -- period of availability (the "X-YEAR" column)
+  agency TEXT,
+  title TEXT,
+  fund_type TEXT,
+  independent_agencies TEXT,            -- grouping/flag from the source register
+  source_updated TEXT,                  -- "Last update" recorded in the source file
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Citizen proposals (Decidim-style): public ideas gather endorsements; past
 -- the threshold they surface for clerk review, and accepting one creates a
 -- legislative file linked back to the proposal.
@@ -501,6 +521,7 @@ CREATE INDEX IF NOT EXISTS idx_speaker_meeting ON speaker_requests(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON mail_outbox(status);
 CREATE INDEX IF NOT EXISTS idx_endorse_proposal ON proposal_endorsements(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_tas_agency ON tas_accounts(agency);
 CREATE INDEX IF NOT EXISTS idx_solic_status ON solicitations(status);
 CREATE INDEX IF NOT EXISTS idx_solq_solic ON solicitation_questions(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_bids_solic ON bids(solicitation_id);
@@ -676,7 +697,7 @@ function init() {
 
 function reset() {
   const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'saved_searches', 'matter_relations',
-    'bids', 'solicitation_questions', 'solicitations', 'vendors',
+    'bids', 'solicitation_questions', 'solicitations', 'vendors', 'tas_accounts',
     'proposal_endorsements', 'proposals', 'implementation_updates',
     'speaker_requests', 'board_applications', 'public_comments', 'office_staff',
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',

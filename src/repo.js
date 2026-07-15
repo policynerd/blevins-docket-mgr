@@ -1573,6 +1573,50 @@ const procurement = {
 };
 
 // ---------------------------------------------------------------------------
+// Treasury Account Symbol register (chart of accounts / source of truth for
+// appropriation structure). Maintained by import; upsert is keyed on the TAS.
+// ---------------------------------------------------------------------------
+const tas = {
+  // Insert or update one account by its TAS. Returns 'created' | 'updated'.
+  upsert(t) {
+    const tasCode = String(t.tas || '').trim();
+    if (!tasCode) return null;
+    const existing = db.prepare('SELECT id FROM tas_accounts WHERE tas = ?').get(tasCode);
+    const cols = {
+      aid: t.aid || null, main: t.main || null, avail: t.avail || null,
+      agency: t.agency || null, title: t.title || null, fund_type: t.fund_type || null,
+      independent_agencies: t.independent_agencies || null, source_updated: t.source_updated || null,
+    };
+    if (existing) {
+      db.prepare(`UPDATE tas_accounts SET aid=?, main=?, avail=?, agency=?, title=?, fund_type=?,
+        independent_agencies=?, source_updated=?, updated_at=datetime('now') WHERE id=?`).run(
+        cols.aid, cols.main, cols.avail, cols.agency, cols.title, cols.fund_type,
+        cols.independent_agencies, cols.source_updated, existing.id);
+      return 'updated';
+    }
+    db.prepare(`INSERT INTO tas_accounts (tas, aid, main, avail, agency, title, fund_type,
+      independent_agencies, source_updated) VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      tasCode, cols.aid, cols.main, cols.avail, cols.agency, cols.title, cols.fund_type,
+      cols.independent_agencies, cols.source_updated);
+    return 'created';
+  },
+  byTas(tasCode) { return db.prepare('SELECT * FROM tas_accounts WHERE tas = ?').get(String(tasCode || '').trim()); },
+  get(id) { return db.prepare('SELECT * FROM tas_accounts WHERE id = ?').get(id); },
+  count() { return db.prepare('SELECT COUNT(*) AS n FROM tas_accounts').get().n; },
+  // Optional case-insensitive search across TAS / agency / title.
+  all({ q = '' } = {}) {
+    const term = String(q || '').trim();
+    if (term) {
+      const like = `%${term.toLowerCase()}%`;
+      return db.prepare(`SELECT * FROM tas_accounts
+        WHERE lower(tas) LIKE ? OR lower(agency) LIKE ? OR lower(title) LIKE ?
+        ORDER BY tas`).all(like, like, like);
+    }
+    return db.prepare('SELECT * FROM tas_accounts ORDER BY tas').all();
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Audit log (state-changing requests by signed-in users)
 // ---------------------------------------------------------------------------
 const audit = {
@@ -1795,6 +1839,6 @@ module.exports = {
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
-  proposals, implementation, vendors, procurement,
+  proposals, implementation, vendors, procurement, tas,
   RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, stats, statusBuckets, purgeDomainData,
 };

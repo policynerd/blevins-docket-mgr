@@ -196,6 +196,20 @@ function bidsCsv(s, bids) {
   return out.join('\r\n') + '\r\n';
 }
 
+// Treasury Account Symbol register (round-trips with the import columns).
+function tasCsv(rows) {
+  const header = ['AID', 'Main', 'X-YEAR', 'TAS', 'Agency', 'Title', 'Fund Type',
+    'Independent Agencies', 'Last update'];
+  const out = [header.map(csvCell).join(',')];
+  for (const a of rows) {
+    out.push([
+      a.aid || '', a.main || '', a.avail || '', a.tas, a.agency || '', a.title || '',
+      a.fund_type || '', a.independent_agencies || '', a.source_updated || '',
+    ].map(csvCell).join(','));
+  }
+  return out.join('\r\n') + '\r\n';
+}
+
 module.exports = {
-  icalCalendar, mattersCsv, legislationRss, matterRss, budgetCsv, solicitationsCsv, bidsCsv,
+  icalCalendar, mattersCsv, legislationRss, matterRss, budgetCsv, solicitationsCsv, bidsCsv, tasCsv,
 };

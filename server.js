@@ -507,9 +507,16 @@ route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()))
 route('GET', /^\/budget\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetList(ctx.user)));
 route('GET', /^\/budget\/compare\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetComparePage(ctx.query)));
 route('GET', /^\/budget\/appropriations\/?$/, (req, res) => sendHtml(res, budgetView.appropriationReport()));
+route('GET', /^\/budget\/accounts\/?$/, (req, res, ctx) => sendHtml(res, budgetView.tasRegister(ctx.query, ctx.user)));
+route('GET', /^\/budget\/accounts\.csv$/, (req, res, ctx) => {
+  sendText(res, feeds.tasCsv(repo.tas.all({ q: ctx.query.q || '' })),
+    'text/csv; charset=utf-8', { filename: 'tas-register.csv' });
+});
 route('GET', /^\/budget\/appropriations\/(.+)$/, (req, res, ctx) => {
-  const detail = repo.budget.appropriationDetail(decodeURIComponent(ctx.params[0]));
-  if (!detail.lines.length) return sendHtml(res, pages.notFound(), 404);
+  const code = decodeURIComponent(ctx.params[0]);
+  const detail = repo.budget.appropriationDetail(code);
+  // Show the account page when a budget line uses the code OR it is catalogued.
+  if (!detail.lines.length && !repo.tas.byTas(code)) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, budgetView.appropriationDetailPage(detail));
 });
 route('GET', /^\/budget\/(\d+)\/dashboard$/, (req, res, ctx) => {
@@ -829,6 +836,11 @@ route('POST', /^\/admin\/budget\/(\d+)\/import-tx$/, (req, res, ctx) => {
   if (!b) return sendHtml(res, pages.notFound(), 404);
   importer.importBudgetTransactions(b.id, ctx.body.csv || '');
   redirect(res, `/budget/${b.id}`);
+});
+// TAS register import (chart-of-accounts source of truth).
+route('POST', /^\/admin\/budget\/accounts\/import$/, (req, res, ctx) => {
+  importer.importTasRegister(ctx.body.csv || '');
+  redirect(res, '/budget/accounts');
 });
 
 // Roster import (CSV bulk "data populate" / direct-seat bootstrap) — ADMIN.

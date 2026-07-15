@@ -271,4 +271,44 @@ function importBudgetTransactions(budgetId, text) {
   return r;
 }
 
-module.exports = { importRoster, importMatters, importBudgetLines, importBudgetTransactions };
+// --- TAS register import -----------------------------------------------------
+// Treasury Account Symbol catalog. Columns (headers are case-insensitive):
+// AID, Main, X-YEAR, TAS, Agency, Title, Fund Type, Independent Agencies,
+// Last update. TAS is the key and the only required field; re-importing the
+// same TAS updates it in place, so the register is a maintainable source file.
+function importTasRegister(text) {
+  const rows = parseCsv(text);
+  const r = { rows: rows.length, created: 0, updated: 0, errors: [] };
+  if (!rows.length) {
+    r.errors.push('No data rows found. Include a header row (AID,Main,X-YEAR,TAS,Agency,Title,Fund Type,Independent Agencies,Last update).');
+    return r;
+  }
+  db.exec('SAVEPOINT sp_import_tas');
+  try {
+    rows.forEach((row, idx) => {
+      const line = idx + 2;
+      const tas = (row.tas || '').trim();
+      if (!tas) { r.errors.push(`Line ${line}: TAS is required.`); return; }
+      const outcome = repo.tas.upsert({
+        tas,
+        aid: (row.aid || '').trim(),
+        main: (row.main || '').trim(),
+        avail: (row['x-year'] || row.avail || '').trim(),
+        agency: (row.agency || '').trim(),
+        title: (row.title || '').trim(),
+        fund_type: (row['fund type'] || row.fund_type || '').trim(),
+        independent_agencies: (row['independent agencies'] || row.independent_agencies || '').trim(),
+        source_updated: (row['last update'] || row.last_update || '').trim(),
+      });
+      if (outcome === 'created') r.created++;
+      else if (outcome === 'updated') r.updated++;
+    });
+    db.exec('RELEASE sp_import_tas');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_import_tas'); db.exec('RELEASE sp_import_tas');
+    throw e;
+  }
+  return r;
+}
+
+module.exports = { importRoster, importMatters, importBudgetLines, importBudgetTransactions, importTasRegister };
