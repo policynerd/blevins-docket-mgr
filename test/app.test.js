@@ -106,6 +106,23 @@ test('budget: adopted amount + amendments + actuals roll up', () => {
   assert.equal(sum.expRemaining, 850);
 });
 
+test('budget CSV: appropriation & project codes round-trip through import/export', () => {
+  const importer = require('../src/import');
+  const feeds = require('../src/exports');
+  const bId = repo.budget.create({ fiscal_year: 'FY-CSV', status: 'Adopted' });
+  const csv = 'category,name,kind,amount,appropriation_code,project_code\n' +
+    'Ops,Paving,Expense,50000,100-4200-51000,CIP-2027-014\n';
+  const res = importer.importBudgetLines(bId, csv);
+  assert.equal(res.created, 1);
+  const paving = repo.budget.lines(bId).find((l) => l.name === 'Paving');
+  assert.equal(paving.appropriation_code, '100-4200-51000');
+  assert.equal(paving.project_code, 'CIP-2027-014');
+  // Export carries the same columns/values, so a re-import preserves the codes.
+  const out = feeds.budgetCsv({ fiscal_year: 'FY-CSV' }, repo.budget.lines(bId));
+  assert.match(out.split('\r\n')[0], /appropriation_code,project_code/);
+  assert.match(out, /100-4200-51000,CIP-2027-014/);
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');

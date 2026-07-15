@@ -196,7 +196,9 @@ function importMatters(text) {
 }
 
 // --- Budget imports -----------------------------------------------------------
-// Lines CSV: category, name, kind, amount — one row per line item.
+// Lines CSV: category, name, kind, amount, appropriation_code, project_code —
+// one row per line item. The two code columns are optional and round-trip with
+// the budget-lines export.
 function importBudgetLines(budgetId, text) {
   const rows = parseCsv(text);
   const r = { rows: rows.length, created: 0, errors: [] };
@@ -213,7 +215,11 @@ function importBudgetLines(budgetId, text) {
       const kind = /^rev/i.test(row.kind || '') ? 'Revenue' : 'Expense';
       const amount = Number(String(row.amount || '0').replace(/[$,]/g, ''));
       if (!Number.isFinite(amount)) { r.errors.push(`Line ${line}: amount "${row.amount}" is not a number.`); return; }
-      repo.budget.addLine({ budget_id: budgetId, category: (row.category || '').trim() || null, name, kind, amount });
+      repo.budget.addLine({
+        budget_id: budgetId, category: (row.category || '').trim() || null, name, kind, amount,
+        appropriation_code: (row.appropriation_code || '').trim() || null,
+        project_code: (row.project_code || '').trim() || null,
+      });
       r.created++;
     });
     db.exec('RELEASE sp_import_blines');
