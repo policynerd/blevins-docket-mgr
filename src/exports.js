@@ -171,4 +171,31 @@ function budgetCsv(b, lines) {
   return out.join('\r\n') + '\r\n';
 }
 
-module.exports = { icalCalendar, mattersCsv, legislationRss, matterRss, budgetCsv };
+// Solicitations register (clerk export of the whole procurement list).
+function solicitationsCsv(rows) {
+  const header = ['number', 'kind', 'title', 'status', 'open_date', 'close_date',
+    'bids', 'awarded_vendor', 'award_amount'];
+  const out = [header.map(csvCell).join(',')];
+  for (const s of rows) {
+    out.push([
+      s.number, s.kind, s.title, s.status, s.open_date || '', s.close_date || '',
+      s.bid_count || 0, s.awarded_vendor_name || '', s.award_amount == null ? '' : s.award_amount,
+    ].map(csvCell).join(','));
+  }
+  return out.join('\r\n') + '\r\n';
+}
+
+// Bids received for one solicitation.
+function bidsCsv(s, bids) {
+  const header = ['solicitation', 'vendor', 'email', 'amount', 'note'];
+  const out = [header.map(csvCell).join(',')];
+  for (const b of bids) {
+    out.push([s.number, b.vendor_name, b.email || '', b.amount == null ? '' : b.amount, b.note || '']
+      .map(csvCell).join(','));
+  }
+  return out.join('\r\n') + '\r\n';
+}
+
+module.exports = {
+  icalCalendar, mattersCsv, legislationRss, matterRss, budgetCsv, solicitationsCsv, bidsCsv,
+};

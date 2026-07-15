@@ -35,8 +35,11 @@ function budgetList(user) {
         <td><a class="btn-link" href="/budget/${b.id}/dashboard">Dashboard</a></td>
       </tr>`).join('')}</tbody></table>` : emptyState('No budgets yet.');
 
-  const compare = rows.length > 1
-    ? `<p class="muted"><a href="/budget/compare?a=${rows[1].id}&amp;b=${rows[0].id}">Compare fiscal years →</a></p>` : '';
+  const links = [
+    rows.length > 1 ? `<a href="/budget/compare?a=${rows[1].id}&amp;b=${rows[0].id}">Compare fiscal years →</a>` : '',
+    repo.budget.appropriationCount() ? '<a href="/budget/appropriations">Appropriation accounts →</a>' : '',
+  ].filter(Boolean);
+  const compare = links.length ? `<p class="muted">${links.join(' &nbsp;·&nbsp; ')}</p>` : '';
 
   const newForm = isClerk ? card('New fiscal year', html`
     <form class="form inline-form" method="post" action="/admin/budget">
@@ -76,8 +79,11 @@ function lineSection(lines) {
       const current = l.amount + l.amended;
       c.adopted += l.amount; c.amended += l.amended; c.current += current; c.actual += l.actual;
       t.adopted += l.amount; t.amended += l.amended; t.current += current; t.actual += l.actual;
+      const codeTag = l.appropriation_code
+        ? `<div class="sub muted"><a href="/budget/appropriations/${encodeURIComponent(l.appropriation_code)}">${escapeText(l.appropriation_code)}</a>${l.project_code ? ' · ' + escapeText(l.project_code) : ''}</div>`
+        : '';
       return `<tr><td><a href="/budget/lines/${l.id}">${escapeText(l.name)}</a>${l.item_count
-        ? ` <span class="muted">· ${l.item_count} file${l.item_count > 1 ? 's' : ''}</span>` : ''}</td>`
+        ? ` <span class="muted">· ${l.item_count} file${l.item_count > 1 ? 's' : ''}</span>` : ''}${codeTag}</td>`
         + `<td class="num">${money(l.amount)}</td>`
         + `<td class="num">${l.amended ? signedMoney(l.amended) : '<span class="muted">—</span>'}</td>`
         + `<td class="num">${money(current)}</td>`
@@ -442,4 +448,99 @@ function budgetComparePage(query = {}) {
   return layout({ title: 'Compare budgets', active: '/budget', body });
 }
 
-module.exports = { budgetList, budgetDetail, budgetLinePage, budgetDashboard, budgetComparePage, money };
+// ---- Appropriation ledger (follow the money) ------------------------------
+// One row per appropriation account, rolled up across every fiscal year it
+// appears in: budgeted → committed (contracts/legislation) → spent → available.
+function appropriationReport() {
+  const rows = repo.budget.appropriationRollup();
+  const t = { current: 0, committed: 0, actual: 0 };
+  const table = rows.length ? `<table class="data">
+    <thead><tr><th>Appropriation</th><th class="num">Years</th><th class="num">Budgeted</th>
+      <th class="num">Committed</th><th class="num">Spent</th><th class="num">Available</th><th>Spent</th></tr></thead>
+    <tbody>${rows.map((r) => {
+      const current = (r.adopted || 0) + (r.amended || 0);
+      const available = current - (r.committed || 0);
+      t.current += current; t.committed += (r.committed || 0); t.actual += (r.actual || 0);
+      return `<tr>
+        <td><a href="/budget/appropriations/${encodeURIComponent(r.code)}">${escapeText(r.code)}</a>
+          <div class="sub muted">${r.line_count} line${r.line_count > 1 ? 's' : ''}</div></td>
+        <td class="num">${r.year_count}</td>
+        <td class="num">${money(current)}</td>
+        <td class="num">${money(r.committed || 0)}</td>
+        <td class="num">${money(r.actual || 0)}</td>
+        <td class="num ${available < 0 ? 'over' : ''}">${money(available)}</td>
+        <td>${bar(r.actual || 0, current)}</td></tr>`;
+    }).join('')}
+    <tr class="subtotal"><td>All appropriations</td><td></td>
+      <td class="num">${money(t.current)}</td><td class="num">${money(t.committed)}</td>
+      <td class="num">${money(t.actual)}</td><td class="num">${money(t.current - t.committed)}</td><td></td></tr>
+    </tbody></table>`
+    : emptyState('No appropriation codes yet. Add one to a budget line to start tracking spending by account.');
+  const body = html`
+    <p class="crumbs"><a href="/budget">Budget</a> / Appropriations</p>
+    <h1>Appropriation accounts</h1>
+    <p class="muted">Spending tracked by appropriation account across all fiscal years —
+      budgeted, committed against contracts and legislation, and actually spent.</p>
+    ${raw(card('Accounts', table))}`;
+  return layout({ title: 'Appropriations', active: '/budget',
+    subtitle: 'Follow the money by appropriation account.', body });
+}
+
+function appropriationDetailPage(detail) {
+  const { code, lines, contracts, solicitations } = detail;
+  const t = lines.reduce((acc, l) => {
+    const current = l.amount + l.amended;
+    acc.current += current; acc.committed += l.committed; acc.actual += l.actual;
+    return acc;
+  }, { current: 0, committed: 0, actual: 0 });
+
+  const linesTable = lines.length ? `<table class="data compact">
+    <thead><tr><th>Fiscal year</th><th>Line</th><th class="num">Budgeted</th>
+      <th class="num">Committed</th><th class="num">Spent</th></tr></thead>
+    <tbody>${lines.map((l) => `<tr>
+      <td>${escapeText(l.fiscal_year)}</td>
+      <td><a href="/budget/lines/${l.id}">${escapeText((l.category ? l.category + ' — ' : '') + l.name)}</a>${l.project_code ? ` <span class="muted">· ${escapeText(l.project_code)}</span>` : ''}</td>
+      <td class="num">${money(l.amount + l.amended)}</td>
+      <td class="num">${money(l.committed)}</td>
+      <td class="num">${money(l.actual)}</td></tr>`).join('')}</tbody></table>`
+    : emptyState('No budget lines.');
+
+  const contractsTable = contracts.length ? `<table class="data compact">
+    <thead><tr><th>File</th><th>Title</th><th>Type</th><th>Status</th><th class="num">Fiscal impact</th></tr></thead>
+    <tbody>${contracts.map((m) => `<tr>
+      <td><a href="/legislation/${encodeURIComponent(m.file_number)}">${escapeText(m.file_number)}</a></td>
+      <td>${escapeText(m.title)}</td><td>${escapeText(m.type)}</td>
+      <td>${statusBadge(m.status)}</td>
+      <td class="num">${money(m.fiscal_impact)}</td></tr>`).join('')}</tbody></table>`
+    : emptyState('No contracts or legislation charged to this account yet.');
+
+  const solicitationsTable = solicitations.length ? `<table class="data compact">
+    <thead><tr><th>Number</th><th>Title</th><th>Type</th><th>Status</th><th class="num">Award</th></tr></thead>
+    <tbody>${solicitations.map((s) => `<tr>
+      <td><a href="/procurement/${s.id}">${escapeText(s.number)}</a></td>
+      <td>${escapeText(s.title)}${s.awarded_vendor_name ? ` <span class="muted">· ${escapeText(s.awarded_vendor_name)}</span>` : ''}</td>
+      <td>${escapeText(s.kind)}</td><td>${statusBadge(s.status)}</td>
+      <td class="num">${s.award_amount != null ? money(s.award_amount) : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table>`
+    : emptyState('No solicitations against this account.');
+
+  const available = t.current - t.committed;
+  const summary = `<dl class="meta record-header">
+    <dt>Budgeted</dt><dd>${money(t.current)}</dd>
+    <dt>Committed</dt><dd>${money(t.committed)}</dd>
+    <dt>Spent</dt><dd>${money(t.actual)}</dd>
+    <dt>Available</dt><dd class="${available < 0 ? 'over' : ''}">${money(available)}</dd></dl>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/budget">Budget</a> / <a href="/budget/appropriations">Appropriations</a> / ${escapeText(code)}</p>
+    <h1>Appropriation ${escapeText(code)}</h1>
+    ${raw(card('Account totals', summary))}
+    ${raw(card('Budget lines', linesTable))}
+    ${raw(card(`Contracts & legislation (${contracts.length})`, contractsTable))}
+    ${raw(card(`Solicitations (${solicitations.length})`, solicitationsTable))}`;
+  return layout({ title: `Appropriation ${code}`, active: '/budget', body });
+}
+
+module.exports = {
+  budgetList, budgetDetail, budgetLinePage, budgetDashboard, budgetComparePage,
+  appropriationReport, appropriationDetailPage, money,
+};

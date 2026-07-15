@@ -506,6 +506,12 @@ route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()))
 // Budget (public read; clerk manages via /admin routes below) ----------------
 route('GET', /^\/budget\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetList(ctx.user)));
 route('GET', /^\/budget\/compare\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetComparePage(ctx.query)));
+route('GET', /^\/budget\/appropriations\/?$/, (req, res) => sendHtml(res, budgetView.appropriationReport()));
+route('GET', /^\/budget\/appropriations\/(.+)$/, (req, res, ctx) => {
+  const detail = repo.budget.appropriationDetail(decodeURIComponent(ctx.params[0]));
+  if (!detail.lines.length) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, budgetView.appropriationDetailPage(detail));
+});
 route('GET', /^\/budget\/(\d+)\/dashboard$/, (req, res, ctx) => {
   const b = repo.budget.get(Number(ctx.params[0]));
   if (!b) return sendHtml(res, pages.notFound(), 404);
@@ -1112,6 +1118,16 @@ route('POST', /^\/admin\/proposals\/(\d+)\/decide$/, (req, res, ctx) => {
 });
 // --- Procurement management (clerk) -----------------------------------------
 route('GET', /^\/admin\/procurement\/?$/, (req, res) => sendHtml(res, procurementView.procurementAdmin()));
+route('GET', /^\/admin\/procurement\.csv$/, (req, res) => {
+  sendText(res, feeds.solicitationsCsv(repo.procurement.list({ includeAll: true })),
+    'text/csv; charset=utf-8', { filename: 'solicitations.csv' });
+});
+route('GET', /^\/admin\/procurement\/(\d+)\/bids\.csv$/, (req, res, ctx) => {
+  const s = repo.procurement.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  sendText(res, feeds.bidsCsv(s, repo.procurement.bids(s.id)),
+    'text/csv; charset=utf-8', { filename: `bids-${s.number}.csv` });
+});
 route('POST', /^\/admin\/procurement$/, (req, res, ctx) => {
   const b = ctx.body;
   if (!b.title) return redirect(res, '/admin/procurement');
@@ -1153,7 +1169,7 @@ route('POST', /^\/admin\/procurement\/(\d+)\/award$/, (req, res, ctx) => {
   // Award straight from a received bid: match/create the vendor, take its amount.
   if (ctx.body.bid_id) {
     const bid = repo.procurement.bids(s.id).find((b) => b.id === Number(ctx.body.bid_id));
-    if (bid) { vendorId = repo.vendors.findOrCreate(bid.vendor_name); amount = bid.amount; }
+    if (bid) { vendorId = repo.vendors.findOrCreate(bid.vendor_name, bid.email); amount = bid.amount; }
   }
   if (!vendorId) return redirect(res, `/admin/procurement/${s.id}`);
   // Preserve any contract already linked so re-recording an award neither
@@ -1175,6 +1191,7 @@ route('POST', /^\/admin\/procurement\/(\d+)\/award$/, (req, res, ctx) => {
     });
   }
   repo.procurement.award(s.id, { vendorId, amount, matterId });
+  notify.procurementAward(s.id);
   redirect(res, `/admin/procurement/${s.id}`);
 });
 route('GET', /^\/admin\/vendors\/?$/, (req, res) => sendHtml(res, procurementView.vendorsAdmin()));

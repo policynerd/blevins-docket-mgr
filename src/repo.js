@@ -887,6 +887,51 @@ const budget = {
       FROM budget_transactions t JOIN budget_lines bl ON bl.id = t.budget_line_id
       WHERE bl.budget_id = ? GROUP BY month ORDER BY month`).all(budgetId);
   },
+  // --- Appropriation ledger ("follow the money") ------------------------------
+  // The appropriation code is the spine that ties budget lines, the contracts
+  // and legislation drawing on them, and the actuals ledger together — across
+  // every fiscal year the code appears in.
+  appropriationRollup() {
+    return db.prepare(`SELECT bl.appropriation_code AS code,
+        COUNT(DISTINCT bl.id) AS line_count,
+        COUNT(DISTINCT bl.budget_id) AS year_count,
+        SUM(bl.amount) AS adopted,
+        SUM(COALESCE((SELECT SUM(a.amount) FROM budget_amendments a WHERE a.budget_line_id = bl.id),0)) AS amended,
+        SUM(COALESCE((SELECT SUM(m.fiscal_impact) FROM matters m WHERE m.budget_line_id = bl.id),0)) AS committed,
+        SUM(COALESCE((SELECT SUM(t.amount) FROM budget_transactions t WHERE t.budget_line_id = bl.id),0)) AS actual
+      FROM budget_lines bl
+      WHERE bl.appropriation_code IS NOT NULL AND TRIM(bl.appropriation_code) != ''
+      GROUP BY bl.appropriation_code
+      ORDER BY bl.appropriation_code`).all();
+  },
+  appropriationCount() {
+    return db.prepare(`SELECT COUNT(DISTINCT appropriation_code) AS n FROM budget_lines
+      WHERE appropriation_code IS NOT NULL AND TRIM(appropriation_code) != ''`).get().n;
+  },
+  // Everything charged to one appropriation account: the lines, the linked
+  // contracts/legislation (committed), and any solicitations against it.
+  appropriationDetail(code) {
+    const lines = db.prepare(`SELECT bl.*, b.fiscal_year, b.status AS budget_status,
+        COALESCE((SELECT SUM(a.amount) FROM budget_amendments a WHERE a.budget_line_id = bl.id),0) AS amended,
+        COALESCE((SELECT SUM(m.fiscal_impact) FROM matters m WHERE m.budget_line_id = bl.id),0) AS committed,
+        COALESCE((SELECT SUM(t.amount) FROM budget_transactions t WHERE t.budget_line_id = bl.id),0) AS actual
+      FROM budget_lines bl JOIN budgets b ON b.id = bl.budget_id
+      WHERE bl.appropriation_code = ?
+      ORDER BY b.fiscal_year DESC, bl.category, bl.name`).all(code);
+    const contracts = db.prepare(`SELECT m.id, m.file_number, m.title, m.type, m.status, m.fiscal_impact,
+        bl.name AS line_name, b.fiscal_year
+      FROM matters m JOIN budget_lines bl ON bl.id = m.budget_line_id
+      JOIN budgets b ON b.id = bl.budget_id
+      WHERE bl.appropriation_code = ? AND m.fiscal_impact IS NOT NULL
+      ORDER BY ABS(m.fiscal_impact) DESC, m.id DESC`).all(code);
+    const solicitations = db.prepare(`SELECT s.id, s.number, s.title, s.kind, s.status, s.award_amount,
+        v.name AS awarded_vendor_name, bl.name AS line_name
+      FROM solicitations s JOIN budget_lines bl ON bl.id = s.budget_line_id
+      LEFT JOIN vendors v ON v.id = s.awarded_vendor_id
+      WHERE bl.appropriation_code = ?
+      ORDER BY CASE s.status WHEN 'Awarded' THEN 0 WHEN 'Open' THEN 1 ELSE 2 END, s.number`).all(code);
+    return { code, lines, contracts, solicitations };
+  },
   // Match two budgets' lines by category+name for year-over-year comparison.
   compareYears(aId, bId) {
     const key = (l) => `${(l.category || '').toLowerCase()}|${l.name.toLowerCase()}`;
@@ -1412,9 +1457,15 @@ const vendors = {
   },
   get(id) { return db.prepare('SELECT * FROM vendors WHERE id = ?').get(id); },
   byName(name) { return db.prepare('SELECT * FROM vendors WHERE lower(name) = lower(?)').get(name); },
-  findOrCreate(name) {
+  // Resolve a vendor by name, creating it if new. An optional email backfills a
+  // missing contact (so awarding from a bid captures the bidder's address).
+  findOrCreate(name, email = null) {
     const existing = this.byName(name);
-    return existing ? existing.id : this.register({ name });
+    if (!existing) return this.register({ name, email });
+    if (email && !existing.email) {
+      db.prepare('UPDATE vendors SET email = ? WHERE id = ?').run(email, existing.id);
+    }
+    return existing.id;
   },
   setStatus(id, status) {
     if (!['Registered', 'Suspended'].includes(status)) return;

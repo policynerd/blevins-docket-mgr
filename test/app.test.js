@@ -123,6 +123,52 @@ test('budget CSV: appropriation & project codes round-trip through import/export
   assert.match(out, /100-4200-51000,CIP-2027-014/);
 });
 
+test('appropriation ledger: rolls up budgeted/committed/spent and lists contributors', () => {
+  const bId = repo.budget.create({ fiscal_year: 'FY-APP', status: 'Adopted' });
+  const l1 = repo.budget.addLine({ budget_id: bId, name: 'Paving', kind: 'Expense', amount: 100000, appropriation_code: 'APP-1' });
+  repo.budget.addLine({ budget_id: bId, name: 'Signals', kind: 'Expense', amount: 50000, appropriation_code: 'APP-1' });
+  repo.budget.addLine({ budget_id: bId, name: 'Uncoded', kind: 'Expense', amount: 9999 }); // no code → excluded
+  repo.budget.addTransaction({ budget_line_id: l1, tx_date: '2027-01-05', amount: 40000 });
+  const m = repo.matters.insertNumbered({ type: 'Contract', title: 'Paving contract', status: 'Draft' });
+  repo.matters.setFiscal(m.id, { fiscal_impact: 90000, budget_line_id: l1 });
+  const sol = repo.procurement.create({ kind: 'IFB', title: 'Road paving', status: 'Open', budget_line_id: l1 });
+
+  const roll = repo.budget.appropriationRollup().find((r) => r.code === 'APP-1');
+  assert.equal(roll.line_count, 2);
+  assert.equal(roll.adopted, 150000);
+  assert.equal(roll.committed, 90000);
+  assert.equal(roll.actual, 40000);
+  assert.ok(!repo.budget.appropriationRollup().some((r) => r.code == null)); // uncoded excluded
+
+  const det = repo.budget.appropriationDetail('APP-1');
+  assert.equal(det.lines.length, 2);
+  assert.equal(det.contracts.length, 1);
+  assert.equal(det.contracts[0].file_number, m.file_number);
+  assert.equal(det.solicitations.length, 1);
+  assert.equal(det.solicitations[0].number, sol.number);
+});
+
+test('vendor findOrCreate backfills a missing email but never overwrites one', () => {
+  const id1 = repo.vendors.findOrCreate('Backfill Co'); // no email
+  assert.equal(repo.vendors.get(id1).email, null);
+  const id2 = repo.vendors.findOrCreate('Backfill Co', 'contact@backfill.test');
+  assert.equal(id2, id1);                                       // same vendor
+  assert.equal(repo.vendors.get(id2).email, 'contact@backfill.test'); // backfilled
+  repo.vendors.findOrCreate('Backfill Co', 'other@backfill.test');
+  assert.equal(repo.vendors.get(id1).email, 'contact@backfill.test'); // not overwritten
+});
+
+test('procurement CSV exports carry headers and rows', () => {
+  const feeds = require('../src/exports');
+  const sol = repo.procurement.create({ kind: 'RFP', title: 'Export test', status: 'Open' });
+  repo.procurement.addBid({ solicitation_id: sol.id, vendor_name: 'Bidder A', email: 'a@x.test', amount: 1000 });
+  const list = feeds.solicitationsCsv(repo.procurement.list({ includeAll: true }));
+  assert.match(list.split('\r\n')[0], /^number,kind,title,status/);
+  const bids = feeds.bidsCsv(repo.procurement.get(sol.id), repo.procurement.bids(sol.id));
+  assert.match(bids.split('\r\n')[0], /^solicitation,vendor,email,amount,note/);
+  assert.match(bids, /Bidder A/);
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');

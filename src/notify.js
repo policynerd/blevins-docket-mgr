@@ -108,6 +108,22 @@ function proposalDecision(proposalId) {
   } catch (e) { console.error('notify.proposalDecision failed:', e.message); }
 }
 
+// Solicitation awarded — notify the winning vendor.
+function procurementAward(solicitationId) {
+  try {
+    const s = db.prepare(`SELECT s.number, s.title, s.award_amount, v.name AS vendor_name, v.email
+      FROM solicitations s JOIN vendors v ON v.id = s.awarded_vendor_id
+      WHERE s.id = ?`).get(solicitationId);
+    if (!s || !s.email) return;
+    const amount = s.award_amount != null
+      ? ' in the amount of $' + Number(s.award_amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '';
+    queue(s.email, `Award notice: ${s.number}`,
+      `${s.vendor_name},\n\nYour firm has been selected for solicitation ${s.number} — "${s.title}"${amount}.\n\n`
+      + `The Clerk's office will follow up regarding the contract.\n\nDetails: ${link('/procurement/' + solicitationId)}`);
+  } catch (e) { console.error('notify.procurementAward failed:', e.message); }
+}
+
 // --- Delivery loop ---------------------------------------------------------------
 let sending = false;
 
@@ -146,5 +162,5 @@ function recent(limit = 50) {
 
 module.exports = {
   queue, approvalRouted, matterActivity, applicationDecision, speakerApproved, proposalDecision,
-  processOutbox, schedule, recent, baseUrl,
+  procurementAward, processOutbox, schedule, recent, baseUrl,
 };
