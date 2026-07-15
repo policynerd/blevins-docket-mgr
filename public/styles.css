@@ -141,6 +141,7 @@ table.data.compact td, table.data.compact th { padding: 5px 8px; }
 .btn:hover { background: var(--accent-dark); text-decoration: none; }
 .btn.primary { background: linear-gradient(180deg, #f4b400, #e0a200); color: #1f2937; border-color: #c98f00; }
 .btn.primary:hover { background: #ffc41f; }
+.btn-block { display: block; width: 100%; text-align: center; padding: 10px; }
 .btn-link { color: var(--accent); font-size: 13px; font-weight: 600; }
 .detail-head, .person-head { display: flex; gap: 12px; align-items: center; }
 /* Action button rows wrap cleanly and don't stretch their buttons. */

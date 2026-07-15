@@ -154,12 +154,18 @@ function budgetDetail(b, user) {
           <label>Kind<select name="kind">${selectOptions(repo.BUDGET_KINDS, 'Expense')}</select></label>
           <label>${isDraft ? 'Budgeted amount' : 'Adopted amount'}<input type="number" step="0.01" name="amount" value="0"></label>
         </div>
+        <div class="form-row">
+          <label>Appropriation code<input type="text" name="appropriation_code" placeholder="100-4200-51000"></label>
+          <label>Project code<input type="text" name="project_code" placeholder="CIP-2027-014"></label>
+        </div>
         <button type="submit" class="btn">Add line</button>
       </form>`;
     const editRows = lines.length ? lines.map((l) => `
       <form class="form line-edit" method="post" action="/admin/budget-lines/${l.id}">
         <input type="text" name="category" value="${escapeText(l.category || '')}" placeholder="Category" aria-label="Category">
         <input type="text" name="name" value="${escapeText(l.name)}" required aria-label="Name">
+        <input type="text" name="appropriation_code" value="${escapeText(l.appropriation_code || '')}" placeholder="Approp. code" aria-label="Appropriation code">
+        <input type="text" name="project_code" value="${escapeText(l.project_code || '')}" placeholder="Project code" aria-label="Project code">
         <select name="kind" aria-label="Kind">${selectOptions(repo.BUDGET_KINDS, l.kind)}</select>
         ${isDraft
     ? `<input type="number" step="0.01" name="amount" value="${escapeText(l.amount)}" aria-label="Amount">`
@@ -235,7 +241,10 @@ function budgetLinePage(line, user) {
   const matters = repo.budget.lineMatters(line.id);
   const isRevenue = line.kind === 'Revenue';
 
-  const meta = card('Line summary', `
+  const codes = (line.appropriation_code || line.project_code)
+    ? `<p class="muted">${line.appropriation_code ? 'Appropriation <strong>' + escapeText(line.appropriation_code) + '</strong>' : ''}${line.appropriation_code && line.project_code ? ' · ' : ''}${line.project_code ? 'Project <strong>' + escapeText(line.project_code) + '</strong>' : ''}</p>`
+    : '';
+  const meta = card('Line summary', `${codes}
     <div class="budget-summary">
       <div><span class="bs-n">${escapeText(money(line.amount))}</span><span class="bs-l">Adopted</span></div>
       <div><span class="bs-n">${line.amended ? escapeText(signedMoney(line.amended)) : '—'}</span><span class="bs-l">Amendments</span></div>
