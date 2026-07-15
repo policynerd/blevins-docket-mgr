@@ -330,7 +330,7 @@ route('POST', /^\/procurement\/(\d+)\/bids$/, (req, res, ctx) => {
   const back = `/procurement/${s.id}`;
   if (ctx.body.website) return redirect(res, back + '?bid=1');
   const vendor = String(ctx.body.vendor_name || '').trim().slice(0, 140);
-  if (s.status !== 'Open' || !vendor) return redirect(res, back);
+  if (!repo.procurement.biddable(s) || !vendor) return redirect(res, back);
   if (publicFormThrottled(clientIp(req))) {
     return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
   }
@@ -1156,8 +1156,10 @@ route('POST', /^\/admin\/procurement\/(\d+)\/award$/, (req, res, ctx) => {
     if (bid) { vendorId = repo.vendors.findOrCreate(bid.vendor_name); amount = bid.amount; }
   }
   if (!vendorId) return redirect(res, `/admin/procurement/${s.id}`);
-  let matterId = null;
-  if (ctx.body.make_contract === '1') {
+  // Preserve any contract already linked so re-recording an award neither
+  // clears the link nor spawns a duplicate Contract.
+  let matterId = s.matter_id || null;
+  if (ctx.body.make_contract === '1' && !s.matter_id) {
     const vendor = repo.vendors.get(vendorId);
     const { id } = repo.matters.insertNumbered({
       type: 'Contract', title: `${s.title} — award to ${vendor ? vendor.name : 'vendor'}`,

@@ -135,6 +135,59 @@ test('terms & vacancies: expiring window and seat math', () => {
   assert.equal(vac.seats - vac.filled, 2); // 3 seats, 1 member
 });
 
+test('procurement: sequential numbering, visibility, Q&A, bids, award linkage', () => {
+  // Numbering is SOL-YYMM##; the suffix must increment without swallowing the
+  // final month digit (regression for the substr(number, 8) off-by-one).
+  const s1 = repo.procurement.create({ kind: 'RFP', title: 'Sol one', status: 'Open' });
+  const s2 = repo.procurement.create({ kind: 'RFQ', title: 'Sol two', status: 'Draft' });
+  assert.match(s1.number, /^SOL-\d{6}$/);
+  assert.equal(s1.number.slice(0, 8), s2.number.slice(0, 8));            // same SOL-YYMM prefix
+  assert.equal(Number(s2.number.slice(-2)), Number(s1.number.slice(-2)) + 1);
+
+  // Public listing hides Draft; admin listing shows everything.
+  const publicNums = repo.procurement.list().map((s) => s.number);
+  assert.ok(publicNums.includes(s1.number));
+  assert.ok(!publicNums.includes(s2.number));
+  assert.ok(repo.procurement.list({ includeAll: true }).map((s) => s.number).includes(s2.number));
+
+  // Q&A: question stored, answer round-trips.
+  const qid = repo.procurement.addQuestion({ solicitation_id: s1.id, name: 'Ada', question: 'Scope?' });
+  assert.equal(repo.procurement.questions(s1.id).length, 1);
+  repo.procurement.answerQuestion(qid, 'See section 2.');
+  assert.equal(repo.procurement.getQuestion(qid).answer, 'See section 2.');
+
+  // Bids order cheapest-first.
+  repo.procurement.addBid({ solicitation_id: s1.id, vendor_name: 'Acme', amount: 500 });
+  repo.procurement.addBid({ solicitation_id: s1.id, vendor_name: 'Globex', amount: 300 });
+  const bids = repo.procurement.bids(s1.id);
+  assert.equal(bids.length, 2);
+  assert.equal(bids[0].vendor_name, 'Globex');
+
+  // Award links a vendor + contract; re-recording preserves the contract link.
+  const vendorId = repo.vendors.findOrCreate('Globex');
+  const contract = repo.matters.insertNumbered({ type: 'Contract', title: 'Award', status: 'Draft' });
+  repo.procurement.award(s1.id, { vendorId, amount: 300, matterId: contract.id });
+  let got = repo.procurement.get(s1.id);
+  assert.equal(got.status, 'Awarded');
+  assert.equal(got.awarded_vendor_id, vendorId);
+  assert.equal(got.matter_id, contract.id);
+  repo.procurement.award(s1.id, { vendorId, amount: 350, matterId: got.matter_id }); // as the route now does
+  got = repo.procurement.get(s1.id);
+  assert.equal(got.matter_id, contract.id);
+  assert.equal(got.award_amount, 350);
+});
+
+test('procurement: biddable respects status and the posted date window', () => {
+  const past = '2000-01-01';
+  const future = '2999-12-31';
+  assert.equal(repo.procurement.biddable({ status: 'Open' }), true);
+  assert.equal(repo.procurement.biddable({ status: 'Draft' }), false);
+  assert.equal(repo.procurement.biddable({ status: 'Closed' }), false);
+  assert.equal(repo.procurement.biddable({ status: 'Open', open_date: future }), false); // not yet open
+  assert.equal(repo.procurement.biddable({ status: 'Open', close_date: past }), false);  // already closed
+  assert.equal(repo.procurement.biddable({ status: 'Open', open_date: past, close_date: future }), true);
+});
+
 test('notifications: no-op unconfigured, queues when configured', () => {
   const notify = require('../src/notify');
   delete process.env.SMTP_HOST;

@@ -40,7 +40,7 @@ function procurementList() {
       <span class="head-actions"><a class="btn" href="/vendors/register">Register as a vendor</a></span>
     </div>
     <p class="muted">Open solicitations (RFPs, RFQs, invitations for bid) from the ${ORG.name}.
-      Register as a vendor to be notified of opportunities, then submit questions and bids on any open solicitation.</p>
+      Register your business to join our vendor list, then submit questions and bids on any open solicitation.</p>
     ${raw(card('Solicitations', table))}`;
   return layout({ title: 'Procurement', active: '/procurement',
     subtitle: 'Solicitations, vendors, and bids.', body });
@@ -50,6 +50,7 @@ function procurementList() {
 function solicitationDetail(s, query = {}) {
   const questions = repo.procurement.questions(s.id).filter((q) => q.answer); // only answered shown publicly
   const isOpen = s.status === 'Open';
+  const canBid = repo.procurement.biddable(s); // status Open AND within the posted window
 
   const qaList = questions.length
     ? `<ul class="comment-list">${questions.map((q) => html`
@@ -73,7 +74,7 @@ function solicitationDetail(s, query = {}) {
       <button type="submit" class="btn">Submit question</button>
     </form>` : '';
 
-  const bidForm = isOpen ? raw(card('Submit a bid', `
+  const bidForm = canBid ? raw(card('Submit a bid', `
     <form class="form" method="post" action="/procurement/${s.id}/bids">
       <div class="form-row">
         <label>Vendor / company<input type="text" name="vendor_name" required maxlength="140"></label>
@@ -220,6 +221,7 @@ function solicitationManage(s) {
          <td>${b.note || ''}</td>
          <td><form method="post" action="/admin/procurement/${s.id}/award" class="inline">
            <input type="hidden" name="bid_id" value="${b.id}">
+           <label class="check-label"><input type="checkbox" name="make_contract" value="1"> +contract</label>
            <button type="submit" class="btn-link">Award →</button></form></td></tr>`).join('')}</tbody></table>`
     : emptyState('No bids received.');
 

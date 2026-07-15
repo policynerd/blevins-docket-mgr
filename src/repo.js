@@ -1327,7 +1327,8 @@ function statusBuckets() {
 // signed-in clerk can clear demo/sample data without losing their login or
 // branding. Used by the admin "Clear all data" action.
 function purgeDomainData() {
-  const tables = ['office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'votes',
+  const tables = ['bids', 'solicitation_questions', 'solicitations', 'vendors',
+    'office_staff', 'budget_lines', 'budgets', 'policies', 'member_motions', 'votes',
     'attendance', 'agenda_items', 'meetings', 'matter_topics', 'topics', 'matter_history',
     'matter_sponsors', 'attachments', 'reports', 'workflow_steps', 'matters', 'body_members',
     'bodies', 'org_units', 'people'];
@@ -1429,8 +1430,10 @@ const procurement = {
   nextNumber() {
     const now = new Date();
     const prefix = `SOL-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // The suffix begins at position 9: "SOL-" (4) + "YYMM" (4) = an 8-char
+    // prefix, so substr must start at 9 or it swallows the final month digit.
     const { m } = db.prepare(
-      `SELECT MAX(CAST(substr(number, 8) AS INTEGER)) AS m FROM solicitations WHERE number LIKE ? || '%'`)
+      `SELECT MAX(CAST(substr(number, 9) AS INTEGER)) AS m FROM solicitations WHERE number LIKE ? || '%'`)
       .get(prefix);
     return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
   },
@@ -1478,6 +1481,16 @@ const procurement = {
   },
   openCount() {
     return db.prepare("SELECT COUNT(*) AS n FROM solicitations WHERE status = 'Open'").get().n;
+  },
+  // A solicitation accepts bids only while Open AND within its posted window,
+  // so a missed manual status change can't admit an early or late bid. The
+  // bid form and the POST handler share this predicate.
+  biddable(s) {
+    if (!s || s.status !== 'Open') return false;
+    const today = new Date().toISOString().slice(0, 10);
+    if (s.open_date && s.open_date > today) return false;
+    if (s.close_date && s.close_date < today) return false;
+    return true;
   },
   award(id, { vendorId, amount, matterId = null }) {
     db.prepare(`UPDATE solicitations SET awarded_vendor_id=?, award_amount=?, matter_id=?, status='Awarded'
