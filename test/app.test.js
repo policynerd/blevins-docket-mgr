@@ -169,6 +169,43 @@ test('procurement CSV exports carry headers and rows', () => {
   assert.match(bids, /Bidder A/);
 });
 
+test('TAS register: import upserts, searches, enriches, and round-trips CSV', () => {
+  const imp = require('../src/import');
+  const feeds = require('../src/exports');
+  const csv = [
+    'AID,Main,X-YEAR,TAS,Agency,Title,Fund Type,Independent Agencies,Last update',
+    '020,0100,X,020-X-0100,Environmental Protection Agency,Salaries and Expenses,General,No,2026-01-01',
+  ].join('\n');
+  const r1 = imp.importTasRegister(csv);
+  assert.equal(r1.created, 1);
+  assert.equal(r1.updated, 0);
+  const r2 = imp.importTasRegister(csv);              // same TAS → updates in place
+  assert.equal(r2.created, 0);
+  assert.equal(r2.updated, 1);
+
+  const acct = repo.tas.byTas('020-X-0100');
+  assert.equal(acct.agency, 'Environmental Protection Agency');
+  assert.equal(acct.avail, 'X');                       // X-YEAR column → avail
+  assert.equal(acct.fund_type, 'General');
+  assert.equal(repo.tas.all({ q: 'salaries' }).length, 1); // search by title
+
+  // A budget line whose appropriation code is this TAS links the two together.
+  const bId = repo.budget.create({ fiscal_year: 'FY-TAS', status: 'Adopted' });
+  repo.budget.addLine({ budget_id: bId, name: 'EPA ops', kind: 'Expense', amount: 500000, appropriation_code: '020-X-0100' });
+  const det = repo.budget.appropriationDetail('020-X-0100');
+  assert.equal(det.lines.length, 1);
+  assert.equal(repo.tas.byTas(det.code).title, 'Salaries and Expenses');
+
+  // Export carries the exact import columns, so the register round-trips.
+  const out = feeds.tasCsv(repo.tas.all());
+  assert.match(out.split('\r\n')[0], /^AID,Main,X-YEAR,TAS,Agency,Title,Fund Type,Independent Agencies,Last update$/);
+  assert.match(out, /020-X-0100/);
+
+  // A row without a TAS is rejected.
+  const bad = imp.importTasRegister('AID,TAS\n020,\n');
+  assert.ok(bad.errors.length >= 1);
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');

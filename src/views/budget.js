@@ -38,6 +38,7 @@ function budgetList(user) {
   const links = [
     rows.length > 1 ? `<a href="/budget/compare?a=${rows[1].id}&amp;b=${rows[0].id}">Compare fiscal years →</a>` : '',
     repo.budget.appropriationCount() ? '<a href="/budget/appropriations">Appropriation accounts →</a>' : '',
+    (repo.tas.count() || isClerk) ? '<a href="/budget/accounts">Account register (TAS) →</a>' : '',
   ].filter(Boolean);
   const compare = links.length ? `<p class="muted">${links.join(' &nbsp;·&nbsp; ')}</p>` : '';
 
@@ -530,9 +531,23 @@ function appropriationDetailPage(detail) {
     <dt>Spent</dt><dd>${money(t.actual)}</dd>
     <dt>Available</dt><dd class="${available < 0 ? 'over' : ''}">${money(available)}</dd></dl>`;
 
+  // Enrich with the Treasury Account Symbol register (source of truth) if this
+  // appropriation code matches a catalogued account.
+  const acct = repo.tas.byTas(code);
+  const tasCard = acct ? card('Treasury Account Symbol', `<dl class="meta record-header">
+    <dt>TAS</dt><dd>${escapeText(acct.tas)}</dd>
+    ${acct.title ? `<dt>Title</dt><dd>${escapeText(acct.title)}</dd>` : ''}
+    ${acct.agency ? `<dt>Agency</dt><dd>${escapeText(acct.agency)}${acct.aid ? ` <span class="muted">(AID ${escapeText(acct.aid)})</span>` : ''}</dd>` : ''}
+    ${acct.fund_type ? `<dt>Fund type</dt><dd>${escapeText(acct.fund_type)}</dd>` : ''}
+    ${acct.avail ? `<dt>Availability</dt><dd>${escapeText(acct.avail)}</dd>` : ''}
+    ${acct.main ? `<dt>Main account</dt><dd>${escapeText(acct.main)}</dd>` : ''}
+    ${acct.independent_agencies ? `<dt>Grouping</dt><dd>${escapeText(acct.independent_agencies)}</dd>` : ''}
+  </dl><p class="muted"><a href="/budget/accounts">← Account register</a></p>`) : '';
+
   const body = html`
     <p class="crumbs"><a href="/budget">Budget</a> / <a href="/budget/appropriations">Appropriations</a> / ${escapeText(code)}</p>
     <h1>Appropriation ${escapeText(code)}</h1>
+    ${raw(tasCard)}
     ${raw(card('Account totals', summary))}
     ${raw(card('Budget lines', linesTable))}
     ${raw(card(`Contracts & legislation (${contracts.length})`, contractsTable))}
@@ -540,7 +555,51 @@ function appropriationDetailPage(detail) {
   return layout({ title: `Appropriation ${code}`, active: '/budget', body });
 }
 
+// ---- Treasury Account Symbol register (chart of accounts) -----------------
+function tasRegister(query = {}, user = null) {
+  const isClerk = auth.hasRole(user, 'clerk');
+  const q = String(query.q || '').trim();
+  const rows = repo.tas.all({ q });
+  const table = rows.length ? `<table class="data">
+    <thead><tr><th>TAS</th><th>Agency</th><th>Title</th><th>Fund type</th><th>Availability</th></tr></thead>
+    <tbody>${rows.map((a) => `<tr>
+      <td><a href="/budget/appropriations/${encodeURIComponent(a.tas)}">${escapeText(a.tas)}</a></td>
+      <td>${escapeText(a.agency || '')}${a.aid ? ` <span class="muted">(${escapeText(a.aid)})</span>` : ''}</td>
+      <td>${escapeText(a.title || '')}</td>
+      <td>${escapeText(a.fund_type || '')}</td>
+      <td>${escapeText(a.avail || '')}</td></tr>`).join('')}</tbody></table>`
+    : emptyState(q ? `No accounts match "${escapeText(q)}".` : 'No accounts registered yet.');
+
+  const search = `<form class="form inline-form" method="get" action="/budget/accounts">
+    <div class="form-row">
+      <label>Search<input type="search" name="q" value="${escapeText(q)}" placeholder="TAS, agency, or title"></label>
+      <button type="submit" class="btn">Search</button>
+      ${q ? '<a class="btn-link" href="/budget/accounts">Clear</a>' : ''}
+    </div>
+  </form>`;
+
+  const importForm = isClerk ? card('Import register (clerk)', `
+    <p class="muted">Upload the Treasury Account Symbol catalog. Columns:
+      <code>AID,Main,X-YEAR,TAS,Agency,Title,Fund Type,Independent Agencies,Last update</code>.
+      TAS is the key — re-importing a TAS updates it in place.</p>
+    <form class="form" method="post" action="/admin/budget/accounts/import">
+      <label>Register CSV<textarea name="csv" rows="6" placeholder="020,0100,X,020-X-0100,Independent Agencies,Salaries and Expenses,General,Yes,2026-01-01"></textarea></label>
+      <button type="submit" class="btn primary">Import register</button>
+    </form>`) : '';
+
+  const body = html`
+    <p class="crumbs"><a href="/budget">Budget</a> / Account register</p>
+    <div class="detail-head"><h1>Account register (TAS)</h1>
+      <span class="head-actions">${rows.length ? raw('<a class="btn" href="/budget/accounts.csv">Export CSV</a>') : ''}<a class="btn" href="/budget/appropriations">Appropriation ledger</a></span></div>
+    <p class="muted">Treasury Account Symbol catalog — the source of truth for appropriation structure.
+      A budget line's appropriation code links to a TAS here.</p>
+    ${raw(card('Accounts', search + table))}
+    ${raw(importForm)}`;
+  return layout({ title: 'Account register', active: '/budget',
+    subtitle: 'Treasury Account Symbol chart of accounts.', body });
+}
+
 module.exports = {
   budgetList, budgetDetail, budgetLinePage, budgetDashboard, budgetComparePage,
-  appropriationReport, appropriationDetailPage, money,
+  appropriationReport, appropriationDetailPage, tasRegister, money,
 };
