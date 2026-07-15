@@ -196,7 +196,8 @@ function budgetDetail(b, user) {
         </div>
       </form>`;
     const importForms = `
-      <p class="muted">Bulk-load from the accounting system. Lines: <code>category,name,kind,amount</code>.
+      <p class="muted">Bulk-load from the accounting system. Lines: <code>category,name,kind,amount</code>
+        (optional <code>appropriation_code,project_code</code>).
         Transactions: <code>date,line,description,amount</code> (line matched by name, YYYY-MM-DD dates).</p>
       <div class="form-row">
         <form class="form" method="post" action="/admin/budget/${b.id}/import-lines">

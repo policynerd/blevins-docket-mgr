@@ -158,12 +158,13 @@ ${items}
 
 // Budget lines with all rollups (adopted/amended/current/committed/actual).
 function budgetCsv(b, lines) {
-  const header = ['fiscal_year', 'category', 'line', 'kind', 'adopted', 'amended', 'current', 'committed', 'actual', 'remaining'];
+  const header = ['fiscal_year', 'category', 'line', 'kind', 'appropriation_code', 'project_code',
+    'adopted', 'amended', 'current', 'committed', 'actual', 'remaining'];
   const out = [header.map(csvCell).join(',')];
   for (const l of lines) {
     const current = l.amount + l.amended;
     out.push([
-      b.fiscal_year, l.category || '', l.name, l.kind,
+      b.fiscal_year, l.category || '', l.name, l.kind, l.appropriation_code || '', l.project_code || '',
       l.amount, l.amended, current, l.committed, l.actual, current - l.actual,
     ].map(csvCell).join(','));
   }
