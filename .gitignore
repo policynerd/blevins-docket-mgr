@@ -3,6 +3,9 @@
 /data/*.db-shm
 /data/*.db-wal
 
+# Runtime database backups (auto-created on server startup)
+/data/backups/
+
 # Local environment files
 .env
 .env.*
