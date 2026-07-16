@@ -36,6 +36,8 @@ const alerts = require('./src/alerts');
 const approvalsView = require('./src/views/approvals');
 const proposalsView = require('./src/views/proposals');
 const procurementView = require('./src/views/procurement');
+const consentsView = require('./src/views/consents');
+const esign = require('./src/esign');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
@@ -86,6 +88,35 @@ route('GET', /^\/healthz$/, (req, res) => {
     sendJson(res, { status: 'error', error: String(e.message) }, 503);
   }
 });
+
+// --- Adobe Acrobat Sign webhook (public, CSRF-exempt) -----------------------
+// Adobe verifies the endpoint by sending X-AdobeSign-ClientId (on GET
+// registration and every POST delivery); we must echo it back. Agreement
+// events then trigger a re-sync of the consent's signer statuses.
+function adobeSignWebhook(req, res, ctx) {
+  const sent = req.headers['x-adobesign-clientid'] || '';
+  const expected = esign.webhookClientId();
+  if (sent) res.setHeader('X-AdobeSign-ClientId', sent); // required handshake echo
+  if (expected && sent && sent !== expected) return sendJson(res, { error: 'client id mismatch' }, 403);
+  if (req.method === 'POST') {
+    try {
+      const evt = ctx.body || {};
+      const agreementId = (evt.agreement && evt.agreement.id) || evt.agreementId
+        || (evt.resource && evt.resource.id) || null;
+      if (agreementId && esign.isConfigured()) {
+        const c = repo.consents.getByAgreement(agreementId);
+        if (c) {
+          esign.agreementMembers(agreementId)
+            .then((members) => repo.consents.syncFromMembers(c.id, members))
+            .catch((e) => console.error('esign webhook sync failed:', e.message));
+        }
+      }
+    } catch (e) { console.error('adobe webhook parse failed:', e.message); }
+  }
+  sendJson(res, { ok: true });
+}
+route('GET', /^\/webhooks\/adobe-sign$/, adobeSignWebhook);
+route('POST', /^\/webhooks\/adobe-sign$/, adobeSignWebhook);
 
 // --- Auth -------------------------------------------------------------------
 function safeNext(next) {
@@ -1218,6 +1249,70 @@ route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
   redirect(res, '/admin/vendors');
 });
 
+// --- Written consents (clerk): board action without a meeting ----------------
+route('GET', /^\/admin\/consents\/?$/, (req, res) => sendHtml(res, consentsView.consentsAdmin()));
+route('POST', /^\/admin\/consents$/, (req, res, ctx) => {
+  const b = ctx.body;
+  if (!b.title || !b.body_id) return redirect(res, '/admin/consents');
+  const { id } = repo.consents.create({
+    title: String(b.title).slice(0, 200),
+    body_html: sanitizeHtml(b.body_html || ''),
+    body_id: Number(b.body_id) || null,
+  });
+  redirect(res, `/admin/consents/${id}`);
+});
+route('GET', /^\/admin\/consents\/(\d+)$/, (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, consentsView.consentDetail(c, repo.consents.signers(c.id)));
+});
+// Circulate: send for e-signature via the provider when configured, otherwise
+// leave Circulating for in-app signing.
+route('POST', /^\/admin\/consents\/(\d+)\/circulate$/, async (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  if (c.status !== 'Draft') return redirect(res, `/admin/consents/${c.id}`);
+  const signers = repo.consents.signers(c.id);
+  repo.consents.setStatus(c.id, 'Circulating');
+  if (esign.isConfigured()) {
+    try {
+      const pdfBytes = await pdfGen.generateConsent(c, signers);
+      const sent = await esign.sendForSignature({ name: `${c.number} — ${c.title}`, pdfBytes, signers });
+      repo.consents.setEsign(c.id, { provider: sent.provider, agreementId: sent.agreementId, status: 'OUT_FOR_SIGNATURE' });
+    } catch (e) {
+      console.error('esign send failed:', e.message); // fall back to in-app signing
+    }
+  }
+  redirect(res, `/admin/consents/${c.id}`);
+});
+route('POST', /^\/admin\/consents\/(\d+)\/signers\/(\d+)\/sign$/, (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  if (c.status === 'Circulating') repo.consents.setSignerStatus(Number(ctx.params[1]), 'Signed');
+  redirect(res, `/admin/consents/${c.id}`);
+});
+route('POST', /^\/admin\/consents\/(\d+)\/signers\/(\d+)\/decline$/, (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  if (c.status === 'Circulating') repo.consents.setSignerStatus(Number(ctx.params[1]), 'Declined');
+  redirect(res, `/admin/consents/${c.id}`);
+});
+route('POST', /^\/admin\/consents\/(\d+)\/sync$/, async (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  if (c.esign_agreement_id && esign.isConfigured()) {
+    try { repo.consents.syncFromMembers(c.id, await esign.agreementMembers(c.esign_agreement_id)); }
+    catch (e) { console.error('esign sync failed:', e.message); }
+  }
+  redirect(res, `/admin/consents/${c.id}`);
+});
+route('POST', /^\/admin\/consents\/(\d+)\/withdraw$/, (req, res, ctx) => {
+  const c = repo.consents.get(Number(ctx.params[0]));
+  if (!c) return sendHtml(res, pages.notFound(), 404);
+  if (c.status === 'Draft' || c.status === 'Circulating') repo.consents.setStatus(c.id, 'Withdrawn');
+  redirect(res, `/admin/consents/${c.id}`);
+});
+
 // Implementation progress update (clerk).
 route('POST', /^\/admin\/matters\/(\d+)\/implementation$/, (req, res, ctx) => {
   const m = repo.matters.get(Number(ctx.params[0]));
@@ -1845,7 +1940,10 @@ const server = http.createServer(async (req, res) => {
   // CSRF guard: state-changing requests must originate from this site. All
   // mutating routes are same-origin browser forms/fetches, which always carry
   // an Origin (or Referer) header; cross-site submissions are rejected.
-  if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+  // Inbound provider webhooks are server-to-server (no Origin) and are
+  // authenticated by their own handshake, so they're exempt from the CSRF gate.
+  if (req.method !== 'GET' && req.method !== 'HEAD'
+      && !pathname.startsWith('/webhooks/') && !sameOrigin(req)) {
     return sendHtml(res, forbidden(), 403);
   }
 

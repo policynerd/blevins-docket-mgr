@@ -1617,6 +1617,123 @@ const tas = {
 };
 
 // ---------------------------------------------------------------------------
+// Board actions by unanimous written consent (action without a meeting).
+// ---------------------------------------------------------------------------
+const CONSENT_STATUSES = ['Draft', 'Circulating', 'Adopted', 'Declined', 'Withdrawn'];
+
+const consents = {
+  STATUSES: CONSENT_STATUSES,
+  nextNumber() {
+    const now = new Date();
+    const prefix = `WC-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // "WC-" (3) + "YYMM" (4) = a 7-char prefix, so the suffix starts at position 8.
+    const { m } = db.prepare(
+      `SELECT MAX(CAST(substr(number, 8) AS INTEGER)) AS m FROM consents WHERE number LIKE ? || '%'`).get(prefix);
+    return `${prefix}${String((m || 0) + 1).padStart(2, '0')}`;
+  },
+  // Create a consent and seed one signer per seated director of the body.
+  create(c) {
+    const number = this.nextNumber();
+    const id = db.prepare(`INSERT INTO consents (number, title, body_html, body_id, matter_id, status)
+      VALUES (?,?,?,?,?, 'Draft')`).run(number, c.title, c.body_html || null,
+      c.body_id || null, c.matter_id || null).lastInsertRowid;
+    if (c.body_id) {
+      const members = db.prepare(`SELECT bm.person_id, p.full_name AS name, p.email
+        FROM body_members bm JOIN people p ON p.id = bm.person_id
+        WHERE bm.body_id = ? ORDER BY p.full_name`).all(c.body_id);
+      members.forEach((m, i) => this.addSigner(id, {
+        person_id: m.person_id, name: m.name, email: m.email, sort_order: i,
+      }));
+    }
+    return { id, number };
+  },
+  addSigner(consentId, s) {
+    return db.prepare(`INSERT INTO consent_signers (consent_id, person_id, name, email, sort_order)
+      VALUES (?,?,?,?,?)`).run(consentId, s.person_id || null, s.name, s.email || null,
+      s.sort_order || 0).lastInsertRowid;
+  },
+  get(id) {
+    return db.prepare(`SELECT c.*, b.name AS body_name, m.file_number,
+      (SELECT COUNT(*) FROM consent_signers s WHERE s.consent_id = c.id) AS signer_count,
+      (SELECT COUNT(*) FROM consent_signers s WHERE s.consent_id = c.id AND s.status = 'Signed') AS signed_count
+      FROM consents c
+      LEFT JOIN bodies b ON b.id = c.body_id
+      LEFT JOIN matters m ON m.id = c.matter_id
+      WHERE c.id = ?`).get(id);
+  },
+  list({ includeAll = true } = {}) {
+    const where = includeAll ? '' : "WHERE c.status != 'Withdrawn'";
+    return db.prepare(`SELECT c.*, b.name AS body_name,
+      (SELECT COUNT(*) FROM consent_signers s WHERE s.consent_id = c.id) AS signer_count,
+      (SELECT COUNT(*) FROM consent_signers s WHERE s.consent_id = c.id AND s.status = 'Signed') AS signed_count
+      FROM consents c LEFT JOIN bodies b ON b.id = c.body_id
+      ${where}
+      ORDER BY CASE c.status WHEN 'Circulating' THEN 0 WHEN 'Draft' THEN 1 ELSE 2 END, c.id DESC`).all();
+  },
+  openCount() {
+    return db.prepare("SELECT COUNT(*) AS n FROM consents WHERE status = 'Circulating'").get().n;
+  },
+  signers(consentId) {
+    return db.prepare('SELECT * FROM consent_signers WHERE consent_id = ? ORDER BY sort_order, id').all(consentId);
+  },
+  // Record one signer's decision by row id (in-app path), then recompute.
+  setSignerStatus(signerId, status) {
+    if (!['Signed', 'Declined', 'Pending'].includes(status)) return;
+    const row = db.prepare('SELECT consent_id FROM consent_signers WHERE id = ?').get(signerId);
+    if (!row) return;
+    const signed = status === 'Signed' ? "datetime('now')" : 'NULL';
+    db.prepare(`UPDATE consent_signers SET status = ?, signed_at = ${signed} WHERE id = ?`).run(status, signerId);
+    return this.recompute(row.consent_id);
+  },
+  setStatus(id, status) {
+    if (!CONSENT_STATUSES.includes(status)) return;
+    db.prepare("UPDATE consents SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
+  },
+  setEsign(id, { provider, agreementId, status }) {
+    db.prepare(`UPDATE consents SET esign_provider = ?, esign_agreement_id = ?, esign_status = ?,
+      updated_at = datetime('now') WHERE id = ?`).run(provider || null, agreementId || null, status || null, id);
+  },
+  getByAgreement(agreementId) {
+    return db.prepare('SELECT * FROM consents WHERE esign_agreement_id = ?').get(agreementId);
+  },
+  // Record a signer's decision, matched by person or email, then recompute.
+  markSigner(consentId, { personId = null, email = null }, status) {
+    if (!['Signed', 'Declined', 'Pending'].includes(status)) return;
+    const signed = status === 'Signed' ? "datetime('now')" : 'NULL';
+    let sql = `UPDATE consent_signers SET status = ?, signed_at = ${signed} WHERE consent_id = ? AND `;
+    const args = [status, consentId];
+    if (personId != null) { sql += 'person_id = ?'; args.push(personId); }
+    else { sql += 'lower(email) = lower(?)'; args.push(String(email || '')); }
+    db.prepare(sql).run(...args);
+    return this.recompute(consentId);
+  },
+  // Adopt when every signer has signed; a single decline sends it back.
+  recompute(consentId) {
+    const c = this.get(consentId);
+    if (!c || (c.status !== 'Circulating' && c.status !== 'Draft')) return c;
+    const rows = this.signers(consentId);
+    if (!rows.length) return c;
+    if (rows.some((s) => s.status === 'Declined')) {
+      db.prepare("UPDATE consents SET status = 'Declined', updated_at = datetime('now') WHERE id = ?").run(consentId);
+    } else if (rows.every((s) => s.status === 'Signed')) {
+      db.prepare("UPDATE consents SET status = 'Adopted', adopted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(consentId);
+    }
+    return this.get(consentId);
+  },
+  // Apply a provider's [{ email, status }] snapshot to the signers.
+  syncFromMembers(consentId, members) {
+    (members || []).forEach((m) => {
+      if (!m.email) return;
+      const st = m.status === 'Signed' || m.status === 'Declined' ? m.status : 'Pending';
+      db.prepare(`UPDATE consent_signers SET status = ?, signed_at = CASE WHEN ? = 'Signed' THEN datetime('now') ELSE signed_at END
+        WHERE consent_id = ? AND lower(email) = lower(?)`).run(st, st, consentId, m.email);
+    });
+    return this.recompute(consentId);
+  },
+  remove(id) { db.prepare('DELETE FROM consents WHERE id = ?').run(id); },
+};
+
+// ---------------------------------------------------------------------------
 // Audit log (state-changing requests by signed-in users)
 // ---------------------------------------------------------------------------
 const audit = {
@@ -1839,6 +1956,6 @@ module.exports = {
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
-  proposals, implementation, vendors, procurement, tas,
-  RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, stats, statusBuckets, purgeDomainData,
+  proposals, implementation, vendors, procurement, tas, consents,
+  RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, stats, statusBuckets, purgeDomainData,
 };

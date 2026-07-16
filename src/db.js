@@ -335,6 +335,38 @@ CREATE TABLE IF NOT EXISTS tas_accounts (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Board actions by unanimous written consent (action without a meeting): a
+-- resolution is circulated to every seated director; when all sign it is
+-- adopted, and a single decline sends it back to a meeting. Signatures are
+-- captured in-app, or via an e-signature provider (Adobe Acrobat Sign) when
+-- ADOBE_SIGN_* is configured.
+CREATE TABLE IF NOT EXISTS consents (
+  id INTEGER PRIMARY KEY,
+  number TEXT UNIQUE NOT NULL,              -- WC-YYMM##
+  title TEXT NOT NULL,
+  body_html TEXT,                           -- the resolution text
+  body_id INTEGER REFERENCES bodies(id) ON DELETE SET NULL,     -- which board
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,  -- optional linked file
+  status TEXT NOT NULL DEFAULT 'Draft',     -- Draft | Circulating | Adopted | Declined | Withdrawn
+  esign_provider TEXT,                      -- 'adobe' once sent for e-signature
+  esign_agreement_id TEXT,                  -- provider agreement/envelope id
+  esign_status TEXT,                        -- raw provider status
+  adopted_at TEXT,
+  decline_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS consent_signers (
+  id INTEGER PRIMARY KEY,
+  consent_id INTEGER NOT NULL REFERENCES consents(id) ON DELETE CASCADE,
+  person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  email TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',   -- Pending | Signed | Declined
+  signed_at TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
 -- Citizen proposals (Decidim-style): public ideas gather endorsements; past
 -- the threshold they surface for clerk review, and accepting one creates a
 -- legislative file linked back to the proposal.
@@ -522,6 +554,9 @@ CREATE INDEX IF NOT EXISTS idx_board_apps_status ON board_applications(status);
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON mail_outbox(status);
 CREATE INDEX IF NOT EXISTS idx_endorse_proposal ON proposal_endorsements(proposal_id);
 CREATE INDEX IF NOT EXISTS idx_tas_agency ON tas_accounts(agency);
+CREATE INDEX IF NOT EXISTS idx_consent_signers ON consent_signers(consent_id);
+CREATE INDEX IF NOT EXISTS idx_consents_status ON consents(status);
+CREATE INDEX IF NOT EXISTS idx_consents_agreement ON consents(esign_agreement_id);
 CREATE INDEX IF NOT EXISTS idx_solic_status ON solicitations(status);
 CREATE INDEX IF NOT EXISTS idx_solq_solic ON solicitation_questions(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_bids_solic ON bids(solicitation_id);
@@ -697,6 +732,7 @@ function init() {
 
 function reset() {
   const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'saved_searches', 'matter_relations',
+    'consent_signers', 'consents',
     'bids', 'solicitation_questions', 'solicitations', 'vendors', 'tas_accounts',
     'proposal_endorsements', 'proposals', 'implementation_updates',
     'speaker_requests', 'board_applications', 'public_comments', 'office_staff',

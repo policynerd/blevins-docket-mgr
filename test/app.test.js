@@ -229,6 +229,58 @@ test('org import: builds units with leaders and resolves parents by name', () =>
   assert.equal(bad.errors.length, 2);
 });
 
+test('written consent: seeds signers, adopts on unanimity, declines on refusal', () => {
+  const bId = repo.bodies.insert({ name: 'Consent Board', type: 'Governing Body', seats: 2 });
+  const p1 = repo.people.insert({ full_name: 'Ada Signer', email: 'ada@test.gov' });
+  const p2 = repo.people.insert({ full_name: 'Ben Signer', email: 'ben@test.gov' });
+  repo.bodies.addMember(bId, p1, 'Chair');
+  repo.bodies.addMember(bId, p2, 'Member');
+
+  const { id, number } = repo.consents.create({ title: 'A Resolution by consent', body_html: '<p>Resolved.</p>', body_id: bId });
+  assert.match(number, /^WC-\d{6}$/);
+  assert.equal(repo.consents.get(id).signer_count, 2);
+  const signers = repo.consents.signers(id);
+
+  repo.consents.setStatus(id, 'Circulating');
+  repo.consents.setSignerStatus(signers[0].id, 'Signed');
+  assert.equal(repo.consents.get(id).status, 'Circulating');   // not yet unanimous
+  repo.consents.setSignerStatus(signers[1].id, 'Signed');
+  const adopted = repo.consents.get(id);
+  assert.equal(adopted.status, 'Adopted');
+  assert.ok(adopted.adopted_at);
+
+  // A single decline sends it back.
+  const d = repo.consents.create({ title: 'Another', body_id: bId });
+  repo.consents.setStatus(d.id, 'Circulating');
+  const ds = repo.consents.signers(d.id);
+  repo.consents.setSignerStatus(ds[0].id, 'Signed');
+  repo.consents.setSignerStatus(ds[1].id, 'Declined');
+  assert.equal(repo.consents.get(d.id).status, 'Declined');
+
+  // Provider (Adobe) sync: statuses arrive keyed by email.
+  const e = repo.consents.create({ title: 'Third', body_id: bId });
+  repo.consents.setStatus(e.id, 'Circulating');
+  repo.consents.syncFromMembers(e.id, [
+    { email: 'ada@test.gov', status: 'Signed' },
+    { email: 'BEN@test.gov', status: 'Signed' },       // case-insensitive match
+  ]);
+  assert.equal(repo.consents.get(e.id).status, 'Adopted');
+});
+
+test('esign adapter: inert without config, maps statuses, exposes handshake id', () => {
+  const esign = require('../src/esign');
+  assert.equal(esign.isConfigured({}), false);
+  assert.equal(esign.mapMemberStatus('SIGNED'), 'Signed');
+  assert.equal(esign.mapMemberStatus('DECLINED'), 'Declined');
+  assert.equal(esign.mapMemberStatus('WAITING_FOR_MY_SIGNATURE'), 'Pending');
+  const cfg = {
+    ADOBE_SIGN_BASE_URI: 'https://api.na1.adobesign.com', ADOBE_SIGN_CLIENT_ID: 'cid',
+    ADOBE_SIGN_CLIENT_SECRET: 's', ADOBE_SIGN_REFRESH_TOKEN: 'r',
+  };
+  assert.equal(esign.isConfigured(cfg), true);
+  assert.equal(esign.webhookClientId(cfg), 'cid');
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');
