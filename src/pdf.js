@@ -162,4 +162,73 @@ async function generatePacket(meeting) {
   return pdfDoc.save();
 }
 
-module.exports = { generatePacket };
+// Strip HTML to plain paragraphs for the consent body.
+function htmlToParagraphs(html) {
+  const text = String(html || '')
+    .replace(/<\s*(br|\/p|\/div|\/li)\s*>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+  return text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+}
+
+// Unanimous-written-consent cover sheet: the resolution text plus a signature
+// line for each director. Signatures are captured by the e-sign provider or
+// in person; this is the document of record.
+async function generateConsent(consent, signers) {
+  const pdfDoc = await PDFDocument.create();
+  const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  let page = pdfDoc.addPage([W, H]);
+  let y = H - MARGIN;
+
+  const ensure = (need) => { if (y - need < MARGIN) { page = pdfDoc.addPage([W, H]); y = H - MARGIN; } };
+  const wrap = (str, size, font) => {
+    const words = String(str).split(/\s+/);
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const trial = line ? line + ' ' + w : w;
+      if (font.widthOfTextAtSize(trial, size) > CONTENT_W && line) { lines.push(line); line = w; }
+      else line = trial;
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+  const para = (str, { size = 10.5, font = fontR, color = INK, gap = 6, lead = 14 } = {}) => {
+    for (const ln of wrap(str, size, font)) {
+      ensure(lead);
+      page.drawText(ln, { x: MARGIN, y, size, font, color });
+      y -= lead;
+    }
+    y -= gap;
+  };
+
+  para(ORG.name, { size: 18, font: fontB, color: ACCENT, gap: 4, lead: 22 });
+  if (consent.body_name) para(consent.body_name, { size: 13, font: fontB, gap: 4, lead: 17 });
+  para('ACTION BY UNANIMOUS WRITTEN CONSENT', { size: 11, font: fontB, color: MUTED, gap: 2, lead: 15 });
+  para(consent.number + '  ·  ' + formatDate(consent.created_at || new Date().toISOString()), { size: 10, color: MUTED, gap: 12, lead: 13 });
+
+  para(consent.title, { size: 13, font: fontB, gap: 10, lead: 17 });
+  para('The undersigned, constituting all of the members of the ' + (consent.body_name || 'body')
+    + ', hereby adopt the following resolution by unanimous written consent, without a meeting:',
+  { size: 10.5, gap: 12 });
+
+  for (const p of htmlToParagraphs(consent.body_html)) para(p, { size: 10.5, gap: 8 });
+
+  y -= 8;
+  ensure(30);
+  para('SIGNATURES', { size: 11, font: fontB, color: ACCENT, gap: 10, lead: 15 });
+  for (const s of signers) {
+    ensure(46);
+    page.drawLine({ start: { x: MARGIN, y: y }, end: { x: MARGIN + 260, y: y }, thickness: 0.75, color: MUTED });
+    y -= 13;
+    page.drawText(s.name + (s.status === 'Signed' ? '   (signed' + (s.signed_at ? ' ' + formatDate(s.signed_at) : '') + ')' : ''),
+      { x: MARGIN, y, size: 10, font: fontB, color: INK });
+    y -= 30;
+  }
+  return pdfDoc.save();
+}
+
+module.exports = { generatePacket, generateConsent };

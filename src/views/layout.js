@@ -54,7 +54,10 @@ function navFor(user) {
     workspace.push({ href: '/approvals', label: 'Approvals', badge: count || null });
   }
   if (rank >= RANK.staff) workspace.push({ href: '/govern/members', label: 'Membership' });
-  if (rank >= RANK.clerk) workspace.push({ href: '/admin', label: 'Clerk Workspace' });
+  if (rank >= RANK.clerk) {
+    workspace.push({ href: '/admin/consents', label: 'Written Consents' });
+    workspace.push({ href: '/admin', label: 'Clerk Workspace' });
+  }
   if (workspace.length) groups.push({ label: 'Workspace', items: workspace });
   return groups;
 }
