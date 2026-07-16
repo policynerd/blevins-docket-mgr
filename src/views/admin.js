@@ -44,6 +44,7 @@ function adminHome(user) {
       <a class="btn" href="/admin/users">Users &amp; roles</a>
       <a class="btn" href="/admin/import">Import roster (CSV)</a>
       <a class="btn" href="/admin/branding">Branding</a>
+      <a class="btn" href="/admin/integrations">Integrations</a>
       <a class="btn" href="/admin/audit">Audit log</a>
       <a class="btn" href="/admin/mail">Email</a>
       <a class="btn" href="/admin/footer">Footer</a>

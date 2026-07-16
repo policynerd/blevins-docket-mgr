@@ -1017,6 +1017,57 @@ route('POST', /^\/admin\/announcement$/, (req, res, ctx) => {
   redirect(res, '/admin/announcement?saved=1');
 });
 
+// Integrations — Adobe Acrobat Sign OAuth connect flow (clerk) ----------------
+function adobeRedirectUri(req) {
+  const base = (process.env.APP_BASE_URL || '').replace(/\/+$/, '')
+    || `${(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim()}://${req.headers.host}`;
+  return base + '/admin/integrations/adobe/callback';
+}
+route('GET', /^\/admin\/integrations\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  sendHtml(res, govern.integrationsPage({ status: ctx.query.status || '' }));
+});
+route('POST', /^\/admin\/integrations\/adobe$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  esign.saveCredentials({
+    clientId: ctx.body.client_id, clientSecret: ctx.body.client_secret,
+    region: ctx.body.region, scopes: ctx.body.scopes, webhookClientId: ctx.body.webhook_client_id,
+  });
+  redirect(res, '/admin/integrations?status=saved');
+});
+route('GET', /^\/admin\/integrations\/adobe\/connect$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const { db: sdb } = require('./src/db');
+  const state = require('node:crypto').randomBytes(16).toString('hex');
+  sdb.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('adobe.oauth_state', ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(state);
+  redirect(res, esign.authorizeUrl({ redirectUri: adobeRedirectUri(req), state }), 302);
+});
+route('GET', /^\/admin\/integrations\/adobe\/callback$/, async (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const { db: sdb } = require('./src/db');
+  const row = sdb.prepare("SELECT value FROM settings WHERE key = 'adobe.oauth_state'").get();
+  sdb.prepare("DELETE FROM settings WHERE key = 'adobe.oauth_state'").run();
+  if (ctx.query.error || !ctx.query.code || !row || ctx.query.state !== row.value) {
+    return redirect(res, '/admin/integrations?status=error');
+  }
+  try {
+    await esign.exchangeCode({
+      code: ctx.query.code, redirectUri: adobeRedirectUri(req),
+      apiAccessPoint: ctx.query.api_access_point || '',
+    });
+    redirect(res, '/admin/integrations?status=connected');
+  } catch (e) {
+    console.error('adobe connect failed:', e.message);
+    redirect(res, '/admin/integrations?status=error');
+  }
+});
+route('POST', /^\/admin\/integrations\/adobe\/disconnect$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  esign.disconnect();
+  redirect(res, '/admin/integrations?status=disconnected');
+});
+
 // Agenda template (admin) ----------------------------------------------------
 route('GET', /^\/admin\/agenda-template\/?$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;

@@ -16,15 +16,39 @@
 //   ADOBE_SIGN_REFRESH_TOKEN
 //   ADOBE_SIGN_WEBHOOK_CLIENT_ID  (optional; defaults to client id for the handshake)
 
+const { db } = require('./db');
+
 const PROVIDER = 'adobe';
+// Requested OAuth scopes (adjustable from the admin form to match your Adobe
+// API application). Account-level so a clerk-admin can send org agreements.
+const DEFAULT_SCOPES = 'agreement_send:account agreement_read:account agreement_write:account webhook_write:account';
+
+// In-app configuration lives in the settings table under "adobe.*" (set via the
+// admin Connect flow); environment variables are the fallback.
+function fromSettings() {
+  try {
+    const rows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'adobe.%'").all();
+    const s = {};
+    for (const r of rows) s[r.key.slice(6)] = r.value;
+    return s;
+  } catch (_) { return {}; }
+}
+function putSetting(key, value) {
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run('adobe.' + key, value == null ? '' : String(value));
+}
+function delSetting(key) { db.prepare('DELETE FROM settings WHERE key = ?').run('adobe.' + key); }
 
 function config(env = process.env) {
+  const s = fromSettings();
   return {
-    baseUri: String(env.ADOBE_SIGN_BASE_URI || '').replace(/\/+$/, ''),
-    clientId: env.ADOBE_SIGN_CLIENT_ID || '',
-    clientSecret: env.ADOBE_SIGN_CLIENT_SECRET || '',
-    refreshToken: env.ADOBE_SIGN_REFRESH_TOKEN || '',
-    webhookClientId: env.ADOBE_SIGN_WEBHOOK_CLIENT_ID || env.ADOBE_SIGN_CLIENT_ID || '',
+    baseUri: String(s.base_uri || env.ADOBE_SIGN_BASE_URI || '').replace(/\/+$/, ''),
+    region: s.region || env.ADOBE_SIGN_REGION || '',
+    clientId: s.client_id || env.ADOBE_SIGN_CLIENT_ID || '',
+    clientSecret: s.client_secret || env.ADOBE_SIGN_CLIENT_SECRET || '',
+    refreshToken: s.refresh_token || env.ADOBE_SIGN_REFRESH_TOKEN || '',
+    scopes: s.scopes || DEFAULT_SCOPES,
+    webhookClientId: s.webhook_client_id || env.ADOBE_SIGN_WEBHOOK_CLIENT_ID || s.client_id || env.ADOBE_SIGN_CLIENT_ID || '',
   };
 }
 
@@ -155,8 +179,78 @@ async function combinedDocument(agreementId, env = process.env) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+// --- In-app OAuth "Connect" flow --------------------------------------------
+// The admin saves the API app's client id/secret + region, clicks Connect
+// (authorize at Adobe), and the callback exchanges the code for a long-lived
+// refresh token — no manual token juggling.
+
+function resetToken() { _token = { value: '', exp: 0 }; }
+
+// Persist the API-application credentials from the admin form.
+function saveCredentials({ clientId, clientSecret, region, scopes, webhookClientId }) {
+  if (clientId != null) putSetting('client_id', clientId.trim());
+  if (clientSecret != null && clientSecret !== '') putSetting('client_secret', clientSecret.trim());
+  if (region != null) {
+    const r = region.trim();
+    putSetting('region', r);
+    if (r) putSetting('base_uri', `https://api.${r}.adobesign.com`);
+  }
+  putSetting('scopes', (scopes && scopes.trim()) || DEFAULT_SCOPES);
+  if (webhookClientId != null) putSetting('webhook_client_id', webhookClientId.trim());
+  resetToken();
+}
+
+// The authorize URL to send the admin to (region-specific host).
+function authorizeUrl({ redirectUri, state }, env = process.env) {
+  const c = config(env);
+  const region = c.region || 'na1';
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri, response_type: 'code', client_id: c.clientId, scope: c.scopes, state,
+  });
+  return `https://secure.${region}.adobesign.com/public/oauth/v2?${params.toString()}`;
+}
+
+// Exchange the authorization code for tokens. Adobe returns the correct API
+// base in `apiAccessPoint`; we store it so later calls hit the right shard.
+async function exchangeCode({ code, redirectUri, apiAccessPoint }, env = process.env) {
+  const c = config(env);
+  const base = String(apiAccessPoint || c.baseUri || `https://api.${c.region || 'na1'}.adobesign.com`).replace(/\/+$/, '');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code', client_id: c.clientId, client_secret: c.clientSecret,
+    redirect_uri: redirectUri, code,
+  });
+  const res = await fetch(base + '/oauth/v2/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw new Error('Adobe token exchange failed: ' + res.status + ' ' + (await res.text()).slice(0, 200));
+  const json = await res.json();
+  if (!json.refresh_token) throw new Error('Adobe token exchange returned no refresh_token');
+  putSetting('refresh_token', json.refresh_token);
+  putSetting('base_uri', base);
+  resetToken();
+  return json;
+}
+
+function disconnect() { delSetting('refresh_token'); resetToken(); }
+
+// Whether credentials are saved and whether we hold a refresh token.
+function status(env = process.env) {
+  const c = config(env);
+  return {
+    hasCredentials: !!(c.clientId && c.clientSecret),
+    connected: !!c.refreshToken,
+    region: c.region,
+    baseUri: c.baseUri,
+    scopes: c.scopes,
+    webhookClientId: c.webhookClientId,
+    clientId: c.clientId,
+  };
+}
+
 module.exports = {
   PROVIDER, config, isConfigured, webhookClientId, accessToken,
   sendForSignature, agreementMembers, combinedDocument, mapMemberStatus,
-  _resetTokenCacheForTests: function () { _token = { value: '', exp: 0 }; },
+  saveCredentials, authorizeUrl, exchangeCode, disconnect, status,
+  _resetTokenCacheForTests: resetToken,
 };
