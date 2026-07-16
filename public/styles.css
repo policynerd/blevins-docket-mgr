@@ -88,7 +88,7 @@ h1 { font-size: 25px; letter-spacing: -.2px; }
 .util-right > a { color: #cfe0f2; }
 .util-right > a:hover { color: #fff; }
 
-.main-area { padding: 24px; width: 100%; max-width: 1360px; }
+.main-area { padding: 24px; width: 100%; max-width: 1360px; flex: 1 0 auto; }
 .page-head { margin-bottom: 18px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 .page-head h1 { margin: 0 0 3px; color: var(--accent-dark); font-family: var(--serif); }
 
@@ -548,20 +548,19 @@ table.data.sortable thead th { padding: 0; }
 .topic-notice { background: #fff8e6; border: 1px solid #f0d98a; border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; font-size: 13px; }
 .att-list li { display: flex; gap: 10px; align-items: center; }
 
-/* Footer */
+/* Footer — anchored to the bottom, aligned with page content */
 .site-footer { border-top: 3px solid var(--gold); background: var(--banner); color: #cfe0f2;
-  padding: 24px; margin-top: 30px; }
-.footer-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
-  max-width: 1200px; margin: 0 auto; }
-.footer-legal { max-width: 1200px; margin: 14px auto 0; }
+  padding: 20px 24px; margin-top: 0; flex-shrink: 0; }
+.footer-inner { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px 48px;
+  flex-wrap: wrap; max-width: 1360px; }
 .site-footer strong { color: #fff; }
-.site-footer p { margin: 4px 0 0; font-size: 13px; }
-.footer-links { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.site-footer p { margin: 4px 0 0; font-size: 13px; color: #b9cde2; }
+.footer-links { display: flex; gap: 8px 18px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .site-footer a { color: #cfe0f2; }
 .site-footer a:hover { color: #fff; }
-.footer-legal { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.15);
-  font-size: 12px; color: #b9cde2; }
-.footer-legal a { color: #cfe0f2; }
+.footer-legal { max-width: 1360px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.15); font-size: 12px; color: #93aecb; }
+.footer-legal a { color: #b9cde2; }
 
 @media (max-width: 900px) {
   .stat-grid, .stat-grid.small { grid-template-columns: repeat(2, 1fr); }
