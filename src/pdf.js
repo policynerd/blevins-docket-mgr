@@ -162,14 +162,21 @@ async function generatePacket(meeting) {
   return pdfDoc.save();
 }
 
-// Strip HTML to plain paragraphs for the consent body.
+// Strip HTML to plain paragraphs for the consent body (the result is drawn as
+// PDF text, never re-rendered as HTML).
 function htmlToParagraphs(html) {
-  const text = String(html || '')
+  let text = String(html || '')
     .replace(/<\s*(br|\/p|\/div|\/li)\s*>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '• ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+    .replace(/<li[^>]*>/gi, '• ');
+  // Remove remaining tags; loop until stable so nested or split tags
+  // (e.g. "<scr<b>ipt>") can't survive a single pass, then drop stray brackets.
+  let prev;
+  do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
+  text = text.replace(/[<>]/g, '');
+  // Decode entities, with &amp; LAST so "&amp;lt;" stays the literal "&lt;".
+  text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
   return text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
 }
 
