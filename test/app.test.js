@@ -281,6 +281,28 @@ test('esign adapter: inert without config, maps statuses, exposes handshake id',
   assert.equal(esign.webhookClientId(cfg), 'cid');
 });
 
+test('announcement banner: set/get, trims, validates level, seeds once', () => {
+  const ann = require('../src/announcement');
+  ann.set({ text: '  Meeting moved to 11:30 a.m.  ', level: 'urgent', active: true });
+  let a = ann.get();
+  assert.equal(a.text, 'Meeting moved to 11:30 a.m.');   // trimmed
+  assert.equal(a.level, 'urgent');
+  assert.equal(a.active, true);
+
+  ann.set({ text: '', level: 'info', active: true });     // blank text → off
+  assert.equal(ann.get().active, false);
+
+  ann.set({ text: 'x', level: 'bogus', active: true });   // unknown level → warning
+  assert.equal(ann.get().level, 'warning');
+
+  ann.set({ text: '', active: false });                   // clear before seeding
+  ann.seedIfAbsent({ text: 'Seeded notice', level: 'warning' });
+  assert.equal(ann.get().text, 'Seeded notice');
+  assert.equal(ann.get().active, true);
+  ann.seedIfAbsent({ text: 'Second seed', level: 'urgent' }); // guarded → no-op
+  assert.equal(ann.get().text, 'Seeded notice');
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');

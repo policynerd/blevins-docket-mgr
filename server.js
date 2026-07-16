@@ -38,6 +38,7 @@ const proposalsView = require('./src/views/proposals');
 const procurementView = require('./src/views/procurement');
 const consentsView = require('./src/views/consents');
 const esign = require('./src/esign');
+const announcement = require('./src/announcement');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
@@ -49,6 +50,11 @@ const {
 init();
 // Apply any saved in-app branding overrides on top of env/defaults.
 org.refresh();
+// One-time initial site announcement (a clerk edits or clears it live after).
+announcement.seedIfAbsent({
+  text: `Notice: The ${org.ORG.primaryBody} meeting has been moved to 11:30 a.m., pending the ${org.ORG.chairTitle}'s emergency root canal surgery.`,
+  level: 'warning',
+});
 
 // Sample data is only seeded for explicit demo instances; production starts
 // empty and is populated through the admin tools.
@@ -1001,6 +1007,14 @@ route('POST', /^\/admin\/branding$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
   org.update(ctx.body);
   redirect(res, '/admin/branding?saved=1');
+});
+
+// Site announcement banner (clerk) -------------------------------------------
+route('GET', /^\/admin\/announcement\/?$/, (req, res, ctx) =>
+  sendHtml(res, govern.announcementPage({ saved: ctx.query.saved === '1' })));
+route('POST', /^\/admin\/announcement$/, (req, res, ctx) => {
+  announcement.set({ text: ctx.body.text, level: ctx.body.level, active: ctx.body.active === '1' });
+  redirect(res, '/admin/announcement?saved=1');
 });
 
 // Agenda template (admin) ----------------------------------------------------

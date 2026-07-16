@@ -451,4 +451,33 @@ function mattersImportPage({ result = null } = {}) {
   return layout({ title: 'Import legislative files', active: '/admin', body });
 }
 
-module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage };
+function announcementPage({ saved = false } = {}) {
+  const announcement = require('../announcement');
+  const a = announcement.get();
+  const levelOpts = announcement.LEVELS.map((lv) =>
+    `<option value="${lv}"${a.level === lv ? ' selected' : ''}>${escapeText(lv[0].toUpperCase() + lv.slice(1))}</option>`).join('');
+  const preview = a.text
+    ? `<div class="announce announce-${escapeText(a.level)}"><span class="announce-ic">📢</span><span class="announce-text">${escapeText(a.text)}</span></div>`
+    : emptyState('No announcement is currently showing.');
+
+  const form = html`
+    <form class="form" method="post" action="/admin/announcement">
+      <label>Message<textarea name="text" rows="3" maxlength="500" placeholder="e.g. The Board meeting has been moved to 11:30 a.m.">${escapeText(a.text)}</textarea></label>
+      <div class="form-row">
+        <label>Level<select name="level">${raw(levelOpts)}</select></label>
+        <label class="check-label"><input type="checkbox" name="active" value="1"${a.active ? ' checked' : ''}> Show the banner site-wide</label>
+      </div>
+      <button type="submit" class="btn primary">Save announcement</button>
+    </form>
+    <p class="muted">Clear the message or uncheck the box to take the banner down. It shows on every page, above the content.</p>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Announcement</p>
+    <h1>Site announcement banner</h1>
+    ${saved ? raw('<p class="saved-banner">Announcement saved.</p>') : ''}
+    ${raw(card('Current banner', preview))}
+    ${raw(card('Edit', form))}`;
+  return layout({ title: 'Announcement', active: '/admin', body });
+}
+
+module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage };

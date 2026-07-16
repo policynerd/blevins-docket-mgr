@@ -56,6 +56,7 @@ function navFor(user) {
   if (rank >= RANK.staff) workspace.push({ href: '/govern/members', label: 'Membership' });
   if (rank >= RANK.clerk) {
     workspace.push({ href: '/admin/consents', label: 'Written Consents' });
+    workspace.push({ href: '/admin/announcement', label: 'Announcement' });
     workspace.push({ href: '/admin', label: 'Clerk Workspace' });
   }
   if (workspace.length) groups.push({ label: 'Workspace', items: workspace });
@@ -131,6 +132,15 @@ function sideNav(user, active) {
   }).join('');
 }
 
+function announcementBanner() {
+  let a;
+  try { a = require('../announcement').get(); } catch (_) { return ''; }
+  if (!a.active || !a.text) return '';
+  return `<div class="announce announce-${escapeText(a.level)}" role="alert">`
+    + `<span class="announce-ic" aria-hidden="true">📢</span>`
+    + `<span class="announce-text">${escapeText(a.text)}</span></div>`;
+}
+
 function layout({ title, active, body, subtitle, head }) {
   const user = _user;
   const authArea = user
@@ -177,6 +187,7 @@ function layout({ title, active, body, subtitle, head }) {
           ${authArea}
         </span>
       </div>
+      ${announcementBanner()}
       <main class="main-area">
         ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
         ${body}
