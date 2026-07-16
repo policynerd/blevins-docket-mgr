@@ -115,7 +115,17 @@ function orgAdmin() {
     </div>
     ${raw(card('Manage organization', tree.length
       ? `<ul class="org-tree admin">${tree.map(adminNode).join('')}</ul>`
-      : emptyState('No units yet — add your first division.')))}`;
+      : emptyState('No units yet — add your first division.')))}
+    ${raw(card('Import units & leaders', `
+      <p class="muted">Bulk-load the org chart and its leaders. Columns:
+        <code>level,name,parent,leader_name,leader_title,leader_email,leader_phone,description</code>.
+        Level is one of ${repo.ORG_LEVELS.join(' / ')}; <code>parent</code> is another unit's name
+        (list parents before their children). Importing adds units — it never deletes existing ones.</p>
+      <form class="form" method="post" action="/admin/org/import">
+        <label>Org chart CSV<textarea name="csv" rows="6" placeholder="Division,Office of the Executive,,Jane Roe,Executive Director,jroe@example.gov,,
+Department,Finance,Office of the Executive,John Doe,Finance Director,jdoe@example.gov,,"></textarea></label>
+        <button type="submit" class="btn primary">Import units</button>
+      </form>`))}`;
   return layout({ title: 'Manage organization', active: '/admin',
     subtitle: 'Build the org chart down to each unit and its leader.', body });
 }

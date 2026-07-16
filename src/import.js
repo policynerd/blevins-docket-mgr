@@ -311,4 +311,58 @@ function importTasRegister(text) {
   return r;
 }
 
-module.exports = { importRoster, importMatters, importBudgetLines, importBudgetTransactions, importTasRegister };
+// --- Org chart import (units + their leaders) --------------------------------
+// Columns: level, name, parent, leader_name, leader_title, leader_email,
+// leader_phone, description. `parent` is another unit's name — list parents
+// before their children (or they can already exist). Adds units; never deletes.
+function importOrgUnits(text) {
+  const rows = parseCsv(text);
+  const r = { rows: rows.length, created: 0, errors: [] };
+  if (!rows.length) {
+    r.errors.push('No data rows found. Include a header row (level,name,parent,leader_name,leader_title,leader_email,leader_phone,description).');
+    return r;
+  }
+  // name -> id for existing units plus any created during this import (parents).
+  const byName = new Map();
+  for (const u of repo.org.all()) byName.set(u.name.toLowerCase(), u.id);
+  db.exec('SAVEPOINT sp_import_org');
+  try {
+    rows.forEach((row, idx) => {
+      const line = idx + 2;
+      const name = (row.name || '').trim();
+      const level = (row.level || '').trim();
+      if (!name) { r.errors.push(`Line ${line}: name is required.`); return; }
+      if (!repo.ORG_LEVELS.includes(level)) {
+        r.errors.push(`Line ${line}: invalid level "${level}" (use one of: ${repo.ORG_LEVELS.join(', ')}).`); return;
+      }
+      const parentName = (row.parent || row.parent_name || '').trim();
+      let parentId = null;
+      if (parentName) {
+        parentId = byName.get(parentName.toLowerCase());
+        if (parentId == null) {
+          r.errors.push(`Line ${line}: parent "${parentName}" not found — list it earlier in the file or create it first.`); return;
+        }
+      }
+      const id = repo.org.insert({
+        parent_id: parentId, level, name,
+        leader_name: (row.leader_name || row.leader || '').trim() || null,
+        leader_title: (row.leader_title || row.title || '').trim() || null,
+        leader_email: (row.leader_email || row.email || '').trim() || null,
+        leader_phone: (row.leader_phone || row.phone || '').trim() || null,
+        description: (row.description || '').trim() || null,
+        sort_order: Number(row.sort_order) || 0,
+      });
+      byName.set(name.toLowerCase(), id);
+      r.created++;
+    });
+    db.exec('RELEASE sp_import_org');
+  } catch (e) {
+    db.exec('ROLLBACK TO sp_import_org'); db.exec('RELEASE sp_import_org');
+    throw e;
+  }
+  return r;
+}
+
+module.exports = {
+  importRoster, importMatters, importBudgetLines, importBudgetTransactions, importTasRegister, importOrgUnits,
+};

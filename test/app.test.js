@@ -206,6 +206,29 @@ test('TAS register: import upserts, searches, enriches, and round-trips CSV', ()
   assert.ok(bad.errors.length >= 1);
 });
 
+test('org import: builds units with leaders and resolves parents by name', () => {
+  const imp = require('../src/import');
+  const csv = [
+    'level,name,parent,leader_name,leader_title,leader_email',
+    'Division,Executive Office,,Jane Roe,Executive Director,jroe@x.gov',
+    'Department,Finance,Executive Office,John Doe,Finance Director,jdoe@x.gov',
+  ].join('\n');
+  const res = imp.importOrgUnits(csv);
+  assert.equal(res.created, 2);
+  assert.equal(res.errors.length, 0);
+  const all = repo.org.all();
+  const exec = all.find((u) => u.name === 'Executive Office');
+  const fin = all.find((u) => u.name === 'Finance');
+  assert.equal(exec.leader_name, 'Jane Roe');
+  assert.equal(exec.leader_title, 'Executive Director');
+  assert.equal(fin.parent_id, exec.id);          // parent resolved by name
+  assert.equal(fin.leader_email, 'jdoe@x.gov');
+  // Invalid level and an unknown parent are each reported.
+  const bad = imp.importOrgUnits('level,name,parent\nBogus,X,\nDepartment,Y,Nowhere\n');
+  assert.equal(bad.created, 0);
+  assert.equal(bad.errors.length, 2);
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');

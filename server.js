@@ -878,6 +878,10 @@ route('POST', /^\/admin\/org$/, (req, res, ctx) => {
   });
   redirect(res, `/org/${id}`);
 });
+route('POST', /^\/admin\/org\/import$/, (req, res, ctx) => {
+  importer.importOrgUnits(ctx.body.csv || '');
+  redirect(res, '/admin/org');
+});
 route('GET', /^\/admin\/org\/(\d+)\/edit$/, (req, res, ctx) => {
   const u = repo.org.get(Number(ctx.params[0]));
   if (!u) return sendHtml(res, pages.notFound(), 404);

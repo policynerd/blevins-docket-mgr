@@ -4,20 +4,32 @@ const { html, raw, formatDate } = require('../util');
 const { ORG } = require('../org');
 const { getFooterHtml } = require('../footer-content');
 
-const NAV = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/legislation', label: 'Legislation' },
-  { href: '/calendar', label: 'Calendar' },
-  { href: '/docket', label: "Today's Docket" },
-  { href: '/people', label: ORG.membersLabel },
-  { href: '/bodies', label: 'Bodies & Committees' },
-  { href: '/policies', label: 'Policies' },
-  { href: '/budget', label: 'Budget' },
-  { href: '/procurement', label: 'Procurement' },
-  { href: '/proposals', label: 'Proposals' },
-  { href: '/accountability', label: 'Accountability' },
-  { href: '/org', label: 'Organization' },
+// Primary navigation, grouped into sidebar sections. Labels are resolved live
+// at render time (branding can rename the members label).
+const NAV_GROUPS = [
+  { label: null, items: [{ href: '/', label: 'Dashboard' }] },
+  { label: 'Legislation', items: [
+    { href: '/legislation', label: 'Legislation' },
+    { href: '/calendar', label: 'Calendar' },
+    { href: '/docket', label: "Today's Docket" },
+    { href: '/policies', label: 'Policies' },
+  ] },
+  { label: 'Finance', items: [
+    { href: '/budget', label: 'Budget' },
+    { href: '/procurement', label: 'Procurement' },
+  ] },
+  { label: 'People & Bodies', items: [
+    { href: '/people', label: ORG.membersLabel },
+    { href: '/bodies', label: 'Bodies & Committees' },
+    { href: '/org', label: 'Organization' },
+  ] },
+  { label: 'Participate', items: [
+    { href: '/proposals', label: 'Proposals' },
+    { href: '/accountability', label: 'Accountability' },
+  ] },
 ];
+// Flat list kept for any consumer that iterates the whole nav.
+const NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 // Request-scoped current user. Handlers render synchronously after this is set
 // (no awaits between setUser and rendering), so a module field is safe here.
@@ -25,21 +37,26 @@ let _user = null;
 function setUser(u) { _user = u; }
 
 const RANK = { public: 0, member: 1, staff: 2, clerk: 3 };
+// Returns nav as groups [{ label, items:[{ href, label, badge? }] }], with the
+// members label re-resolved live and role-gated sections appended.
 function navFor(user) {
-  // Re-resolve the live members label (branding may have changed it).
-  const items = NAV.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : n));
+  const groups = NAV_GROUPS.map((g) => ({
+    label: g.label,
+    items: g.items.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : { ...n })),
+  }));
   const rank = user ? (RANK[user.role] || 0) : 0;
+  const workspace = [];
   if (rank >= RANK.member) {
-    items.push({ href: '/member', label: 'Member Portal' });
+    workspace.push({ href: '/member', label: 'Member Portal' });
     // Approvals routed to this user (lazy require avoids a load-order cycle).
-    try {
-      const n = require('../repo').workflow.inboxCount(user.id, rank >= RANK.clerk);
-      items.push({ href: '/approvals', label: n ? `Approvals (${n})` : 'Approvals' });
-    } catch (_) { items.push({ href: '/approvals', label: 'Approvals' }); }
+    let count = 0;
+    try { count = require('../repo').workflow.inboxCount(user.id, rank >= RANK.clerk); } catch (_) { /* ignore */ }
+    workspace.push({ href: '/approvals', label: 'Approvals', badge: count || null });
   }
-  if (rank >= RANK.staff) items.push({ href: '/govern/members', label: 'Membership' });
-  if (rank >= RANK.clerk) items.push({ href: '/admin', label: 'Clerk Workspace' });
-  return items;
+  if (rank >= RANK.staff) workspace.push({ href: '/govern/members', label: 'Membership' });
+  if (rank >= RANK.clerk) workspace.push({ href: '/admin', label: 'Clerk Workspace' });
+  if (workspace.length) groups.push({ label: 'Workspace', items: workspace });
+  return groups;
 }
 
 // Brand color override (validated hex only) applied live via CSS variables.
@@ -99,13 +116,20 @@ function escapeText(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Grouped left-rail navigation. Groups render as labelled sections of links.
+function sideNav(user, active) {
+  return navFor(user).map((g) => {
+    const links = g.items.map((n) => {
+      const badge = n.badge ? `<span class="nav-badge">${escapeText(n.badge)}</span>` : '';
+      return `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}${badge}</a>`;
+    }).join('');
+    const label = g.label ? `<div class="nav-group-label">${escapeText(g.label)}</div>` : '';
+    return `<div class="nav-group">${label}${links}</div>`;
+  }).join('');
+}
+
 function layout({ title, active, body, subtitle, head }) {
   const user = _user;
-  const nav = navFor(user).map((n) => {
-    const isActive = n.href === active;
-    return html`<a class="${isActive ? 'active' : ''}" href="${n.href}">${n.label}</a>`;
-  });
-
   const authArea = user
     ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
        <form method="post" action="/logout" class="util-logout"><button type="submit">Sign out</button></form>`
@@ -125,18 +149,9 @@ function layout({ title, active, body, subtitle, head }) {
   ${head || ''}
 </head>
 <body>
-  <div class="gov-utility">
-    <div class="wrap util-inner">
-      <span class="util-left">${escapeText(ORG.name)}</span>
-      <span class="util-right">
-        <a href="/api/v1">Developers / API</a>
-        <a href="/legislation.rss">RSS</a>
-        ${authArea}
-      </span>
-    </div>
-  </div>
-  <header class="gov-banner">
-    <div class="wrap banner-inner">
+  <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
+  <div class="app">
+    <aside class="sidebar" aria-label="Primary navigation">
       <a class="brand" href="/">
         ${brandMark()}
         <span class="brand-text">
@@ -144,40 +159,48 @@ function layout({ title, active, body, subtitle, head }) {
           <small>${escapeText(ORG.tagline)}</small>
         </span>
       </a>
-      <form class="banner-search" action="/legislation" method="get" role="search">
-        <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
-        <button type="submit">Search</button>
-      </form>
-    </div>
-  </header>
-  <nav class="gov-tabs" aria-label="Primary">
-    <div class="wrap tabs-inner">${nav.join('')}</div>
-  </nav>
-  <main class="wrap main-area">
-    ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
-    ${body}
-  </main>
-  <footer class="site-footer">
-    <div class="wrap footer-inner">
-      <div>
-        <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
-        ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
+      <nav class="sidenav">${sideNav(user, active)}</nav>
+    </aside>
+    <div class="content">
+      <div class="topbar">
+        <label for="nav-toggle-cb" class="nav-toggle" aria-label="Toggle navigation">☰</label>
+        <form class="banner-search" action="/legislation" method="get" role="search">
+          <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
+          <button type="submit">Search</button>
+        </form>
+        <span class="util-right">
+          <a href="/api/v1">Developers / API</a>
+          <a href="/legislation.rss">RSS</a>
+          ${authArea}
+        </span>
       </div>
-      <div class="footer-links">
-        <a href="/legislation">Legislation</a>
-        <a href="/calendar">Calendar</a>
-        <a href="/policies">Policies</a>
-        <a href="/org">Organization</a>
-        <a href="/api/v1">Web API</a>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-      </div>
+      <main class="main-area">
+        ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
+        ${body}
+      </main>
+      <footer class="site-footer">
+        <div class="footer-inner">
+          <div>
+            <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
+            ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
+          </div>
+          <div class="footer-links">
+            <a href="/legislation">Legislation</a>
+            <a href="/calendar">Calendar</a>
+            <a href="/policies">Policies</a>
+            <a href="/org">Organization</a>
+            <a href="/api/v1">Web API</a>
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+          </div>
+        </div>
+        <div class="footer-legal">
+          © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
+          · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
+        </div>
+      </footer>
     </div>
-    <div class="footer-legal wrap">
-      © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
-      · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
-    </div>
-  </footer>
+  </div>
 </body>
 </html>`;
 }
