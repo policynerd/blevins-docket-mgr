@@ -281,6 +281,33 @@ test('esign adapter: inert without config, maps statuses, exposes handshake id',
   assert.equal(esign.webhookClientId(cfg), 'cid');
 });
 
+test('adobe connect: saves credentials, builds authorize URL, connects/disconnects', () => {
+  const esign = require('../src/esign');
+  esign.saveCredentials({ clientId: 'CID', clientSecret: 'SECRET', region: 'eu1', webhookClientId: '' });
+  let st = esign.status();
+  assert.equal(st.hasCredentials, true);
+  assert.equal(st.connected, false);
+  assert.equal(st.region, 'eu1');
+  assert.equal(st.baseUri, 'https://api.eu1.adobesign.com');
+  assert.equal(esign.isConfigured(), false); // no refresh token yet
+
+  const url = esign.authorizeUrl({ redirectUri: 'https://app.test/admin/integrations/adobe/callback', state: 'xyz' });
+  assert.ok(url.startsWith('https://secure.eu1.adobesign.com/public/oauth/v2?'));
+  assert.match(url, /client_id=CID/);
+  assert.match(url, /response_type=code/);
+  assert.match(url, /state=xyz/);
+  assert.match(url, /redirect_uri=https%3A%2F%2Fapp\.test/);
+
+  // Emulate a completed token exchange (real exchangeCode needs a live Adobe call).
+  db.prepare("INSERT INTO settings (key, value) VALUES ('adobe.refresh_token', 'RTOKEN') ON CONFLICT(key) DO UPDATE SET value = 'RTOKEN'").run();
+  assert.equal(esign.status().connected, true);
+  assert.equal(esign.isConfigured(), true);
+  esign.disconnect();
+  assert.equal(esign.status().connected, false);
+
+  db.prepare("DELETE FROM settings WHERE key LIKE 'adobe.%'").run(); // clean up for other tests
+});
+
 test('announcement banner: set/get, trims, validates level, seeds once', () => {
   const ann = require('../src/announcement');
   ann.set({ text: '  Meeting moved to 11:30 a.m.  ', level: 'urgent', active: true });

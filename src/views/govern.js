@@ -480,4 +480,62 @@ function announcementPage({ saved = false } = {}) {
   return layout({ title: 'Announcement', active: '/admin', body });
 }
 
-module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage };
+function integrationsPage({ status: flash = '' } = {}) {
+  const esign = require('../esign');
+  const s = esign.status();
+  const base = String(process.env.APP_BASE_URL || '').replace(/\/+$/, '');
+  const redirectUri = (base || '(your app URL)') + '/admin/integrations/adobe/callback';
+  const REGIONS = ['na1', 'na2', 'na3', 'eu1', 'eu2', 'au1', 'jp1', 'in1', 'sg1'];
+  const regionOpts = REGIONS.map((r) => `<option value="${r}"${s.region === r ? ' selected' : ''}>${r}</option>`).join('');
+
+  const flashMsg = flash === 'connected' ? '<p class="saved-banner">Connected to Adobe Acrobat Sign.</p>'
+    : (flash === 'saved' ? '<p class="saved-banner">Credentials saved.</p>'
+      : (flash === 'disconnected' ? '<p class="saved-banner">Disconnected.</p>'
+        : (flash === 'error' ? '<p class="form-error">Could not connect — check the credentials, redirect URI, and scopes, then try again.</p>' : '')));
+
+  const statusLine = s.connected
+    ? `<p class="form-ok">✓ Connected to Adobe Acrobat Sign (region ${escapeText(s.region || 'na1')}). Circulating a written consent now sends it for e-signature.</p>`
+    : (s.hasCredentials
+      ? '<p class="muted">Credentials saved. Click <strong>Connect</strong> below to authorize with Adobe.</p>'
+      : '<p class="muted">Not configured. Enter your Adobe API application credentials, save, then connect.</p>');
+
+  const connectBtn = s.hasCredentials
+    ? `<a class="btn primary" href="/admin/integrations/adobe/connect">${s.connected ? 'Reconnect' : 'Connect to Adobe'}</a>`
+    : '<button class="btn primary" disabled title="Save credentials first">Connect to Adobe</button>';
+  const disconnectBtn = s.connected
+    ? `<form method="post" action="/admin/integrations/adobe/disconnect" class="inline" onsubmit="return confirm('Disconnect Adobe Acrobat Sign?')"><button class="btn ghost" type="submit">Disconnect</button></form>`
+    : '';
+
+  const form = html`
+    <form class="form" method="post" action="/admin/integrations/adobe">
+      <div class="form-row">
+        <label>Client ID<input type="text" name="client_id" value="${escapeText(s.clientId || '')}" autocomplete="off"></label>
+        <label>Client Secret<input type="password" name="client_secret" placeholder="${s.hasCredentials ? '•••••••• (leave blank to keep)' : ''}" autocomplete="off"></label>
+      </div>
+      <div class="form-row">
+        <label>Region<select name="region">${raw(regionOpts)}</select></label>
+        <label>Webhook client ID <span class="muted">(optional)</span><input type="text" name="webhook_client_id" value="${escapeText(s.webhookClientId === s.clientId ? '' : (s.webhookClientId || ''))}" autocomplete="off"></label>
+      </div>
+      <label>Scopes<input type="text" name="scopes" value="${escapeText(s.scopes || '')}"></label>
+      <button type="submit" class="btn">Save credentials</button>
+    </form>`;
+
+  const setup = `<ol class="setup-list">
+    <li>In Adobe Acrobat Sign: <em>Account → Adobe Sign API → API Applications</em> — create an application for your own account.</li>
+    <li>Configure OAuth and add this <strong>Redirect URI</strong>: <code>${escapeText(redirectUri)}</code></li>
+    <li>Copy the Client ID and Client Secret into the form below, pick your region, and Save.</li>
+    <li>Click <strong>Connect</strong>, approve in Adobe — the refresh token is captured automatically.</li>
+    <li>Register a webhook in Adobe pointing to <code>${escapeText((base || '(your app URL)') + '/webhooks/adobe-sign')}</code> for agreement events.</li>
+  </ol>`;
+
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / Integrations</p>
+    <h1>Integrations — Adobe Acrobat Sign</h1>
+    ${raw(flashMsg)}
+    ${raw(card('Status', statusLine + `<div class="head-actions" style="margin-top:10px">${connectBtn} ${disconnectBtn}</div>`))}
+    ${raw(card('Setup', setup))}
+    ${raw(card('API application credentials', form))}`;
+  return layout({ title: 'Integrations', active: '/admin', body });
+}
+
+module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage, integrationsPage };
