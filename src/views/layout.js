@@ -116,24 +116,15 @@ function escapeText(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// Horizontal primary nav. Single-item groups render as a plain top link;
-// multi-item groups become a hover/focus dropdown so the bar stays one row.
-function topNav(user, active) {
+// Grouped left-rail navigation. Groups render as labelled sections of links.
+function sideNav(user, active) {
   return navFor(user).map((g) => {
-    if (!g.label) {
-      return g.items.map((n) =>
-        `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}</a>`).join('');
-    }
-    const groupActive = g.items.some((n) => n.href === active);
-    const totalBadge = g.items.reduce((s, n) => s + (Number(n.badge) || 0), 0);
-    const topBadge = totalBadge ? `<span class="nav-badge">${totalBadge}</span>` : '';
-    const menu = g.items.map((n) => {
-      const b = n.badge ? `<span class="nav-badge">${escapeText(n.badge)}</span>` : '';
-      return `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}${b}</a>`;
+    const links = g.items.map((n) => {
+      const badge = n.badge ? `<span class="nav-badge">${escapeText(n.badge)}</span>` : '';
+      return `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}${badge}</a>`;
     }).join('');
-    return `<div class="nav-item${groupActive ? ' active' : ''}">`
-      + `<button type="button" class="nav-top" aria-haspopup="true">${escapeText(g.label)}${topBadge}<span class="nav-caret">▾</span></button>`
-      + `<div class="nav-menu">${menu}</div></div>`;
+    const label = g.label ? `<div class="nav-group-label">${escapeText(g.label)}</div>` : '';
+    return `<div class="nav-group">${label}${links}</div>`;
   }).join('');
 }
 
@@ -159,18 +150,8 @@ function layout({ title, active, body, subtitle, head }) {
 </head>
 <body>
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
-  <div class="gov-utility">
-    <div class="util-inner">
-      <span class="util-left">${escapeText(ORG.name)}</span>
-      <span class="util-right">
-        <a href="/api/v1">Developers / API</a>
-        <a href="/legislation.rss">RSS</a>
-        ${authArea}
-      </span>
-    </div>
-  </div>
-  <header class="gov-banner">
-    <div class="banner-inner">
+  <div class="app">
+    <aside class="sidebar" aria-label="Primary navigation">
       <a class="brand" href="/">
         ${brandMark()}
         <span class="brand-text">
@@ -178,41 +159,48 @@ function layout({ title, active, body, subtitle, head }) {
           <small>${escapeText(ORG.tagline)}</small>
         </span>
       </a>
-      <label for="nav-toggle-cb" class="nav-toggle" aria-label="Toggle navigation">☰</label>
-      <form class="banner-search" action="/legislation" method="get" role="search">
-        <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
-        <button type="submit">Search</button>
-      </form>
-    </div>
-  </header>
-  <nav class="gov-nav" aria-label="Primary">
-    <div class="nav-inner">${topNav(user, active)}</div>
-  </nav>
-  <main class="main-area">
-    ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
-    ${body}
-  </main>
-  <footer class="site-footer">
-    <div class="footer-inner">
-      <div>
-        <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
-        ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
+      <nav class="sidenav">${sideNav(user, active)}</nav>
+    </aside>
+    <div class="content">
+      <div class="topbar">
+        <label for="nav-toggle-cb" class="nav-toggle" aria-label="Toggle navigation">☰</label>
+        <form class="banner-search" action="/legislation" method="get" role="search">
+          <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
+          <button type="submit">Search</button>
+        </form>
+        <span class="util-right">
+          <a href="/api/v1">Developers / API</a>
+          <a href="/legislation.rss">RSS</a>
+          ${authArea}
+        </span>
       </div>
-      <div class="footer-links">
-        <a href="/legislation">Legislation</a>
-        <a href="/calendar">Calendar</a>
-        <a href="/policies">Policies</a>
-        <a href="/org">Organization</a>
-        <a href="/api/v1">Web API</a>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-      </div>
+      <main class="main-area">
+        ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
+        ${body}
+      </main>
+      <footer class="site-footer">
+        <div class="footer-inner">
+          <div>
+            <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
+            ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
+          </div>
+          <div class="footer-links">
+            <a href="/legislation">Legislation</a>
+            <a href="/calendar">Calendar</a>
+            <a href="/policies">Policies</a>
+            <a href="/org">Organization</a>
+            <a href="/api/v1">Web API</a>
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+          </div>
+        </div>
+        <div class="footer-legal">
+          © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
+          · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
+        </div>
+      </footer>
     </div>
-    <div class="footer-legal">
-      © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
-      · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
-    </div>
-  </footer>
+  </div>
 </body>
 </html>`;
 }
