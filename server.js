@@ -39,6 +39,8 @@ const procurementView = require('./src/views/procurement');
 const consentsView = require('./src/views/consents');
 const esign = require('./src/esign');
 const announcement = require('./src/announcement');
+const draftingView = require('./src/views/drafting');
+const amendEngine = require('./src/amend');
 const docTemplates = require('./src/doc-templates');
 const { sameOrigin } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
@@ -1312,6 +1314,62 @@ route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
   if (!v) return sendHtml(res, pages.notFound(), 404);
   repo.vendors.setStatus(v.id, ctx.body.status);
   redirect(res, '/admin/vendors');
+});
+
+// --- Drafting workbench (clerk): structured legislative drafting -------------
+function matterOr404(res, id) {
+  const m = repo.matters.get(Number(id));
+  if (!m) { sendHtml(res, pages.notFound(), 404); return null; }
+  return m;
+}
+route('GET', /^\/admin\/legislation\/(\d+)\/draft$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  sendHtml(res, draftingView.draftPage(m, { saved: ctx.query.saved === '1' }));
+});
+route('POST', /^\/admin\/legislation\/(\d+)\/draft$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const text = String(ctx.body.full_text || '');
+  // Archive the outgoing text as a numbered version when it actually changed.
+  if (ctx.body.snapshot === '1') repo.matters.snapshotIfChanged(m.id, { full_text: text, note: 'Drafting revision' });
+  repo.matters.update(m.id, Object.assign({}, m, { full_text: text }));
+  redirect(res, `/admin/legislation/${m.id}/draft?saved=1`);
+});
+route('GET', /^\/admin\/legislation\/(\d+)\/code$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  sendHtml(res, draftingView.codePage(m, { saved: ctx.query.saved === '1' }));
+});
+route('POST', /^\/admin\/legislation\/(\d+)\/code$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  repo.code.addAmendment(m.id, {
+    op: ctx.body.op, citation: ctx.body.citation, heading: ctx.body.heading,
+    new_text: ctx.body.new_text,
+  });
+  redirect(res, `/admin/legislation/${m.id}/code?saved=1`);
+});
+route('POST', /^\/admin\/legislation\/(\d+)\/code\/(\d+)\/delete$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const a = repo.code.amendment(Number(ctx.params[1]));
+  if (a && a.matter_id === m.id && !a.applied_at) repo.code.removeAmendment(a.id);
+  redirect(res, `/admin/legislation/${m.id}/code`);
+});
+route('GET', /^\/admin\/legislation\/(\d+)\/compare$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const mode = ['law', 'versions', 'impact'].includes(ctx.query.mode) ? ctx.query.mode : 'law';
+  sendHtml(res, draftingView.comparePage(m, mode, ctx.query));
+});
+// Codify an enacted measure: apply its instructions to the Board Code.
+route('POST', /^\/admin\/legislation\/(\d+)\/codify$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  amendEngine.codify(m.id, { effectiveDate: ctx.body.effective_date || null });
+  redirect(res, `/admin/legislation/${m.id}/code?saved=1`);
+});
+
+// --- The Board Code (public) -------------------------------------------------
+route('GET', /^\/code\/?$/, (req, res) => sendHtml(res, draftingView.codeIndex()));
+route('GET', /^\/code\/(.+)$/, (req, res, ctx) => {
+  const s = repo.code.byCitation(decodeURIComponent(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, draftingView.codeSection(s));
 });
 
 // --- Written consents (clerk): board action without a meeting ----------------

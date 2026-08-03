@@ -1617,6 +1617,93 @@ const tas = {
 };
 
 // ---------------------------------------------------------------------------
+// The Board Code — the standing body of law, addressable by section, plus the
+// amending instructions a bill carries against it.
+// ---------------------------------------------------------------------------
+const CODE_OPS = ['add', 'amend', 'repeal'];
+
+// Sort citations naturally: 8-3 before 12-4 before 12-40.
+function citationKey(c) {
+  return String(c || '').split('-').map((p) => String(p).padStart(6, '0')).join('-');
+}
+
+const code = {
+  OPS: CODE_OPS,
+  sections({ includeRepealed = false } = {}) {
+    const rows = includeRepealed
+      ? db.prepare('SELECT * FROM code_sections').all()
+      : db.prepare("SELECT * FROM code_sections WHERE status = 'Active'").all();
+    return rows.sort((a, b) => citationKey(a.citation).localeCompare(citationKey(b.citation)));
+  },
+  titles() {
+    const rows = db.prepare(`SELECT title_num, COUNT(*) AS n FROM code_sections
+      WHERE status = 'Active' GROUP BY title_num`).all();
+    return rows.sort((a, b) => citationKey(a.title_num).localeCompare(citationKey(b.title_num)));
+  },
+  get(id) { return db.prepare('SELECT * FROM code_sections WHERE id = ?').get(id); },
+  byCitation(citation) {
+    return db.prepare('SELECT * FROM code_sections WHERE citation = ?').get(String(citation || '').trim());
+  },
+  insertSection(s) {
+    return db.prepare(`INSERT INTO code_sections (citation, title_num, heading, body_text, status, enacted_by, effective_date)
+      VALUES (?,?,?,?,?,?,?)`).run(String(s.citation).trim(), s.title_num || titleOf(s.citation),
+      s.heading, s.body_text || null, s.status || 'Active', s.enacted_by || null,
+      s.effective_date || null).lastInsertRowid;
+  },
+  updateSection(id, s) {
+    db.prepare(`UPDATE code_sections SET heading = ?, body_text = ?, status = ?, effective_date = ?,
+      updated_at = datetime('now') WHERE id = ?`).run(s.heading, s.body_text || null,
+      s.status || 'Active', s.effective_date || null, id);
+  },
+  // --- amending instructions carried by a bill ---
+  amendments(matterId) {
+    return db.prepare('SELECT * FROM code_amendments WHERE matter_id = ? ORDER BY sort_order, id').all(matterId);
+  },
+  amendment(id) { return db.prepare('SELECT * FROM code_amendments WHERE id = ?').get(id); },
+  addAmendment(matterId, a) {
+    if (!CODE_OPS.includes(a.op)) return null;
+    const { m } = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM code_amendments WHERE matter_id = ?').get(matterId);
+    const citation = String(a.citation || '').trim();
+    return db.prepare(`INSERT INTO code_amendments (matter_id, op, citation, title_num, heading, new_text, note, sort_order)
+      VALUES (?,?,?,?,?,?,?,?)`).run(matterId, a.op, citation, a.title_num || titleOf(citation),
+      a.heading || null, a.new_text || null, a.note || null, (m || 0) + 1).lastInsertRowid;
+  },
+  removeAmendment(id) { db.prepare('DELETE FROM code_amendments WHERE id = ?').run(id); },
+  // Which files amend a given section (the authority trail, newest first).
+  historyFor(codeSectionId) {
+    return db.prepare(`SELECT h.*, m.file_number, m.title AS matter_title
+      FROM code_history h LEFT JOIN matters m ON m.id = h.matter_id
+      WHERE h.code_section_id = ? ORDER BY h.id DESC`).all(codeSectionId);
+  },
+  // Bills that touch a section but have not been codified yet.
+  pendingFor(citation) {
+    return db.prepare(`SELECT ca.*, m.file_number, m.title AS matter_title, m.status AS matter_status
+      FROM code_amendments ca JOIN matters m ON m.id = ca.matter_id
+      WHERE ca.citation = ? AND ca.applied_at IS NULL`).all(String(citation || '').trim());
+  },
+  recordHistory(h) {
+    return db.prepare(`INSERT INTO code_history (code_section_id, matter_id, op, prior_text, effective_date)
+      VALUES (?,?,?,?,?)`).run(h.code_section_id, h.matter_id || null, h.op,
+      h.prior_text == null ? null : h.prior_text, h.effective_date || null).lastInsertRowid;
+  },
+  markApplied(amendmentId) {
+    db.prepare("UPDATE code_amendments SET applied_at = datetime('now') WHERE id = ?").run(amendmentId);
+  },
+  stats() {
+    return {
+      sections: db.prepare("SELECT COUNT(*) AS n FROM code_sections WHERE status = 'Active'").get().n,
+      repealed: db.prepare("SELECT COUNT(*) AS n FROM code_sections WHERE status = 'Repealed'").get().n,
+      pending: db.prepare('SELECT COUNT(*) AS n FROM code_amendments WHERE applied_at IS NULL').get().n,
+    };
+  },
+};
+
+function titleOf(citation) {
+  const m = /^(\d+[A-Za-z]?)-/.exec(String(citation || '').trim());
+  return m ? m[1] : null;
+}
+
+// ---------------------------------------------------------------------------
 // Board actions by unanimous written consent (action without a meeting).
 // ---------------------------------------------------------------------------
 const CONSENT_STATUSES = ['Draft', 'Circulating', 'Adopted', 'Declined', 'Withdrawn'];
@@ -1956,6 +2043,7 @@ module.exports = {
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
-  proposals, implementation, vendors, procurement, tas, consents,
-  RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, stats, statusBuckets, purgeDomainData,
+  proposals, implementation, vendors, procurement, tas, consents, code,
+  RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, CODE_OPS,
+  stats, statusBuckets, purgeDomainData,
 };

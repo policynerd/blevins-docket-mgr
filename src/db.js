@@ -335,6 +335,50 @@ CREATE TABLE IF NOT EXISTS tas_accounts (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- The Board Code: the standing body of law, stored as addressable sections.
+-- A section's body is structured drafting text (see src/legisdoc.js), so
+-- amendments can target an individual provision rather than a whole document.
+CREATE TABLE IF NOT EXISTS code_sections (
+  id INTEGER PRIMARY KEY,
+  citation TEXT NOT NULL UNIQUE,            -- "12-4"
+  title_num TEXT,                           -- "12" (the Code title/chapter)
+  heading TEXT NOT NULL,
+  body_text TEXT,                           -- structured drafting text
+  status TEXT NOT NULL DEFAULT 'Active',    -- Active | Repealed
+  enacted_by INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  effective_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Amending instructions carried by a bill: what it would do to the Code.
+-- These are drafted with the bill and only applied to the Code on enactment,
+-- which is what makes "current law as proposed to be changed" possible.
+CREATE TABLE IF NOT EXISTS code_amendments (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  op TEXT NOT NULL,                         -- add | amend | repeal
+  citation TEXT NOT NULL,                   -- target section, or the new number for add
+  title_num TEXT,
+  heading TEXT,                             -- heading for an added section
+  new_text TEXT,                            -- proposed body (add / amend)
+  note TEXT,
+  applied_at TEXT,                          -- set when codified
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+-- Authority trail: every change to a Code section, and the text it replaced.
+-- Supports "which file changed this section" and point-in-time reconstruction.
+CREATE TABLE IF NOT EXISTS code_history (
+  id INTEGER PRIMARY KEY,
+  code_section_id INTEGER NOT NULL REFERENCES code_sections(id) ON DELETE CASCADE,
+  matter_id INTEGER REFERENCES matters(id) ON DELETE SET NULL,
+  op TEXT NOT NULL,
+  prior_text TEXT,                          -- body as it stood before this change
+  effective_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Board actions by unanimous written consent (action without a meeting): a
 -- resolution is circulated to every seated director; when all sign it is
 -- adopted, and a single decline sends it back to a meeting. Signatures are
@@ -557,6 +601,9 @@ CREATE INDEX IF NOT EXISTS idx_tas_agency ON tas_accounts(agency);
 CREATE INDEX IF NOT EXISTS idx_consent_signers ON consent_signers(consent_id);
 CREATE INDEX IF NOT EXISTS idx_consents_status ON consents(status);
 CREATE INDEX IF NOT EXISTS idx_consents_agreement ON consents(esign_agreement_id);
+CREATE INDEX IF NOT EXISTS idx_code_amend_matter ON code_amendments(matter_id);
+CREATE INDEX IF NOT EXISTS idx_code_history_section ON code_history(code_section_id);
+CREATE INDEX IF NOT EXISTS idx_code_sections_title ON code_sections(title_num);
 CREATE INDEX IF NOT EXISTS idx_solic_status ON solicitations(status);
 CREATE INDEX IF NOT EXISTS idx_solq_solic ON solicitation_questions(solicitation_id);
 CREATE INDEX IF NOT EXISTS idx_bids_solic ON bids(solicitation_id);
@@ -732,6 +779,7 @@ function init() {
 
 function reset() {
   const tables = ['matters_fts', 'sessions', 'audit_log', 'mail_outbox', 'watches', 'saved_searches', 'matter_relations',
+    'code_history', 'code_amendments', 'code_sections',
     'consent_signers', 'consents',
     'bids', 'solicitation_questions', 'solicitations', 'vendors', 'tas_accounts',
     'proposal_endorsements', 'proposals', 'implementation_updates',

@@ -330,6 +330,80 @@ test('announcement banner: set/get, trims, validates level, seeds once', () => {
   assert.equal(ann.get().text, 'Seeded notice');
 });
 
+test('legisdoc: parses the provision hierarchy with stable identifiers', () => {
+  const L = require('../src/legisdoc');
+  const doc = L.parse([
+    'SECTION 1. Short title.',
+    'SECTION 2. Program.',
+    '(a) In general. A program is established.',
+    '(1) It shall include grants.',
+    '(A) Grants are capped.',
+    '(i) A match is required.',
+    '(ii) Review is quarterly.',
+    '(2) Reporting is annual.',
+    '(b) Definitions.',
+  ].join('\n'));
+  assert.equal(doc.sections.length, 2);
+  const flat = L.flatten(doc);
+  const ids = flat.map((n) => n.id);
+  assert.ok(ids.includes('s2/a/1/A/i'), 'nested clause gets a stable id');
+  assert.ok(ids.includes('s2/b'));
+  // (i) after (A) is a clause, not a subsection — the roman/letter ambiguity.
+  assert.equal(flat.find((n) => n.id === 's2/a/1/A/i').level, 'clause');
+  assert.equal(L.cite('s2/a/1/A/i'), 'Sec. 2(a)(1)(A)(i)');
+  assert.equal(L.find(doc, 's2/a/2').text, 'Reporting is annual.');
+  // Round-trips through canonical text.
+  assert.equal(L.parse(L.toText(doc)).sections.length, 2);
+  assert.equal(L.validate(doc).length, 0);
+});
+
+test('legisdoc: validation flags sequence gaps and empty provisions', () => {
+  const L = require('../src/legisdoc');
+  const issues = L.validate(L.parse('SECTION 2. Out of order.\n(a) Fine.\n(c) Skipped b.'));
+  assert.ok(issues.some((i) => /consecutively/.test(i.msg)), 'section numbering gap flagged');
+  assert.ok(issues.some((i) => /sequence/.test(i.msg)), 'subsection sequence gap flagged');
+});
+
+test('amend: comparative print and codification against the Board Code', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269901', title: 'An Ordinance amending the code', type: 'Ordinance', status: 'Introduced',
+  });
+  repo.code.insertSection({ citation: '90-1', heading: 'Definitions', body_text: 'SECTION 1. Definitions.\n(a) "Tree" means a tree.' });
+  repo.code.insertSection({ citation: '90-9', heading: 'Old rule', body_text: 'SECTION 1. Repeal me.' });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '90-1', new_text: 'SECTION 1. Definitions.\n(a) "Tree" means a woody perennial.' });
+  repo.code.addAmendment(mId, { op: 'add', citation: '90-20', heading: 'New program', new_text: 'SECTION 1. Program.\n(a) Established.' });
+  repo.code.addAmendment(mId, { op: 'repeal', citation: '90-9' });
+
+  const impact = amend.codeImpact(mId);
+  assert.deepEqual([impact.add, impact.amend, impact.repeal], [1, 1, 1]);
+
+  // (2) bill vs current law — a diff per instruction, before enactment
+  const print = amend.comparativePrint(mId);
+  assert.equal(print.length, 3);
+  const amended = print.find((p) => p.citation === '90-1');
+  assert.ok(amended.stats.added > 0, 'reports added words');
+  assert.ok(/woody perennial/.test(amended.proposedText));
+  assert.equal(repo.code.byCitation('90-1').body_text.includes('woody perennial'), false,
+    'the Code is untouched until enactment');
+
+  // Codify: apply the instructions
+  const res = amend.codify(mId, { effectiveDate: '2026-09-01' });
+  assert.deepEqual([res.added, res.amended, res.repealed], [1, 1, 1]);
+  assert.ok(repo.code.byCitation('90-1').body_text.includes('woody perennial'));
+  assert.equal(repo.code.byCitation('90-9').status, 'Repealed');
+  assert.ok(repo.code.byCitation('90-20'), 'new section created');
+
+  // Authority trail + point-in-time
+  const sec = repo.code.byCitation('90-1');
+  const hist = repo.code.historyFor(sec.id);
+  assert.equal(hist[0].matter_id, mId, 'records which measure changed it');
+  assert.ok(/means a tree/.test(amend.asOf(sec.id, '2026-01-01')), 'point-in-time returns the prior text');
+
+  // Idempotent — re-running applies nothing
+  assert.deepEqual(Object.values(amend.codify(mId)).slice(0, 3), [0, 0, 0]);
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');
