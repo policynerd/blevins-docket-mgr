@@ -1357,6 +1357,12 @@ route('GET', /^\/admin\/legislation\/(\d+)\/compare$/, (req, res, ctx) => {
   const mode = ['law', 'versions', 'impact'].includes(ctx.query.mode) ? ctx.query.mode : 'law';
   sendHtml(res, draftingView.comparePage(m, mode, ctx.query));
 });
+// Amendment-impact text is POSTed: a full draft would overflow a GET request
+// line and would otherwise be recorded in history and access logs.
+route('POST', /^\/admin\/legislation\/(\d+)\/compare\/impact$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  sendHtml(res, draftingView.comparePage(m, 'impact', { proposed: ctx.body.proposed || '' }));
+});
 // Codify an enacted measure: apply its instructions to the Board Code.
 route('POST', /^\/admin\/legislation\/(\d+)\/codify$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;

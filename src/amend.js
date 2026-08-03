@@ -18,6 +18,7 @@
 //   2. bill vs. current law  — what the bill would do to the Code
 //   3. amendment impact      — how a pending amendment would change the bill
 
+const { db } = require('./db');
 const repo = require('./repo');
 const legisdoc = require('./legisdoc');
 const { diffHtml, stats: rawDiffStats } = require('./diff');
@@ -46,7 +47,10 @@ function comparativePrint(matterId) {
     const currentText = section ? (section.body_text || '') : '';
     const proposed = proposedTextFor(a, currentText);
     const isRepeal = a.op === 'repeal';
-    const isAdd = a.op === 'add' || !section;
+    // Only a citation that does not yet exist has no "before" side. An `add`
+    // aimed at an existing section is an amendment in substance (codify()
+    // treats it that way), so the print must still show the replaced text.
+    const isAdd = !section;
     return {
       amendment: a,
       citation: a.citation,
@@ -88,16 +92,46 @@ function amendmentImpact(baseText, proposedText) {
   };
 }
 
+// An instruction must carry usable, structurally sound text before it is
+// allowed to touch the Code. Returns an error string, or null when it is fine.
+function instructionError(a) {
+  if (a.op === 'repeal') return null;
+  const text = a.op === 'add' ? a.new_text : a.new_text;
+  if (text == null || !String(text).trim()) {
+    return `§${a.citation}: ${a.op} carries no text.`;
+  }
+  const issues = legisdoc.validate(legisdoc.parse(text)).filter((i) => i.level === 'error');
+  if (issues.length) return `§${a.citation}: proposed text is not well formed — ${issues[0].msg}`;
+  return null;
+}
+
 // --- Codification ------------------------------------------------------------
 // Apply an enacted measure's instructions to the Code. Records prior text for
 // every touched section so the authority trail and point-in-time views work.
-// Idempotent: instructions already applied are skipped.
-function codify(matterId, { effectiveDate = null } = {}) {
-  const rows = repo.code.amendments(matterId).filter((a) => !a.applied_at);
+//
+// Only an enacted measure may change the Code — enforced here rather than at
+// the call site so every caller is bound by it. Each instruction is validated
+// first and applied inside its own savepoint, so a failure leaves no
+// half-written section or orphan history row. Idempotent: instructions already
+// applied are skipped.
+const ENACTING_STATUSES = new Set(['Passed', 'Enacted', 'Adopted']);
+
+function codify(matterId, { effectiveDate = null, force = false } = {}) {
   const result = { added: 0, amended: 0, repealed: 0, skipped: 0, errors: [] };
+  const matter = repo.matters.get(matterId);
+  if (!matter) { result.errors.push('Measure not found.'); return result; }
+  if (!force && !ENACTING_STATUSES.has(matter.status)) {
+    result.errors.push(`Only an enacted measure may change the Code — ${matter.file_number} is ${matter.status}.`);
+    return result;
+  }
+
+  const rows = repo.code.amendments(matterId).filter((a) => !a.applied_at);
 
   for (const a of rows) {
+    const bad = instructionError(a);
+    if (bad) { result.errors.push(bad); result.skipped++; continue; }
     const section = repo.code.byCitation(a.citation);
+    db.exec('SAVEPOINT sp_codify');
     try {
       if (a.op === 'add') {
         if (section) {
@@ -119,7 +153,7 @@ function codify(matterId, { effectiveDate = null } = {}) {
           result.added++;
         }
       } else if (a.op === 'amend') {
-        if (!section) { result.errors.push(`§${a.citation} not found — cannot amend.`); result.skipped++; continue; }
+        if (!section) { throw new Error(`§${a.citation} not found — cannot amend.`); }
         repo.code.recordHistory({ code_section_id: section.id, matter_id: matterId, op: 'amend',
           prior_text: section.body_text, effective_date: effectiveDate });
         repo.code.updateSection(section.id, {
@@ -129,7 +163,7 @@ function codify(matterId, { effectiveDate = null } = {}) {
         });
         result.amended++;
       } else if (a.op === 'repeal') {
-        if (!section) { result.errors.push(`§${a.citation} not found — cannot repeal.`); result.skipped++; continue; }
+        if (!section) { throw new Error(`§${a.citation} not found — cannot repeal.`); }
         repo.code.recordHistory({ code_section_id: section.id, matter_id: matterId, op: 'repeal',
           prior_text: section.body_text, effective_date: effectiveDate });
         repo.code.updateSection(section.id, {
@@ -139,8 +173,11 @@ function codify(matterId, { effectiveDate = null } = {}) {
         result.repealed++;
       }
       repo.code.markApplied(a.id);
+      db.exec('RELEASE sp_codify');
     } catch (e) {
-      result.errors.push(`§${a.citation}: ${e.message}`);
+      db.exec('ROLLBACK TO sp_codify');
+      db.exec('RELEASE sp_codify');
+      result.errors.push(e.message.startsWith('§') ? e.message : `§${a.citation}: ${e.message}`);
       result.skipped++;
     }
   }
@@ -154,7 +191,10 @@ function asOf(codeSectionId, isoDate) {
   const section = repo.code.get(codeSectionId);
   if (!section) return null;
   const hist = repo.code.historyFor(codeSectionId); // newest first
-  let text = section.body_text;
+  // A repealed section retains its body_text for the record, but nothing is in
+  // force today — so the walk starts from "absent" and a rewind past the repeal
+  // restores the text that stood before it.
+  let text = section.status === 'Repealed' ? null : section.body_text;
   for (const h of hist) {
     const when = h.effective_date || (h.created_at || '').slice(0, 10);
     if (when && when <= isoDate) break;   // this change was already in force

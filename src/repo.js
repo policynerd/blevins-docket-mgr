@@ -1675,11 +1675,14 @@ const code = {
       FROM code_history h LEFT JOIN matters m ON m.id = h.matter_id
       WHERE h.code_section_id = ? ORDER BY h.id DESC`).all(codeSectionId);
   },
-  // Bills that touch a section but have not been codified yet.
+  // Bills that touch a section but have not been codified yet. Measures that
+  // died (failed, vetoed, tabled, withdrawn) are excluded — their instructions
+  // will never take effect, so they must not linger as "pending legislation".
   pendingFor(citation) {
     return db.prepare(`SELECT ca.*, m.file_number, m.title AS matter_title, m.status AS matter_status
       FROM code_amendments ca JOIN matters m ON m.id = ca.matter_id
-      WHERE ca.citation = ? AND ca.applied_at IS NULL`).all(String(citation || '').trim());
+      WHERE ca.citation = ? AND ca.applied_at IS NULL
+        AND m.status NOT IN ('Failed','Vetoed','Tabled','Withdrawn')`).all(String(citation || '').trim());
   },
   recordHistory(h) {
     return db.prepare(`INSERT INTO code_history (code_section_id, matter_id, op, prior_text, effective_date)
@@ -1693,7 +1696,10 @@ const code = {
     return {
       sections: db.prepare("SELECT COUNT(*) AS n FROM code_sections WHERE status = 'Active'").get().n,
       repealed: db.prepare("SELECT COUNT(*) AS n FROM code_sections WHERE status = 'Repealed'").get().n,
-      pending: db.prepare('SELECT COUNT(*) AS n FROM code_amendments WHERE applied_at IS NULL').get().n,
+      pending: db.prepare(`SELECT COUNT(*) AS n FROM code_amendments ca
+        JOIN matters m ON m.id = ca.matter_id
+        WHERE ca.applied_at IS NULL
+          AND m.status NOT IN ('Failed','Vetoed','Tabled','Withdrawn')`).get().n,
     };
   },
 };

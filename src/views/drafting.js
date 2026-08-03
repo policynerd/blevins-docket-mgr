@@ -191,9 +191,10 @@ function comparePage(matter, mode, query = {}) {
     const proposed = query.proposed || '';
     const base = matter.full_text || '';
     const res = proposed ? amend.amendmentImpact(base, proposed) : null;
+    // POSTed, not GET: a real draft would overflow the request line (414) and
+    // would otherwise sit in browser history and access logs.
     panel = `<p class="muted">Paste a proposed amendment to this measure's text to see how it would change the bill if adopted.</p>
-      <form class="form" method="get" action="/admin/legislation/${matter.id}/compare">
-        <input type="hidden" name="mode" value="impact">
+      <form class="form" method="post" action="/admin/legislation/${matter.id}/compare/impact">
         <label>Proposed text<textarea name="proposed" rows="12" class="mono" spellcheck="false">${escapeText(proposed)}</textarea></label>
         <button class="btn primary" type="submit">Show impact</button>
       </form>
@@ -258,7 +259,7 @@ function codeSection(section) {
   const pendingBox = pending.length ? raw(`<div class="pending-box">
     <b>Pending legislation.</b> ${pending.map((p) => `<a href="/legislation/${escapeText(p.file_number)}">${escapeText(p.file_number)}</a>
       would ${escapeText(p.op)} this section`).join('; ')}.
-    <a href="/legislation/${escapeText(pending[0].file_number)}">See the comparative print →</a>
+    <a href="/legislation/${escapeText(pending[0].file_number)}">View the measure →</a>
   </div>`) : '';
 
   const body = html`
