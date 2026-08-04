@@ -330,6 +330,125 @@ test('announcement banner: set/get, trims, validates level, seeds once', () => {
   assert.equal(ann.get().text, 'Seeded notice');
 });
 
+test('legisdoc: parses the provision hierarchy with stable identifiers', () => {
+  const L = require('../src/legisdoc');
+  const doc = L.parse([
+    'SECTION 1. Short title.',
+    'SECTION 2. Program.',
+    '(a) In general. A program is established.',
+    '(1) It shall include grants.',
+    '(A) Grants are capped.',
+    '(i) A match is required.',
+    '(ii) Review is quarterly.',
+    '(2) Reporting is annual.',
+    '(b) Definitions.',
+  ].join('\n'));
+  assert.equal(doc.sections.length, 2);
+  const flat = L.flatten(doc);
+  const ids = flat.map((n) => n.id);
+  assert.ok(ids.includes('s2/a/1/A/i'), 'nested clause gets a stable id');
+  assert.ok(ids.includes('s2/b'));
+  // (i) after (A) is a clause, not a subsection — the roman/letter ambiguity.
+  assert.equal(flat.find((n) => n.id === 's2/a/1/A/i').level, 'clause');
+  assert.equal(L.cite('s2/a/1/A/i'), 'Sec. 2(a)(1)(A)(i)');
+  assert.equal(L.find(doc, 's2/a/2').text, 'Reporting is annual.');
+  // Round-trips through canonical text: the whole tree must survive, not just
+  // the section count — ids, levels, markers, headings and text alike.
+  const reparsed = L.parse(L.toText(doc));
+  assert.deepEqual(L.flatten(reparsed), L.flatten(doc));
+  assert.equal(L.validate(doc).length, 0);
+});
+
+test('legisdoc: validation flags sequence gaps and empty provisions', () => {
+  const L = require('../src/legisdoc');
+  // "(b)" carries no text and no children — an empty provision.
+  const issues = L.validate(L.parse('SECTION 2. Out of order.\n(a) Fine.\n(b)\n(d) Skipped c.'));
+  assert.ok(issues.some((i) => /consecutively/.test(i.msg)), 'section numbering gap flagged');
+  assert.ok(issues.some((i) => /sequence/.test(i.msg)), 'subsection sequence gap flagged');
+  const empty = issues.find((i) => /is empty/.test(i.msg));
+  assert.ok(empty, 'empty provision flagged');
+  assert.equal(empty.level, 'error');
+  assert.equal(empty.id, 's2/b');
+});
+
+test('amend: comparative print and codification against the Board Code', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269901', title: 'An Ordinance amending the code', type: 'Ordinance', status: 'Introduced',
+  });
+  repo.code.insertSection({ citation: '90-1', heading: 'Definitions', body_text: 'SECTION 1. Definitions.\n(a) "Tree" means a tree.' });
+  repo.code.insertSection({ citation: '90-9', heading: 'Old rule', body_text: 'SECTION 1. Repeal me.' });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '90-1', new_text: 'SECTION 1. Definitions.\n(a) "Tree" means a woody perennial.' });
+  repo.code.addAmendment(mId, { op: 'add', citation: '90-20', heading: 'New program', new_text: 'SECTION 1. Program.\n(a) Established.' });
+  repo.code.addAmendment(mId, { op: 'repeal', citation: '90-9' });
+
+  const impact = amend.codeImpact(mId);
+  assert.deepEqual([impact.add, impact.amend, impact.repeal], [1, 1, 1]);
+
+  // (2) bill vs current law — a diff per instruction, before enactment
+  const print = amend.comparativePrint(mId);
+  assert.equal(print.length, 3);
+  const amended = print.find((p) => p.citation === '90-1');
+  assert.ok(amended.stats.added > 0, 'reports added words');
+  assert.ok(/woody perennial/.test(amended.proposedText));
+  assert.equal(repo.code.byCitation('90-1').body_text.includes('woody perennial'), false,
+    'the Code is untouched until enactment');
+
+  // Only an enacted measure may change the Code.
+  const refused = amend.codify(mId, { effectiveDate: '2026-09-01' });
+  assert.deepEqual([refused.added, refused.amended, refused.repealed], [0, 0, 0]);
+  assert.ok(/Only an enacted measure/.test(refused.errors[0]), 'refuses a non-enacted measure');
+  assert.equal(repo.code.byCitation('90-1').body_text.includes('woody perennial'), false);
+
+  // Codify: apply the instructions
+  repo.matters.setStatus(mId, 'Enacted');
+  const res = amend.codify(mId, { effectiveDate: '2026-09-01' });
+  assert.deepEqual([res.added, res.amended, res.repealed], [1, 1, 1]);
+  assert.ok(repo.code.byCitation('90-1').body_text.includes('woody perennial'));
+  assert.equal(repo.code.byCitation('90-9').status, 'Repealed');
+  assert.ok(repo.code.byCitation('90-20'), 'new section created');
+
+  // Authority trail + point-in-time
+  const sec = repo.code.byCitation('90-1');
+  const hist = repo.code.historyFor(sec.id);
+  assert.equal(hist[0].matter_id, mId, 'records which measure changed it');
+  assert.ok(/means a tree/.test(amend.asOf(sec.id, '2026-01-01')), 'point-in-time returns the prior text');
+
+  // A repealed section is not in force today, but its text is recoverable.
+  const gone = repo.code.byCitation('90-9');
+  assert.equal(amend.asOf(gone.id, '2026-12-31'), null, 'repealed section reads as absent after repeal');
+  assert.ok(/Repeal me/.test(amend.asOf(gone.id, '2026-01-01')), 'text before the repeal is recoverable');
+
+  // Idempotent — re-running applies nothing
+  assert.deepEqual(Object.values(amend.codify(mId)).slice(0, 3), [0, 0, 0]);
+});
+
+test('amend: rejects malformed instructions and stale pending notices', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269902', title: 'An Ordinance with a bad instruction', type: 'Ordinance', status: 'Enacted',
+  });
+  repo.code.addAmendment(mId, { op: 'add', citation: '91-1', heading: 'Empty', new_text: '   ' });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '91-2', new_text: 'SECTION 1. Fine.\n(a)' });
+
+  const res = amend.codify(mId);
+  assert.equal(res.added, 0);
+  assert.equal(res.skipped, 2, 'both malformed instructions are refused');
+  assert.equal(repo.code.byCitation('91-1'), undefined, 'no empty section is created');
+  assert.ok(res.errors.some((e) => /carries no text/.test(e)));
+  assert.ok(res.errors.some((e) => /not well formed/.test(e)));
+
+  // A defeated measure's instructions must not linger as pending legislation.
+  const dead = repo.matters.insert({
+    file_number: '269903', title: 'A withdrawn ordinance', type: 'Ordinance', status: 'Introduced',
+  });
+  repo.code.insertSection({ citation: '92-1', heading: 'Target', body_text: 'SECTION 1. Text.' });
+  repo.code.addAmendment(dead, { op: 'amend', citation: '92-1', new_text: 'SECTION 1. Changed.' });
+  assert.equal(repo.code.pendingFor('92-1').length, 1);
+  repo.matters.setStatus(dead, 'Withdrawn');
+  assert.equal(repo.code.pendingFor('92-1').length, 0, 'withdrawn measures drop out of pending');
+});
+
 test('workflow routing: assignees and inbox scoping', () => {
   db.prepare(`INSERT INTO users (name, email, role) VALUES ('Assignee', 'a@test.gov', 'member')`).run();
   const assignee = auth.findUserByEmail('a@test.gov');
