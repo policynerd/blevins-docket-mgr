@@ -423,6 +423,28 @@ test('amend: comparative print and codification against the Board Code', () => {
   assert.deepEqual(Object.values(amend.codify(mId)).slice(0, 3), [0, 0, 0]);
 });
 
+test('amend: codify is safe to call on every status change', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269904', title: 'An Ordinance reaching enactment', type: 'Ordinance', status: 'In Committee',
+  });
+  repo.code.insertSection({ citation: '93-1', heading: 'Target', body_text: 'SECTION 1. Original.' });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '93-1', new_text: 'SECTION 1. Revised.' });
+
+  // The enactment hook fires on every status change; non-enacting ones no-op.
+  for (const s of ['In Committee', 'On Agenda']) {
+    repo.matters.setStatus(mId, s);
+    amend.codify(mId, { effectiveDate: '2026-09-01' });
+    assert.ok(/Original/.test(repo.code.byCitation('93-1').body_text), `${s} must not touch the Code`);
+  }
+  repo.matters.setStatus(mId, 'Enacted');
+  amend.codify(mId, { effectiveDate: '2026-09-01' });
+  assert.ok(/Revised/.test(repo.code.byCitation('93-1').body_text), 'enactment applies the instruction');
+  // Firing again (a later edit re-saving the same status) changes nothing.
+  amend.codify(mId, { effectiveDate: '2026-09-01' });
+  assert.equal(repo.code.historyFor(repo.code.byCitation('93-1').id).length, 1);
+});
+
 test('amend: rejects malformed instructions and stale pending notices', () => {
   const amend = require('../src/amend');
   const mId = repo.matters.insert({

@@ -75,8 +75,10 @@ h1 { font-size: 25px; letter-spacing: -.2px; }
 /* A horizontal lockup carries the name itself, so it spans the rail alone.
    Scoped to .sidebar to match the specificity of `.sidebar .brand` above —
    otherwise that rule's flex layout and padding win regardless of order. */
-.sidebar .brand-lockup-wrap { display: block; padding: var(--s7) var(--s6) var(--s6); }
-.brand-lockup { display: block; width: 100%; max-width: 190px; height: auto; }
+.sidebar .brand-lockup-wrap { display: block; padding: var(--s6) var(--s5) var(--s5); }
+/* A wide lockup carries fine small-caps type, so it needs the full rail width
+   to stay legible — cap it only by the rail's own padding. */
+.brand-lockup { display: block; width: 100%; height: auto; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .brand-text strong { font-family: var(--serif); font-size: var(--t-lead); letter-spacing: .2px; }
 .brand-text small { color: #bcd4ec; font-size: 10px; text-transform: uppercase; letter-spacing: 1.1px; }
