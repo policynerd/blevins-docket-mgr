@@ -421,12 +421,22 @@ function matterDetail(matter, query = {}, user = null) {
     ...(implPanel ? [{ id: 'impl', label: 'Implementation', count: implUpdates.length, html: implPanel }] : []),
   ]);
 
+  // Codification refused some instructions while enacting this measure. The
+  // status is already saved, so the Code is out of step until this is resolved.
+  const codifyNotice = query.codify_failed
+    ? raw(`<p class="form-error"><strong>Not fully codified.</strong> This measure is enacted, but
+        ${escapeText(String(query.codify_failed))}. The Board Code does not yet reflect it —
+        correct the instruction under <a href="/admin/legislation/${escapeText(matter.file_number)}/code">Amend the Code</a>,
+        then re-save the status to apply it.</p>`)
+    : '';
+
   const commentedNotice = query.commented === '1'
     ? raw('<p class="form-ok">Thank you — your comment has been received and will appear once reviewed by the Clerk’s office.</p>')
     : '';
 
   const body = html`
     <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
+    ${codifyNotice}
     ${commentedNotice}
     ${raw(tracker)}
     <div class="detail-head">

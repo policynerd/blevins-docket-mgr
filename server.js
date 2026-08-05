@@ -77,9 +77,7 @@ alerts.schedule();
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const MIME = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp', '.md': 'text/plain; charset=utf-8' };
+const mimetype = require('./src/mimetype');
 
 // --- Route table -------------------------------------------------------------
 // Each route: [method, RegExp, handler(req,res,{params,query,body})]
@@ -1565,7 +1563,7 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
     intro_date: b.intro_date || null, final_date: b.final_date || null,
     summary: b.summary || null, full_text: b.full_text || null,
   });
-  applyEnactment(id, b.status, b.final_date);
+  const codifyNotice = applyEnactment(id, b.status, b.final_date);
   repo.matters.clearSponsors(id);
   applySponsors(id, b.sponsor_id);
   repo.topics.setForMatter(id, parseTopics(b.topics));
@@ -1574,7 +1572,7 @@ route('POST', /^\/admin\/matters\/(\d+)$/, (req, res, ctx) => {
     fiscal_recurring: b.fiscal_recurring === '1', fiscal_note: b.fiscal_note,
   });
   repo.matters.setAmendsPolicy(id, b.amends_policy_id ? Number(b.amends_policy_id) : null);
-  redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
+  redirect(res, `/legislation/${encodeURIComponent(m.file_number)}${codifyNotice}`);
 });
 
 route('POST', /^\/admin\/matters\/(\d+)\/actions$/, (req, res, ctx) => {
@@ -1588,7 +1586,8 @@ route('POST', /^\/admin\/matters\/(\d+)\/actions$/, (req, res, ctx) => {
   });
   if (b.new_status) {
     repo.matters.setStatus(id, b.new_status);
-    applyEnactment(id, b.new_status, b.action_date);
+    const notice = applyEnactment(id, b.new_status, b.action_date);
+    if (notice) return redirect(res, `/admin/matters/${id}/edit${notice}`);
   }
   redirect(res, `/admin/matters/${id}/edit`);
 });
@@ -2030,24 +2029,18 @@ function recordSingleVote(itemId, personId, vote) {
   repo.votes.record(itemId, personId, vote);
 }
 
-// Closes the codification loop: when a measure reaches an enacting status, its
-// amending instructions are applied to the Board Code straight away. Left to a
-// separate manual step the Code drifts out of step with enacted legislation,
-// which is the whole thing the Code is supposed to guarantee.
+// Closes the codification loop: reaching an enacting status applies the
+// measure's amending instructions to the Board Code straight away, rather than
+// leaving the Code to drift until someone remembers a separate step.
 //
-// codify() is idempotent and refuses non-enacting statuses itself, so this is
-// safe to call on every status change; instructions that are malformed or
-// already applied are simply skipped and reported.
+// Returns a query suffix naming any instructions that were refused. The status
+// has already been saved by this point, so a failure that only reached the log
+// would leave an enacted measure silently out of step with the Code.
 function applyEnactment(matterId, newStatus, effectiveDate) {
-  if (!newStatus) return null;
-  try {
-    const res = amendEngine.codify(matterId, { effectiveDate: effectiveDate || null });
-    if (res.errors.length) console.error('codify:', res.errors.join('; '));
-    return res;
-  } catch (e) {
-    console.error('codify failed:', e.message);
-    return null;
-  }
+  const res = amendEngine.onStatusChange(matterId, newStatus, effectiveDate);
+  if (!res || !res.errors.length) return '';
+  console.error('codify:', res.errors.join('; '));
+  return '?codify_failed=' + encodeURIComponent(res.errors.slice(0, 3).join(' · ').slice(0, 300));
 }
 
 function applySponsors(matterId, sponsorIds) {
@@ -2068,22 +2061,11 @@ function serveStatic(req, res, pathname) {
     // application/octet-stream would be fatal: we send X-Content-Type-Options:
     // nosniff, so the browser is forbidden from recovering the real type and
     // the image simply does not render. Identify it from its own header bytes.
-    res.writeHead(200, { 'Content-Type': MIME[ext] || sniffType(data) });
+    res.writeHead(200, { 'Content-Type': mimetype.typeFor(ext, data) });
     res.end(data);
   });
 }
 
-// Magic-number detection for the image formats brand art arrives in.
-function sniffType(buf) {
-  if (!buf || buf.length < 12) return 'application/octet-stream';
-  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
-  if (buf.slice(0, 6).toString('latin1') === 'GIF89a' || buf.slice(0, 6).toString('latin1') === 'GIF87a') return 'image/gif';
-  if (buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
-  const head = buf.slice(0, 400).toString('utf8').trimStart();
-  if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) return 'image/svg+xml';
-  return 'application/octet-stream';
-}
 
 // Baseline security headers on every response. Inline scripts/styles are part
 // of the rendering approach (small per-page enhancement scripts), hence
