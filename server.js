@@ -78,7 +78,8 @@ alerts.schedule();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.ico': 'image/x-icon' };
+  '.png': 'image/png', '.ico': 'image/x-icon', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.md': 'text/plain; charset=utf-8' };
 
 // --- Route table -------------------------------------------------------------
 // Each route: [method, RegExp, handler(req,res,{params,query,body})]
@@ -2067,7 +2068,8 @@ const server = http.createServer(async (req, res) => {
   securityHeaders(req, res);
 
   // Static assets
-  if (pathname === '/styles.css' || pathname.startsWith('/assets/') || pathname === '/favicon.ico') {
+  if (pathname === '/styles.css' || pathname.startsWith('/assets/')
+      || pathname.startsWith('/brand/') || pathname === '/favicon.ico') {
     return serveStatic(req, res, pathname === '/styles.css' ? '/styles.css' : pathname);
   }
 

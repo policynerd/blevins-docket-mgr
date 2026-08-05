@@ -280,12 +280,15 @@ function brandingPage({ saved = false } = {}) {
         ${raw(field('name', 'Organization name'))}
         ${raw(field('tagline', 'Tagline'))}
         <div class="form-row">
-          ${raw(field('logoUrl', 'Logo URL', 'shown instead of the seal', 'url'))}
-          ${raw(field('primaryColor', 'Primary color', '', 'color'))}
+          ${raw(field('logoUrl', 'Seal / logo', 'https://… or /brand/seal.png'))}
+          ${raw(field('logoLightUrl', 'Reversed seal', 'for the dark sidebar — /brand/seal-light.png'))}
         </div>
         <div class="form-row">
-          ${raw(field('faviconUrl', 'Favicon URL', 'tab icon; defaults to logo/seal', 'url'))}
-          ${raw(field('seal', 'Seal glyph', 'used when no logo set'))}
+          ${raw(field('primaryColor', 'Primary color', '', 'color'))}
+          ${raw(field('seal', 'Seal glyph', 'fallback when no artwork is set'))}
+        </div>
+        <div class="form-row">
+          ${raw(field('faviconUrl', 'Favicon', 'tab icon; defaults to the seal'))}
         </div>
       </fieldset>
       <fieldset><legend>Bodies &amp; roles</legend>
