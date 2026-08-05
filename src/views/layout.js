@@ -71,6 +71,10 @@ function brandHead() {
 }
 
 const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
+// Brand art may be hosted (https) or shipped with the app under /brand/.
+// A local path keeps the mark working offline and on first boot.
+const LOCAL_ASSET = /^\/(brand|assets)\/[A-Za-z0-9._-]+$/;
+function isBrandSrc(v) { return HTTPS_URL.test(v) || LOCAL_ASSET.test(v); }
 
 // Favicon: an explicit favicon URL, else the logo URL, else an auto-generated
 // inline SVG (rounded square in the brand color with the seal glyph) so the tab
@@ -79,8 +83,8 @@ function faviconLink() {
   const fav = String(ORG.faviconUrl || '');
   const logo = String(ORG.logoUrl || '');
   let href;
-  if (HTTPS_URL.test(fav)) href = fav;
-  else if (HTTPS_URL.test(logo)) href = logo;
+  if (isBrandSrc(fav)) href = fav;
+  else if (isBrandSrc(logo)) href = logo;
   else {
     const color = /^#[0-9a-fA-F]{3,8}$/.test(ORG.primaryColor || '') ? ORG.primaryColor : '#15569e';
     const glyph = escapeText(String(ORG.seal || '★').slice(0, 2));
@@ -94,10 +98,17 @@ function faviconLink() {
 }
 
 // Banner mark: a logo image when an https logo URL is configured, else the seal glyph.
-function brandMark() {
-  const url = String(ORG.logoUrl || '');
-  if (HTTPS_URL.test(url)) {
-    return `<img class="brand-logo" src="${url}" alt="${escapeText(ORG.name)} logo">`;
+// The board's mark. `variant: 'light'` is for dark grounds (the navy rail),
+// where the reversed artwork is used when one has been supplied.
+function brandMark({ variant = 'light', cls = 'brand-logo' } = {}) {
+  const light = String(ORG.logoLightUrl || '');
+  const dark = String(ORG.logoUrl || '');
+  // On a dark ground prefer the reversed mark, else fall back to the standard one.
+  const src = variant === 'light'
+    ? (isBrandSrc(light) ? light : (isBrandSrc(dark) ? dark : ''))
+    : (isBrandSrc(dark) ? dark : (isBrandSrc(light) ? light : ''));
+  if (src) {
+    return `<img class="${escapeText(cls)}" src="${escapeText(src)}" alt="${escapeText(ORG.name)} seal">`;
   }
   return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
 }
@@ -277,7 +288,7 @@ function authLayout(title, body) {
 <body class="auth-page">
   <div class="auth-shell">
     <a class="auth-brand" href="/">
-      ${brandMark()}
+      ${brandMark({ variant: 'dark' })}
       <span class="auth-brand-text">
         <strong>${escapeText(ORG.name)}</strong>
         <small>${escapeText(ORG.tagline)}</small>

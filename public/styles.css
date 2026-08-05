@@ -55,7 +55,9 @@ h1 { font-size: 25px; letter-spacing: -.2px; }
 .brand-seal { width: 46px; height: 46px; border-radius: 50%; flex: none;
   background: radial-gradient(circle at 35% 30%, #ffe08a, #e8a200); color: var(--banner);
   display: grid; place-items: center; font-size: 24px; box-shadow: inset 0 0 0 3px rgba(255,255,255,.55); }
-.brand-logo { max-height: 46px; width: auto; }
+/* Supplied artwork occupies the same 46px square as the fallback seal, so the
+   masthead keeps its rhythm whichever one is in use. */
+.brand-logo { width: 46px; height: 46px; object-fit: contain; flex: none; display: block; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .brand-text strong { font-family: var(--serif); font-size: 17px; letter-spacing: .2px; }
 .brand-text small { color: #bcd4ec; font-size: 10px; text-transform: uppercase; letter-spacing: 1.1px; }
@@ -180,7 +182,7 @@ table.data.compact td, table.data.compact th { padding: 5px 8px; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
 .admin-actions .btn, .head-actions .btn, .form-actions .btn { flex: 0 0 auto; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.form-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.form-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .detail-head { justify-content: space-between; align-items: flex-start; margin: 6px 0 14px; }
 .detail-head h1 { margin: 0; color: var(--accent-dark); max-width: 780px; }
 
@@ -275,7 +277,6 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .form legend { font-size: 12.5px; font-weight: 700; color: var(--accent-dark); padding: 0 6px; }
 .chk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
 .chk, .radio { font-weight: 400; display: flex; align-items: center; gap: 6px; margin: 0; }
-.form-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
 .inline-form { margin-bottom: 16px; }
 
 /* Drag-to-reorder */
@@ -337,7 +338,7 @@ body.auth-page { background: #edf2f7; min-height: 100vh; display: flex; flex-dir
 .auth-shell { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 32px 16px; gap: 20px; }
 .auth-brand { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
 .auth-brand .brand-seal { width: 64px; height: 64px; font-size: 32px; background: linear-gradient(145deg, var(--accent), var(--accent-dark)); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
-.auth-brand .brand-logo { height: 52px; width: auto; }
+.auth-brand .brand-logo { width: 64px; height: 64px; object-fit: contain; }
 .auth-brand-text strong { display: block; font-size: 18px; color: var(--accent-dark); }
 .auth-brand-text small { font-size: 12px; color: #64748b; }
 .auth-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.08); padding: 28px 32px; width: 100%; max-width: 420px; }
@@ -661,11 +662,7 @@ table.data.sortable thead th { padding: 0; }
   .util-left { display: none; }
 }
 
-/* Branding logo in the banner */
-.brand-logo { height: 38px; width: auto; display: block; }
-
-/* SSO sign-in button + separator on the login page */
-.sso-btn { display: block; text-align: center; margin-bottom: 8px; }
+/* Separator between SSO and the local sign-in form */
 .sso-or { text-align: center; margin: 8px 0 14px; }
 
 /* Inline forms (e.g. roster actions) */
