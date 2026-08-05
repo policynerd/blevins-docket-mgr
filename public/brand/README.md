@@ -15,11 +15,21 @@ Set the paths under **Admin → Branding**, or with `ORG_*` environment variable
 Printed agenda packets are text-only today and carry no seal, and the print
 stylesheet hides the sidebar mark — so nothing here affects PDF output.
 
+| `lockup-light.png` | A horizontal lockup shown **alone** in the sidebar, replacing the seal-and-name masthead | `logoLockupUrl` / `ORG_LOGO_LOCKUP_URL` |
+
 ## Which artwork goes where
 
-Supply the **seal alone**, not the full lockup, for `seal.png` and
-`seal-light.png`. The app already sets the organization name and tagline in
-type beside the mark, so a lockup that repeats them renders the name twice.
+There are two ways to brand the sidebar; pick one.
+
+**Seal beside the name (default).** Supply the **seal alone** for `seal.png`
+and `seal-light.png`. The app sets the organization name and tagline in type
+next to it, so artwork that already contains the name would render it twice.
+
+**A horizontal lockup.** If your lockup already carries the name — a seal, a
+rule, and the wordmark — set `logoLockupUrl` instead. The sidebar then shows
+that image across the full width of the rail and omits the name and tagline,
+since the artwork supplies them. Use the reversed (white) version: the rail is
+navy. A wide aspect ratio is expected; the image scales to the rail width.
 
 - **`seal.png`** — the full-colour or black seal, on transparency.
 - **`seal-light.png`** — the reversed (white) seal, on transparency. This is the

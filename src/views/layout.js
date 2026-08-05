@@ -113,6 +113,24 @@ function brandMark({ variant = 'light', cls = 'brand-logo' } = {}) {
   return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
 }
 
+// The sidebar masthead. A horizontal lockup already contains the organization
+// name, so it stands alone; otherwise the seal is set beside the name in type.
+function brandBlock() {
+  const lockup = String(ORG.logoLockupUrl || '');
+  if (isBrandSrc(lockup)) {
+    return `<a class="brand brand-lockup-wrap" href="/">`
+      + `<img class="brand-lockup" src="${escapeText(lockup)}" alt="${escapeText(ORG.name)}">`
+      + '</a>';
+  }
+  return `<a class="brand" href="/">
+        ${brandMark()}
+        <span class="brand-text">
+          <strong>${escapeText(ORG.name)}</strong>
+          <small>${escapeText(ORG.tagline)}</small>
+        </span>
+      </a>`;
+}
+
 function statusBadge(status) {
   const cls = 'st-' + String(status || '').toLowerCase().replace(/[^a-z]+/g, '-');
   return raw(`<span class="badge ${cls}">${escapeText(status)}</span>`);
@@ -176,13 +194,7 @@ function layout({ title, active, body, subtitle, head }) {
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
   <div class="app">
     <aside class="sidebar" aria-label="Primary navigation">
-      <a class="brand" href="/">
-        ${brandMark()}
-        <span class="brand-text">
-          <strong>${escapeText(ORG.name)}</strong>
-          <small>${escapeText(ORG.tagline)}</small>
-        </span>
-      </a>
+      ${brandBlock()}
       <nav class="sidenav">${sideNav(user, active)}</nav>
     </aside>
     <div class="content">
