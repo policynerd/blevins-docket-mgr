@@ -1317,57 +1317,62 @@ route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
 });
 
 // --- Drafting workbench (clerk): structured legislative drafting -------------
-function matterOr404(res, id) {
-  const m = repo.matters.get(Number(id));
+// Workbench URLs are keyed on the file number — the identifier shown in the UI
+// and used by /legislation/:fileNumber. It is UNIQUE NOT NULL, so it resolves
+// unambiguously. Accepting the internal row id as a fallback would not: file
+// numbers are free-form on import, so a matter numbered "6" would shadow the
+// matter whose id is 6 and a clerk could act on the wrong record.
+function matterOr404(res, ref) {
+  const m = repo.matters.getByFileNumber(decodeURIComponent(String(ref)));
   if (!m) { sendHtml(res, pages.notFound(), 404); return null; }
   return m;
 }
-route('GET', /^\/admin\/legislation\/(\d+)\/draft$/, (req, res, ctx) => {
+route('GET', /^\/admin\/legislation\/([^/]+)\/draft$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   sendHtml(res, draftingView.draftPage(m, { saved: ctx.query.saved === '1' }));
 });
-route('POST', /^\/admin\/legislation\/(\d+)\/draft$/, (req, res, ctx) => {
+route('POST', /^\/admin\/legislation\/([^/]+)\/draft$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   const text = String(ctx.body.full_text || '');
   // Archive the outgoing text as a numbered version when it actually changed.
   if (ctx.body.snapshot === '1') repo.matters.snapshotIfChanged(m.id, { full_text: text, note: 'Drafting revision' });
   repo.matters.update(m.id, Object.assign({}, m, { full_text: text }));
-  redirect(res, `/admin/legislation/${m.id}/draft?saved=1`);
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/draft?saved=1`);
 });
-route('GET', /^\/admin\/legislation\/(\d+)\/code$/, (req, res, ctx) => {
+route('GET', /^\/admin\/legislation\/([^/]+)\/code$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   sendHtml(res, draftingView.codePage(m, { saved: ctx.query.saved === '1' }));
 });
-route('POST', /^\/admin\/legislation\/(\d+)\/code$/, (req, res, ctx) => {
+route('POST', /^\/admin\/legislation\/([^/]+)\/code$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   repo.code.addAmendment(m.id, {
     op: ctx.body.op, citation: ctx.body.citation, heading: ctx.body.heading,
     new_text: ctx.body.new_text,
   });
-  redirect(res, `/admin/legislation/${m.id}/code?saved=1`);
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/code?saved=1`);
 });
-route('POST', /^\/admin\/legislation\/(\d+)\/code\/(\d+)\/delete$/, (req, res, ctx) => {
+route('POST', /^\/admin\/legislation\/([^/]+)\/code\/(\d+)\/delete$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   const a = repo.code.amendment(Number(ctx.params[1]));
   if (a && a.matter_id === m.id && !a.applied_at) repo.code.removeAmendment(a.id);
-  redirect(res, `/admin/legislation/${m.id}/code`);
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/code`);
 });
-route('GET', /^\/admin\/legislation\/(\d+)\/compare$/, (req, res, ctx) => {
+route('GET', /^\/admin\/legislation\/([^/]+)\/compare$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   const mode = ['law', 'versions', 'impact'].includes(ctx.query.mode) ? ctx.query.mode : 'law';
   sendHtml(res, draftingView.comparePage(m, mode, ctx.query));
 });
 // Amendment-impact text is POSTed: a full draft would overflow a GET request
 // line and would otherwise be recorded in history and access logs.
-route('POST', /^\/admin\/legislation\/(\d+)\/compare\/impact$/, (req, res, ctx) => {
+route('POST', /^\/admin\/legislation\/([^/]+)\/compare\/impact$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   sendHtml(res, draftingView.comparePage(m, 'impact', { proposed: ctx.body.proposed || '' }));
 });
 // Codify an enacted measure: apply its instructions to the Board Code.
-route('POST', /^\/admin\/legislation\/(\d+)\/codify$/, (req, res, ctx) => {
+route('POST', /^\/admin\/legislation\/([^/]+)\/codify$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   amendEngine.codify(m.id, { effectiveDate: ctx.body.effective_date || null });
-  redirect(res, `/admin/legislation/${m.id}/code?saved=1`);
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/code?saved=1`);
 });
 
 // --- The Board Code (public) -------------------------------------------------

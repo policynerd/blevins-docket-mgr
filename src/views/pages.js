@@ -437,10 +437,13 @@ function matterDetail(matter, query = {}, user = null) {
           <button type="submit" class="btn">${repo.watches.isWatching(user.id, matter.id) ? '★ Watching' : '☆ Watch'}</button>
         </form>`) : ''}
         <a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}.rss" title="Activity feed">RSS</a>
+        ${auth.hasRole(user, 'clerk') ? raw(`
         <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft" title="Structured drafting, validation and the provision outline">Draft text</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare" title="Compare versions, or this measure against current law">Comparative print</a>
         <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
           <button type="submit" class="btn">+ Draft staff report</button>
-        </form>
+        </form>`) : ''}
       </span>
     </div>
     ${raw(card('Record', meta))}
