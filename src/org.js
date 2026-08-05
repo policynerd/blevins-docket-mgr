@@ -17,6 +17,9 @@ const FIELDS = {
   // Reversed artwork for dark grounds — the navy sidebar. (Printed packets
   // carry no image today; print styles hide the sidebar mark entirely.)
   logoLightUrl: { env: 'ORG_LOGO_LIGHT_URL', def: '' },
+  // A horizontal lockup already carries the organization name, so when one is
+  // supplied the sidebar shows it alone rather than repeating the name in type.
+  logoLockupUrl: { env: 'ORG_LOGO_LOCKUP_URL', def: '' },
   faviconUrl: { env: 'ORG_FAVICON_URL', def: '' },
   primaryColor: { env: 'ORG_PRIMARY_COLOR', def: '#15569e' },
   primaryBody: { env: 'ORG_PRIMARY_BODY', def: 'Board of Governors' },
@@ -32,7 +35,8 @@ const FIELDS = {
 };
 
 // Fields surfaced in the Branding admin form (others stay env/default only).
-const EDITABLE = ['name', 'tagline', 'seal', 'logoUrl', 'logoLightUrl', 'faviconUrl', 'primaryColor', 'primaryBody',
+const EDITABLE = ['name', 'tagline', 'seal', 'logoUrl', 'logoLightUrl', 'logoLockupUrl',
+  'faviconUrl', 'primaryColor', 'primaryBody',
   'primaryBodyType', 'membersLabel', 'chairTitle', 'viceChairTitle', 'memberTitle',
   'clerkTitle', 'clerkOffice', 'meetingLocation', 'emailDomain'];
 

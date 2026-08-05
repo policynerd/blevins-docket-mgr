@@ -283,6 +283,7 @@ function brandingPage({ saved = false } = {}) {
           ${raw(field('logoUrl', 'Seal / logo', 'https://… or /brand/seal.png'))}
           ${raw(field('logoLightUrl', 'Reversed seal', 'for the dark sidebar — /brand/seal-light.png'))}
         </div>
+        ${raw(field('logoLockupUrl', 'Horizontal lockup', 'optional — replaces the seal and name in the sidebar'))}
         <div class="form-row">
           ${raw(field('primaryColor', 'Primary color', '', 'color'))}
           ${raw(field('seal', 'Seal glyph', 'fallback when no artwork is set'))}
