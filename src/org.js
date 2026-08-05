@@ -14,7 +14,8 @@ const FIELDS = {
   tagline: { env: 'ORG_TAGLINE', def: 'Legislative Information Center' },
   seal: { env: 'ORG_SEAL', def: '★' },
   logoUrl: { env: 'ORG_LOGO_URL', def: '' },
-  // Reversed artwork for dark grounds (the navy sidebar, the packet cover).
+  // Reversed artwork for dark grounds — the navy sidebar. (Printed packets
+  // carry no image today; print styles hide the sidebar mark entirely.)
   logoLightUrl: { env: 'ORG_LOGO_LIGHT_URL', def: '' },
   faviconUrl: { env: 'ORG_FAVICON_URL', def: '' },
   primaryColor: { env: 'ORG_PRIMARY_COLOR', def: '#15569e' },
@@ -31,7 +32,7 @@ const FIELDS = {
 };
 
 // Fields surfaced in the Branding admin form (others stay env/default only).
-const EDITABLE = ['name', 'tagline', 'logoUrl', 'logoLightUrl', 'faviconUrl', 'primaryColor', 'primaryBody',
+const EDITABLE = ['name', 'tagline', 'seal', 'logoUrl', 'logoLightUrl', 'faviconUrl', 'primaryColor', 'primaryBody',
   'primaryBodyType', 'membersLabel', 'chairTitle', 'viceChairTitle', 'memberTitle',
   'clerkTitle', 'clerkOffice', 'meetingLocation', 'emailDomain'];
 

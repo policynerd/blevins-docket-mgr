@@ -8,9 +8,12 @@ Set the paths under **Admin → Branding**, or with `ORG_*` environment variable
 
 | File | Used for | Setting |
 | --- | --- | --- |
-| `seal.png` (or `.svg`) | The seal on light grounds: sign-in, printed packets, favicon | `logoUrl` / `ORG_LOGO_URL` |
+| `seal.png` (or `.svg`) | The seal on light grounds — the sign-in page; also the favicon fallback | `logoUrl` / `ORG_LOGO_URL` |
 | `seal-light.png` | The seal reversed for dark grounds — the navy sidebar | `logoLightUrl` / `ORG_LOGO_LIGHT_URL` |
 | `favicon.png` | Browser tab icon (optional; falls back to `seal.png`) | `faviconUrl` / `ORG_FAVICON_URL` |
+
+Printed agenda packets are text-only today and carry no seal, and the print
+stylesheet hides the sidebar mark — so nothing here affects PDF output.
 
 ## Which artwork goes where
 
