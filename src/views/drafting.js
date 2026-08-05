@@ -52,8 +52,8 @@ function draftPage(matter, { saved = false } = {}) {
     <div class="detail-head">
       <h1>${matter.title}</h1>
       <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${matter.id}/code">Amend the Code${impact.total ? raw(` <span class="badge">${impact.total}</span>`) : ''}</a>
-        <a class="btn" href="/admin/legislation/${matter.id}/compare">Comparative print</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/code">Amend the Code${impact.total ? raw(` <span class="badge">${impact.total}</span>`) : ''}</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare">Comparative print</a>
       </span>
     </div>
     ${saved ? raw('<p class="saved-banner">Draft saved.</p>') : ''}
@@ -68,7 +68,7 @@ function draftPage(matter, { saved = false } = {}) {
       <div class="draft-main">
         ${raw(card('Structured preview', `<div class="ld-doc">${legisdoc.toHtml(doc)}</div>`))}
         ${raw(card('Drafting text', `
-          <form class="form" method="post" action="/admin/legislation/${matter.id}/draft">
+          <form class="form" method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">
             <p class="muted" style="margin-top:0">Number provisions as
               <code>SECTION 1.</code> → <code>(a)</code> → <code>(1)</code> → <code>(A)</code> → <code>(i)</code>.
               Structure is parsed as you save, giving every provision a citable identifier.</p>
@@ -98,7 +98,7 @@ function codePage(matter, { saved = false } = {}) {
         <td><b>§${a.citation}</b></td>
         <td>${a.heading || (target ? target.heading : raw('<span class="muted">— new —</span>'))}</td>
         <td>${a.applied_at ? raw('<span class="badge st-enacted">Codified</span>') : raw('<span class="badge st-draft">Pending</span>')}</td>
-        <td>${a.applied_at ? '' : raw(`<form method="post" action="/admin/legislation/${matter.id}/code/${a.id}/delete" class="inline"><button class="btn-link" type="submit">Remove</button></form>`)}</td>
+        <td>${a.applied_at ? '' : raw(`<form method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/code/${a.id}/delete" class="inline"><button class="btn-link" type="submit">Remove</button></form>`)}</td>
       </tr>`;
   }).join('')}</tbody></table>`
     : emptyState('This measure does not amend the Board Code yet.');
@@ -110,8 +110,8 @@ function codePage(matter, { saved = false } = {}) {
     <div class="detail-head">
       <h1>Amending instructions</h1>
       <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${matter.id}/draft">Back to drafting</a>
-        <a class="btn" href="/admin/legislation/${matter.id}/compare">Comparative print</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Back to drafting</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare">Comparative print</a>
       </span>
     </div>
     <p class="muted">${matter.file_number} — ${matter.title}</p>
@@ -122,7 +122,7 @@ function codePage(matter, { saved = false } = {}) {
       ${impact.titles.length ? ` of Title ${impact.titles.join(', ')}` : ''}.</p>`) : ''}
     ${raw(card('Instructions', list))}
     ${raw(card('Add an instruction', `
-      <form class="form" method="post" action="/admin/legislation/${matter.id}/code">
+      <form class="form" method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/code">
         <div class="form-row">
           <label>Operation<select name="op" required>
             <option value="amend">Amend an existing section</option>
@@ -149,7 +149,7 @@ function comparePage(matter, mode, query = {}) {
     ['impact', 'Amendment impact'],
   ];
   const nav = `<nav class="cp-tabs">${tabs.map(([k, label]) =>
-    `<a class="cp-tab${mode === k ? ' active' : ''}" href="/admin/legislation/${matter.id}/compare?mode=${k}">${escapeText(label)}</a>`).join('')}</nav>`;
+    `<a class="cp-tab${mode === k ? ' active' : ''}" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare?mode=${k}">${escapeText(label)}</a>`).join('')}</nav>`;
 
   let panel = '';
   if (mode === 'law') {
@@ -176,7 +176,7 @@ function comparePage(matter, mode, query = {}) {
       `<option value="${v.version}"${v.version === sel ? ' selected' : ''}>v${v.version} — ${escapeText(formatDate(v.created_at) || '')}</option>`).join('');
     panel = versions.length < 2
       ? emptyState('At least two saved versions are needed to compare.')
-      : `<form class="form inline-form" method="get" action="/admin/legislation/${matter.id}/compare">
+      : `<form class="form inline-form" method="get" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare">
           <input type="hidden" name="mode" value="versions">
           <div class="form-row">
             <label>From<select name="a">${opts(a)}</select></label>
@@ -194,7 +194,7 @@ function comparePage(matter, mode, query = {}) {
     // POSTed, not GET: a real draft would overflow the request line (414) and
     // would otherwise sit in browser history and access logs.
     panel = `<p class="muted">Paste a proposed amendment to this measure's text to see how it would change the bill if adopted.</p>
-      <form class="form" method="post" action="/admin/legislation/${matter.id}/compare/impact">
+      <form class="form" method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare/impact">
         <label>Proposed text<textarea name="proposed" rows="12" class="mono" spellcheck="false">${escapeText(proposed)}</textarea></label>
         <button class="btn primary" type="submit">Show impact</button>
       </form>
@@ -208,7 +208,7 @@ function comparePage(matter, mode, query = {}) {
     <div class="detail-head">
       <h1>Comparative print</h1>
       <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${matter.id}/draft">Back to drafting</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Back to drafting</a>
       </span>
     </div>
     <p class="muted">${matter.file_number} — ${matter.title}</p>
