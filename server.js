@@ -1317,8 +1317,12 @@ route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
 });
 
 // --- Drafting workbench (clerk): structured legislative drafting -------------
-function matterOr404(res, id) {
-  const m = repo.matters.get(Number(id));
+// Accept either the public file number (260783 — what appears in the UI and in
+// /legislation/:fileNumber) or the internal row id. Both are all-digits, so the
+// file number is tried first since that is what a user will paste.
+function matterOr404(res, ref) {
+  const key = String(ref);
+  const m = repo.matters.getByFileNumber(key) || repo.matters.get(Number(key));
   if (!m) { sendHtml(res, pages.notFound(), 404); return null; }
   return m;
 }
