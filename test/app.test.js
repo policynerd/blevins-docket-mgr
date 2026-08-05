@@ -423,6 +423,68 @@ test('amend: comparative print and codification against the Board Code', () => {
   assert.deepEqual(Object.values(amend.codify(mId)).slice(0, 3), [0, 0, 0]);
 });
 
+// Exercises onStatusChange — the hook the routes actually call — so that
+// removing the wiring, or dropping the enacting-status guard, fails here.
+test('amend: the enactment hook codifies only at an enacting status', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269904', title: 'An Ordinance reaching enactment', type: 'Ordinance', status: 'In Committee',
+  });
+  repo.code.insertSection({ citation: '93-1', heading: 'Target', body_text: 'SECTION 1. Original.' });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '93-1', new_text: 'SECTION 1. Revised.' });
+
+  // Routine transitions return null — no Code change, and no error to report.
+  for (const s of ['Draft', 'In Committee', 'On Agenda']) {
+    repo.matters.setStatus(mId, s);
+    assert.equal(amend.onStatusChange(mId, s, '2026-09-01'), null, `${s} must be a no-op`);
+    assert.ok(/Original/.test(repo.code.byCitation('93-1').body_text), `${s} must not touch the Code`);
+  }
+
+  repo.matters.setStatus(mId, 'Enacted');
+  const res = amend.onStatusChange(mId, 'Enacted', '2026-09-01');
+  assert.equal(res.amended, 1);
+  assert.deepEqual(res.errors, []);
+  assert.ok(/Revised/.test(repo.code.byCitation('93-1').body_text), 'enactment applies the instruction');
+
+  // Re-saving the same status writes no duplicate history.
+  amend.onStatusChange(mId, 'Enacted', '2026-09-01');
+  assert.equal(repo.code.historyFor(repo.code.byCitation('93-1').id).length, 1);
+});
+
+test('amend: the hook reports refused instructions rather than swallowing them', () => {
+  const amend = require('../src/amend');
+  const mId = repo.matters.insert({
+    file_number: '269905', title: 'An Ordinance with a bad instruction', type: 'Ordinance', status: 'Enacted',
+  });
+  repo.code.addAmendment(mId, { op: 'amend', citation: '94-nope', new_text: 'SECTION 1. Text.' });
+  const res = amend.onStatusChange(mId, 'Enacted', '2026-09-01');
+  assert.ok(res, 'an enacting status returns a result');
+  assert.equal(res.skipped, 1);
+  assert.ok(res.errors.length, 'the failure is reported to the caller, not only logged');
+});
+
+test('mimetype: identifies extensionless art from its header bytes', () => {
+  const mt = require('../src/mimetype');
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+  const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(10)]);
+  const gif = Buffer.concat([Buffer.from('GIF89a', 'latin1'), Buffer.alloc(10)]);
+  const webp = Buffer.concat([Buffer.from('RIFF', 'latin1'), Buffer.alloc(4), Buffer.from('WEBP', 'latin1')]);
+  const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+
+  assert.equal(mt.sniffType(png), 'image/png');
+  assert.equal(mt.sniffType(jpg), 'image/jpeg');
+  assert.equal(mt.sniffType(gif), 'image/gif');
+  assert.equal(mt.sniffType(webp), 'image/webp');
+  assert.equal(mt.sniffType(svg), 'image/svg+xml');
+  assert.equal(mt.sniffType(Buffer.alloc(64)), mt.FALLBACK, 'unknown data stays a generic blob');
+  assert.equal(mt.sniffType(Buffer.from([1, 2])), mt.FALLBACK, 'too short to identify');
+
+  // A known extension wins; a missing one falls back to the bytes.
+  assert.equal(mt.typeFor('.png', Buffer.alloc(0)), 'image/png');
+  assert.equal(mt.typeFor('', png), 'image/png', 'extensionless brand art still serves as an image');
+  assert.equal(mt.typeFor('.bogus', png), 'image/png');
+});
+
 test('amend: rejects malformed instructions and stale pending notices', () => {
   const amend = require('../src/amend');
   const mId = repo.matters.insert({

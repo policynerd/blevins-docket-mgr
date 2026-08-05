@@ -203,6 +203,30 @@ function asOf(codeSectionId, isoDate) {
   return text;
 }
 
+// Is this a status at which a measure's instructions take effect?
+function isEnacting(status) { return ENACTING_STATUSES.has(String(status || '')); }
+
+// The enactment hook the routes call on every status change.
+//
+// Returns null for routine transitions (Draft → In Committee and the like) so
+// they neither touch the Code nor register as failures — codify() reports a
+// non-enacting status as an error, which would otherwise turn every ordinary
+// workflow step into a spurious error log.
+//
+// For an enacting status it returns the codify() result, so the caller can
+// tell the clerk when instructions were refused. Reporting that matters: the
+// status is already saved by then, so a swallowed failure leaves an enacted
+// measure out of step with the Code — the very drift this hook exists to stop.
+function onStatusChange(matterId, newStatus, effectiveDate) {
+  if (!isEnacting(newStatus)) return null;
+  try {
+    return codify(matterId, { effectiveDate: effectiveDate || null });
+  } catch (e) {
+    return { added: 0, amended: 0, repealed: 0, skipped: 0, errors: [e.message] };
+  }
+}
+
 module.exports = {
   proposedTextFor, comparativePrint, codeImpact, amendmentImpact, codify, asOf,
+  isEnacting, onStatusChange, ENACTING_STATUSES,
 };
