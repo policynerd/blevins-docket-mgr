@@ -1,37 +1,69 @@
+/* House fonts. Upload the .otf files to public/brand/fonts/ and they load
+   automatically; until then every rule falls back to Georgia / Segoe UI, which
+   is what the corporate stylesheet degrades to as well. */
+@font-face { font-family:'Denton'; src:url('/brand/fonts/Denton-Light.otf') format('opentype'); font-weight:300; font-display:swap; }
+@font-face { font-family:'Denton'; src:url('/brand/fonts/Denton-Regular.otf') format('opentype'); font-weight:400; font-display:swap; }
+@font-face { font-family:'Denton'; src:url('/brand/fonts/Denton-Medium.otf') format('opentype'); font-weight:500; font-display:swap; }
+@font-face { font-family:'Denton Text'; src:url('/brand/fonts/DentonText-Regular.otf') format('opentype'); font-weight:400; font-display:swap; }
+@font-face { font-family:'Denton Text'; src:url('/brand/fonts/DentonText-Medium.otf') format('opentype'); font-weight:500; font-display:swap; }
+@font-face { font-family:'Denton Text'; src:url('/brand/fonts/DentonText-Bold.otf') format('opentype'); font-weight:700; font-display:swap; }
+@font-face { font-family:'FT Sterling'; src:url('/brand/fonts/FTSterlingTrial-Light.otf') format('opentype'); font-weight:300; font-display:swap; }
+@font-face { font-family:'FT Sterling'; src:url('/brand/fonts/FTSterlingTrial-Regular.otf') format('opentype'); font-weight:400; font-display:swap; }
+@font-face { font-family:'FT Sterling'; src:url('/brand/fonts/FTSterlingTrial-Medium.otf') format('opentype'); font-weight:500; font-display:swap; }
+@font-face { font-family:'FT Sterling'; src:url('/brand/fonts/FTSterlingTrial-Semi-Bold.otf') format('opentype'); font-weight:600; font-display:swap; }
+@font-face { font-family:'FT Sterling'; src:url('/brand/fonts/FTSterlingTrial-Bold.otf') format('opentype'); font-weight:700; font-display:swap; }
+
 :root {
-  /* Matte, not semi-gloss.
-     Gloss on a screen comes from three things: gradients, shadows that imply a
-     lifted surface, and highly saturated colour on paper-white. This palette
-     removes all three. The ground is an uncoated warm grey rather than a cool
-     blue-white, cards sit only a shade above it, and definition comes from a
-     hairline rather than a drop shadow — ink on stock, not glass. */
-  --banner: #16324c;
-  --banner-2: #1d4160;
-  --utility: #0f2436;
-  --tab: #1d4160;
+  /* Blevins Holdings house style.
+     These are the tokens from the corporate SharePoint stylesheet, so the
+     docket manager reads as part of the intranet rather than a separate
+     product. The warm ground, the slate navy and the brass gold are what give
+     it a matte, printed quality — the colour does the work, not gradients. */
+  --blv-navy: #353D4F;
+  --blv-navy-deep: #1A1E28;
+  --blv-navy-mid: #4A5568;
+  --blv-navy-light: #7282A0;
+
+  --banner: var(--blv-navy);
+  --banner-2: var(--blv-navy-mid);
+  --utility: var(--blv-navy-deep);
+  --tab: var(--blv-navy-mid);
   --tab-active: #ffffff;
-  --grid-head: #2b4d6b;
-  --accent: #1d4f7c;
-  --accent-dark: #14385a;
-  --accent-soft: #e8ecf0;
-  --gold: #c69a37;
-  --gold-dark: #9c7726;
-  --bg: #f1f0ec;
-  --card: #fbfaf7;
-  --ink: #22262b;
-  --muted: #5f6268;
-  --line: #dcd9d1;
-  --line-soft: #e7e4dc;
-  --zebra: #f5f4f0;
-  --good: #2f6a43;
-  --bad: #9e3428;
-  --warn: #8a6320;
-  --radius: 3px;
-  /* Kept for the few places elevation is functional (the mobile drawer, a
-     dropdown). Everything anchored to the page uses a border instead. */
-  --shadow: none;
-  --shadow-lg: 0 6px 18px rgba(20, 24, 28, .16);
-  --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --grid-head: var(--blv-navy);
+  --accent: #353D4F;
+  --accent-dark: #1A1E28;
+  --accent-soft: #EEF1F4;          /* blv-slate-dim */
+  --gold: #B8870B;
+  --gold-dark: #8f6908;
+  --gold-dim: #F7F0DC;
+  --bg: #F8F6F2;                    /* blv-warm */
+  --card: #FFFFFF;                  /* blv-surface */
+  --stone: #EEE9E2;
+  --marble: #F5F2EE;
+  --ink: #1A1E28;
+  --muted: #6B7585;                 /* blv-ink-3 */
+  --faint: #9AA3B0;                 /* blv-ink-4 */
+  --line: #DDD9D2;                  /* blv-border */
+  --line-soft: #EEE9E2;             /* blv-border-subtle */
+  --zebra: #F5F2EE;                 /* blv-marble */
+  --good: #2A5C3E;                  /* blv-forest */
+  --good-dim: #E4F0EA;
+  --bad: #8B2030;                   /* blv-crimson */
+  --bad-dim: #F5E6E8;
+  --warn: #C9743A;                  /* blv-amber */
+  --warn-dim: #FAF0E8;
+  --cobalt: #1E3A5F;
+  --cobalt-dim: #E1EBF5;
+  --radius: 4px;
+  --shadow: 0 2px 6px rgba(26, 30, 40, .09);
+  --shadow-lg: 0 8px 32px rgba(26, 30, 40, .13);
+  /* House type. Denton sets display, Denton Text long-form, FT Sterling the
+     interface — the same stack as the corporate stylesheet. Each degrades to
+     the same fallback the intranet uses, so the app is correct before the font
+     files are uploaded and simply sharpens once they are. */
+  --serif: 'Denton', 'Tiempos Headline', Georgia, serif;
+  --serif-text: 'Denton Text', 'Tiempos Text', Georgia, serif;
+  --sans: 'FT Sterling', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --sidebar-w: 240px;
 
   /* Spacing scale. Single-value gaps resolve through these; compound paddings
@@ -53,7 +85,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--sans);
   font-size: var(--t-base);
   color: var(--ink);
   background: var(--bg);
@@ -64,7 +96,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .wrap { max-width: 1200px; margin: 0 auto; }
 .muted { color: var(--muted); }
-h1 { font-size: 25px; letter-spacing: -.2px; }
+h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; }
 
 /* ============ Official left sidebar rail + content ============ */
 .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
@@ -94,7 +126,7 @@ h1 { font-size: 25px; letter-spacing: -.2px; }
 .sidenav { padding: 6px 0 22px; flex: 1; }
 .nav-group { padding: 1px 0; }
 .nav-group + .nav-group { border-top: 1px solid rgba(255,255,255,.07); margin-top: 4px; }
-.nav-group-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: #7fa0c4;
+.nav-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: #7fa0c4;
   padding: 12px 18px 4px; font-weight: 700; }
 .sidenav a { display: flex; align-items: center; gap: var(--s4); padding: 8px 18px; color: #dbe7f4;
   font-size: var(--t-body); font-weight: 500; border-left: 3px solid transparent; }
@@ -121,7 +153,7 @@ h1 { font-size: 25px; letter-spacing: -.2px; }
 
 .main-area { padding: 24px; width: 100%; max-width: 1360px; flex: 1 0 auto; }
 .page-head { margin-bottom: 18px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
-.page-head h1 { margin: 0 0 3px; color: var(--accent-dark); font-family: var(--serif); }
+.page-head h1 { margin: 0 0 4px; color: var(--ink); font-family: var(--serif); font-weight: 400; }
 
 /* Site-wide announcement banner */
 .announce { display: flex; align-items: center; gap: 10px; padding: 11px 24px; font-size: 14px;
@@ -170,8 +202,8 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 
 /* Data grids — authoritative solid header band */
 table.data { width: 100%; border-collapse: collapse; font-size: var(--t-body); border: 1px solid var(--line); }
-table.data thead th { background: var(--grid-head); color: #fff; text-align: left; padding: 8px 11px;
-  font-size: var(--t-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+table.data thead th { background: var(--grid-head); color: #fff; text-align: left; padding: 10px 12px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
   border-right: 1px solid rgba(255,255,255,.15); white-space: nowrap; }
 table.data tbody td { padding: 8px 11px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 table.data tbody tr:nth-child(even) { background: var(--zebra); }
@@ -469,7 +501,7 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 .ld-outline b { font-variant-numeric: tabular-nums; }
 
 /* Structured document rendering */
-.ld-doc { font-size: 14px; line-height: 1.65; }
+.ld-doc { font-family: var(--serif-text); font-size: 14.5px; line-height: 1.7; }
 .ld-preamble { margin: 0 0 10px; font-style: italic; color: var(--muted); }
 .ld-node { padding: 2px 0; scroll-margin-top: 70px; }
 .ld-node.ld-section { margin-top: 14px; font-weight: 700; color: var(--accent-dark); font-family: var(--serif); font-size: 15.5px; }

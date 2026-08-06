@@ -86,7 +86,7 @@ function brandHead() {
 const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
 // Brand art may be hosted (https) or shipped with the app under /brand/.
 // A local path keeps the mark working offline and on first boot.
-const LOCAL_ASSET = /^\/(brand|assets)\/[A-Za-z0-9._-]+$/;
+const LOCAL_ASSET = /^\/(brand|assets)\/[A-Za-z0-9._\/-]+$/;
 function isBrandSrc(v) { return HTTPS_URL.test(v) || LOCAL_ASSET.test(v); }
 
 // Favicon: an explicit favicon URL, else the logo URL, else an auto-generated

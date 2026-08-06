@@ -19,6 +19,10 @@ const BY_EXT = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.md': 'text/plain; charset=utf-8',
+  '.otf': 'font/otf',
+  '.ttf': 'font/ttf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 };
 
 const FALLBACK = 'application/octet-stream';
