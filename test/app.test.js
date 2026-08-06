@@ -463,6 +463,34 @@ test('amend: the hook reports refused instructions rather than swallowing them',
   assert.ok(res.errors.length, 'the failure is reported to the caller, not only logged');
 });
 
+test('nav: every privileged role sees the Workspace, admin most of all', () => {
+  const { navFor } = require('../src/views/layout');
+  const ws = (role) => {
+    const g = navFor(role ? { id: 1, role } : null).find((x) => x.label === 'Workspace');
+    return g ? g.items.map((i) => i.href) : [];
+  };
+
+  assert.deepEqual(ws(null), [], 'an anonymous visitor has no workspace');
+  assert.deepEqual(ws('public'), [], 'the public role has no workspace');
+  assert.ok(ws('member').includes('/member'));
+  assert.ok(ws('staff').includes('/govern/members'));
+  assert.ok(ws('clerk').includes('/admin'));
+
+  // The regression: `admin` was absent from a rank table this view kept of its
+  // own, so it scored 0 and the whole group disappeared for the most
+  // privileged account.
+  const admin = ws('admin');
+  assert.ok(admin.length, 'admin sees a Workspace at all');
+  for (const href of ws('clerk')) {
+    assert.ok(admin.includes(href), `admin keeps the clerk link ${href}`);
+  }
+  assert.ok(admin.includes('/admin/users'), 'admin gets the admin-only links');
+
+  // Privilege is cumulative all the way up.
+  assert.ok(ws('clerk').length > ws('staff').length);
+  assert.ok(ws('admin').length > ws('clerk').length);
+});
+
 test('drafting forms: every form parses into a valid provision tree', () => {
   const tpl = require('../src/doc-templates');
   const L = require('../src/legisdoc');

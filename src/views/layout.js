@@ -36,7 +36,16 @@ const NAV = NAV_GROUPS.flatMap((g) => g.items);
 let _user = null;
 function setUser(u) { _user = u; }
 
-const RANK = { public: 0, member: 1, staff: 2, clerk: 3 };
+// Role checks defer to auth.hasRole — the single source of truth for the
+// hierarchy. This view once kept its own rank table, which omitted `admin`;
+// an unlisted role scored 0, so the most privileged account was navigated as
+// though it were an anonymous visitor and the Workspace group vanished
+// entirely. A second copy of a hierarchy will always drift from the first.
+// Lazily required, like repo below, to avoid any load-order coupling.
+function can(user, role) {
+  try { return require('../auth').hasRole(user, role); } catch (_) { return false; }
+}
+
 // Returns nav as groups [{ label, items:[{ href, label, badge? }] }], with the
 // members label re-resolved live and role-gated sections appended.
 function navFor(user) {
@@ -44,20 +53,24 @@ function navFor(user) {
     label: g.label,
     items: g.items.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : { ...n })),
   }));
-  const rank = user ? (RANK[user.role] || 0) : 0;
   const workspace = [];
-  if (rank >= RANK.member) {
+  if (can(user, 'member')) {
     workspace.push({ href: '/member', label: 'Member Portal' });
     // Approvals routed to this user (lazy require avoids a load-order cycle).
     let count = 0;
-    try { count = require('../repo').workflow.inboxCount(user.id, rank >= RANK.clerk); } catch (_) { /* ignore */ }
+    try { count = require('../repo').workflow.inboxCount(user.id, can(user, 'clerk')); } catch (_) { /* ignore */ }
     workspace.push({ href: '/approvals', label: 'Approvals', badge: count || null });
   }
-  if (rank >= RANK.staff) workspace.push({ href: '/govern/members', label: 'Membership' });
-  if (rank >= RANK.clerk) {
+  if (can(user, 'staff')) workspace.push({ href: '/govern/members', label: 'Membership' });
+  if (can(user, 'clerk')) {
     workspace.push({ href: '/admin/consents', label: 'Written Consents' });
     workspace.push({ href: '/admin/announcement', label: 'Announcement' });
     workspace.push({ href: '/admin', label: 'Clerk Workspace' });
+  }
+  if (can(user, 'admin')) {
+    workspace.push({ href: '/admin/integrations', label: 'Integrations' });
+    workspace.push({ href: '/admin/branding', label: 'Branding' });
+    workspace.push({ href: '/admin/users', label: 'Users & Roles' });
   }
   if (workspace.length) groups.push({ label: 'Workspace', items: workspace });
   return groups;
@@ -355,4 +368,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, setUser, forbidden };
+module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden };
