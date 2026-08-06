@@ -1,7 +1,8 @@
 'use strict';
 
 const { html, raw } = require('../util');
-const { layout, card, emptyState, escapeText } = require('./layout');
+const { layout, card, emptyState, escapeText, brandMark } = require('./layout');
+const { ORG } = require('../org');
 const repo = require('../repo');
 
 function levelBadge(level) {
@@ -48,6 +49,30 @@ function orgDirectory() {
 }
 
 // --- Unit detail -------------------------------------------------------------
+// A masthead lockup for an office, department, division or unit, built from
+// the board's own mark rather than a separate asset per unit: the seal, a
+// rule, the parent organization in small caps, then the unit's own name.
+//
+// It is set on the navy band so reversed artwork reads correctly, and so a
+// sub-unit inherits the institution's authority instead of appearing to be a
+// separate brand — the same relationship a government department's mark has to
+// the department above it. The line above the name is the parent unit when
+// there is one, so an office reads under its department.
+function unitLockup(unit, ancestors = []) {
+  const parent = ancestors.length ? ancestors[ancestors.length - 1].name : ORG.name;
+  // brandMark() already returns markup; this is a plain template string, not an
+  // html`` one, so wrapping it in raw() would stringify as [object Object].
+  return `<div class="unit-lockup">
+    ${brandMark()}
+    <span class="ul-rule" aria-hidden="true"></span>
+    <span class="ul-text">
+      <small>${escapeText(parent)}</small>
+      <strong>${escapeText(unit.name)}</strong>
+      <em>${escapeText(unit.level)}</em>
+    </span>
+  </div>`;
+}
+
 function orgUnitDetail(unit) {
   const ancestors = repo.org.ancestors(unit.id);
   const children = repo.org.children(unit.id);
@@ -69,9 +94,9 @@ function orgUnitDetail(unit) {
 
   const body = html`
     <p class="crumbs">${raw(crumbs)}</p>
+    ${raw(unitLockup(unit, ancestors))}
     <div class="detail-head">
-      <h1>${raw(levelBadge(unit.level))} ${unit.name}</h1>
-      <a class="btn" href="/admin/org/${unit.id}/edit">Manage</a>
+      <a class="btn" href="/admin/org/${unit.id}/edit">Manage this ${escapeText(unit.level.toLowerCase())}</a>
     </div>
     ${raw(card('Leadership', leaderCard))}
     ${unit.description ? raw(card('About', `<p>${escapeText(unit.description)}</p>`)) : ''}

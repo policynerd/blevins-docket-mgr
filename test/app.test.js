@@ -463,6 +463,42 @@ test('amend: the hook reports refused instructions rather than swallowing them',
   assert.ok(res.errors.length, 'the failure is reported to the caller, not only logged');
 });
 
+test('drafting forms: every form parses into a valid provision tree', () => {
+  const tpl = require('../src/doc-templates');
+  const L = require('../src/legisdoc');
+  const forms = tpl.draftingDefaults();
+  assert.ok(Object.keys(forms).length >= 8, 'a form for each legislative type');
+
+  for (const [type, text] of Object.entries(forms)) {
+    const doc = L.parse(text);
+    assert.ok(doc.sections.length >= 1, `${type}: produces at least one SECTION`);
+    // The whole point: a form must yield structure the workbench can use.
+    const errors = L.validate(doc).filter((i) => i.level === 'error');
+    assert.deepEqual(errors, [], `${type}: no structural errors — got ${JSON.stringify(errors)}`);
+    assert.ok(L.flatten(doc).every((n) => n.id), `${type}: every provision is citable`);
+  }
+
+  // A resolution keeps its WHEREAS clauses as a preamble, ahead of SECTION 1.
+  const res = L.parse(forms.Resolution);
+  assert.ok(res.preamble.some((p) => /WHEREAS/.test(p)), 'resolution preamble survives');
+  assert.equal(res.sections[0].marker, '1');
+
+  // The amendatory form is well formed too, and names the target section.
+  const am = L.parse(tpl.amendatoryForm('12-4'));
+  assert.deepEqual(L.validate(am).filter((i) => i.level === 'error'), []);
+  assert.ok(/12-4/.test(tpl.amendatoryForm('12-4')), 'cites the section being amended');
+});
+
+test('drafting forms: placeholders are filled as plain text, not escaped HTML', () => {
+  const tpl = require('../src/doc-templates');
+  const out = tpl.draftingTemplate('Ordinance', {
+    file_number: '260701', title: 'An Ordinance concerning parks & recreation',
+  });
+  assert.ok(/parks & recreation/.test(out), 'ampersand stays literal in drafting text');
+  assert.ok(!/&amp;/.test(out), 'no HTML escaping leaks into the document');
+  assert.ok(!/\{\{/.test(out), 'no placeholder left unfilled');
+});
+
 test('mimetype: identifies extensionless art from its header bytes', () => {
   const mt = require('../src/mimetype');
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);

@@ -1338,6 +1338,18 @@ route('POST', /^\/admin\/legislation\/([^/]+)\/draft$/, (req, res, ctx) => {
   repo.matters.update(m.id, Object.assign({}, m, { full_text: text }));
   redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/draft?saved=1`);
 });
+// Insert a drafting form into an empty draft.
+route('POST', /^\/admin\/legislation\/([^/]+)\/draft\/form$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  // Never overwrite work in progress — the control is only offered when empty.
+  if (!String(m.full_text || '').trim()) {
+    const text = ctx.body.form === 'amendatory'
+      ? docTemplates.fillPlaceholders(docTemplates.amendatoryForm(), m)
+      : docTemplates.draftingTemplate(m.type, m);
+    if (text) repo.matters.update(m.id, Object.assign({}, m, { full_text: text }));
+  }
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/draft`);
+});
 route('GET', /^\/admin\/legislation\/([^/]+)\/code$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   sendHtml(res, draftingView.codePage(m, { saved: ctx.query.saved === '1' }));

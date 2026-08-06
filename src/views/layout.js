@@ -131,6 +131,37 @@ function brandBlock() {
       </a>`;
 }
 
+// The mark for the sign-in page, which sits on a light ground.
+//
+// Prefer the light-ground seal. Failing that, a lockup is usually reversed
+// artwork meant for the navy rail — invisible on white — so it is set on a
+// navy plate rather than dropped onto the page, which is what made the
+// sign-in page fall back to the placeholder glyph while the rail showed the
+// real mark.
+// True when the sign-in mark is a lockup that already sets the name in type,
+// so the adjacent wordmark would repeat it. Kept for screen readers.
+function authMarkCarriesName() {
+  return !isBrandSrc(String(ORG.logoUrl || '')) && isBrandSrc(String(ORG.logoLockupUrl || ''));
+}
+
+function authMark() {
+  // The artwork is decorative in every branch: the adjacent .auth-brand-text
+  // supplies the name and tagline, visibly or to assistive tech, so alt text
+  // here would announce the organization twice.
+  const seal = String(ORG.logoUrl || '');
+  if (isBrandSrc(seal)) {
+    return `<img class="brand-logo" src="${escapeText(seal)}" alt="">`;
+  }
+  // Validate each candidate in turn. Branding values are stored unvalidated,
+  // so a malformed lockup must not shadow a usable reversed seal.
+  for (const cand of [String(ORG.logoLockupUrl || ''), String(ORG.logoLightUrl || '')]) {
+    if (isBrandSrc(cand)) {
+      return `<span class="auth-plate"><img class="auth-plate-img" src="${escapeText(cand)}" alt=""></span>`;
+    }
+  }
+  return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
+}
+
 function statusBadge(status) {
   const cls = 'st-' + String(status || '').toLowerCase().replace(/[^a-z]+/g, '-');
   return raw(`<span class="badge ${cls}">${escapeText(status)}</span>`);
@@ -300,8 +331,8 @@ function authLayout(title, body) {
 <body class="auth-page">
   <div class="auth-shell">
     <a class="auth-brand" href="/">
-      ${brandMark({ variant: 'dark' })}
-      <span class="auth-brand-text">
+      ${authMark()}
+      <span class="auth-brand-text${authMarkCarriesName() ? ' visually-hidden' : ''}">
         <strong>${escapeText(ORG.name)}</strong>
         <small>${escapeText(ORG.tagline)}</small>
       </span>
@@ -324,4 +355,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, NAV, setUser, forbidden };
+module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, setUser, forbidden };

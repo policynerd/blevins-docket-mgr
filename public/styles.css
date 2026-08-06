@@ -368,7 +368,9 @@ body.auth-page { background: #edf2f7; min-height: 100vh; display: flex; flex-dir
 .sso-btn:hover { background: #f9fafb; border-color: #9ca3af; }
 .sso-icon { flex-shrink: 0; }
 .local-login { border-top: 1px solid var(--line); padding-top: 14px; }
-.local-login summary { cursor: pointer; font-size: var(--t-small); color: #64748b; list-style: none; user-select: none; margin-bottom: 12px; }
+.local-login summary { cursor: pointer; font-size: var(--t-body); color: var(--accent); font-weight: 600;
+  list-style: none; user-select: none; margin-bottom: 12px; }
+.local-login summary:hover { text-decoration: underline; }
 .local-login summary::-webkit-details-marker { display: none; }
 .local-login summary::before { content: '▸ '; }
 .local-login[open] summary::before { content: '▾ '; }
@@ -423,6 +425,31 @@ del.df-del { background: #fee2e2; color: #7f1d1d; padding: 0 1px; }
 @media (max-width: 900px) { .draft-grid { grid-template-columns: 1fr; } }
 .draft-side { position: sticky; top: 16px; }
 textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consolas, monospace; font-size: var(--t-body); line-height: 1.6; }
+
+/* Office / department / division lockup — the parent mark, a rule, then the
+   unit's own name, so a sub-unit reads as part of the institution rather than
+   as a separate brand. On the navy band so reversed artwork works. */
+.unit-lockup { display: flex; align-items: center; gap: var(--s6); background: var(--banner);
+  border-bottom: 3px solid var(--gold); border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--s7) var(--s8); margin-bottom: var(--s6); color: #fff; }
+.unit-lockup .brand-logo, .unit-lockup .brand-seal { width: 62px; height: 62px; flex: none; }
+.ul-rule { width: 1px; align-self: stretch; background: rgba(255,255,255,.35); flex: none; }
+.ul-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ul-text small { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 1.6px; color: #bcd4ec; }
+.ul-text strong { font-family: var(--serif); font-size: 25px; line-height: 1.15; letter-spacing: .2px; }
+.ul-text em { font-style: normal; font-size: var(--t-micro); text-transform: uppercase;
+  letter-spacing: 1.2px; color: #9fbcd9; }
+@media (max-width: 640px) {
+  .unit-lockup { padding: var(--s6); gap: var(--s5); }
+  .ul-text strong { font-size: 19px; }
+}
+
+/* Offer of a drafting form on an empty draft */
+.start-form { display: flex; align-items: center; justify-content: space-between; gap: var(--s7);
+  flex-wrap: wrap; background: var(--zebra); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  padding: var(--s5) var(--s6); margin-bottom: var(--s6); }
+.start-form p { margin: 4px 0 0; font-size: var(--t-body); max-width: 62ch; }
 
 /* Provision outline */
 .ld-outline, .ld-outline ol { list-style: none; margin: 0; padding: 0; font-size: var(--t-body); }
@@ -685,6 +712,36 @@ table.data.sortable thead th { padding: 0; }
 
 /* Separator between SSO and the local sign-in form */
 .sso-or { text-align: center; margin: 8px 0 14px; }
+
+/* --- Sign-in page ---------------------------------------------------------
+   The Microsoft button follows their branding guidance: a light scheme with
+   the unaltered logo, not our own brand colour. A gold button carrying the
+   Microsoft mark reads as something other than an official sign-in. */
+.auth-title { font-family: var(--serif); font-size: 22px; margin: 0 0 6px; color: var(--accent-dark); }
+.auth-card .auth-access-note { margin: 0 0 20px; }
+
+.ms-btn { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 41px;
+  padding: 10px 12px; background: #fff; border: 1px solid #8c8c8c; border-radius: 2px;
+  color: #5e5e5e; font-family: "Segoe UI", var(--sans, "Segoe UI"), sans-serif;
+  font-size: 15px; font-weight: 600; text-decoration: none; }
+.ms-btn:hover { background: #f3f3f3; text-decoration: none; color: #5e5e5e; }
+.ms-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ms-logo { flex: none; display: block; }
+.sso-help { font-size: var(--t-small); color: var(--muted); margin: 8px 0 0; }
+
+/* "or" rule between the two sign-in routes */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 20px 0 16px; color: var(--muted); font-size: var(--t-small); }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* Reversed artwork needs a dark plate to read on the light sign-in page. */
+.auth-plate { display: block; background: var(--banner); border-radius: var(--radius);
+  padding: 12px 16px; width: 230px; }
+.auth-plate-img { display: block; width: 100%; height: auto; }
+
+/* Present to assistive tech, absent from the page — used where a lockup
+   already renders the organization name and repeating it would be noise. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* Inline forms (e.g. roster actions) */
 form.inline { display: inline; }
