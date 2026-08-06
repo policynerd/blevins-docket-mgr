@@ -15,6 +15,7 @@ const { layout, card, statusBadge, emptyState, escapeText } = require('./layout'
 const repo = require('../repo');
 const legisdoc = require('../legisdoc');
 const amend = require('../amend');
+const docTemplates = require('../doc-templates');
 
 function opBadge(op) {
   const label = { add: 'Adds', amend: 'Amends', repeal: 'Repeals' }[op] || op;
@@ -39,6 +40,32 @@ function outlineNav(doc) {
   </li>`).join('')}</ol>`;
 }
 
+// Offered only while the draft is empty: the drafting form for this file's
+// type, and the amendatory form for a measure that changes the Board Code.
+// Both produce structured text, so the draft starts inside the provision tree
+// rather than as prose that has to be restructured later.
+function startFromForm(matter, text) {
+  if (String(text || '').trim()) return '';
+  const t = escapeText(matter.type || 'measure');
+  const has = !!docTemplates.draftingDefaults()[matter.type];
+  return `<div class="start-form">
+    <div>
+      <b>Start from a drafting form.</b>
+      <p class="muted">${has
+    ? `The ${t} form lays out the customary sections — findings, definitions, the operative provision, severability and effective date — numbered so the outline, validation and comparison against current law work from the first save.`
+    : `No form is defined for ${t}. The amendatory form suits a measure that changes the Board Code.`}</p>
+    </div>
+    <div class="head-actions">
+      ${has ? `<form method="post" action="/admin/legislation/${escapeText(matter.file_number)}/draft/form" class="inline">
+        <input type="hidden" name="form" value="type">
+        <button type="submit" class="btn primary">Insert ${t} form</button></form>` : ''}
+      <form method="post" action="/admin/legislation/${escapeText(matter.file_number)}/draft/form" class="inline">
+        <input type="hidden" name="form" value="amendatory">
+        <button type="submit" class="btn">Insert amendatory form</button></form>
+    </div>
+  </div>`;
+}
+
 // --- Draft: text + outline + validation -------------------------------------
 function draftPage(matter, { saved = false } = {}) {
   const text = matter.full_text || '';
@@ -59,6 +86,8 @@ function draftPage(matter, { saved = false } = {}) {
     ${saved ? raw('<p class="saved-banner">Draft saved.</p>') : ''}
     <p class="muted">${matter.file_number} · ${statusBadge(matter.status)} ·
       ${flat.length} provision${flat.length === 1 ? '' : 's'} · ${doc.sections.length} section${doc.sections.length === 1 ? '' : 's'}</p>
+
+    ${raw(startFromForm(matter, text))}
 
     <div class="draft-grid">
       <div class="draft-side">

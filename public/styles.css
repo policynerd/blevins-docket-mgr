@@ -426,6 +426,13 @@ del.df-del { background: #fee2e2; color: #7f1d1d; padding: 0 1px; }
 .draft-side { position: sticky; top: 16px; }
 textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consolas, monospace; font-size: var(--t-body); line-height: 1.6; }
 
+/* Offer of a drafting form on an empty draft */
+.start-form { display: flex; align-items: center; justify-content: space-between; gap: var(--s7);
+  flex-wrap: wrap; background: var(--zebra); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  padding: var(--s5) var(--s6); margin-bottom: var(--s6); }
+.start-form p { margin: 4px 0 0; font-size: var(--t-body); max-width: 62ch; }
+
 /* Provision outline */
 .ld-outline, .ld-outline ol { list-style: none; margin: 0; padding: 0; font-size: var(--t-body); }
 .ld-outline > li { margin-bottom: 8px; }
