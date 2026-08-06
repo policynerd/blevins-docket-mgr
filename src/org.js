@@ -21,7 +21,13 @@ const FIELDS = {
   // supplied the sidebar shows it alone rather than repeating the name in type.
   logoLockupUrl: { env: 'ORG_LOGO_LOCKUP_URL', def: '' },
   faviconUrl: { env: 'ORG_FAVICON_URL', def: '' },
-  primaryColor: { env: 'ORG_PRIMARY_COLOR', def: '#15569e' },
+  // Blevins Holdings slate navy. brandHead() emits this as a `--accent`
+  // override on every page, so a default that disagreed with the house
+  // stylesheet quietly undid it at runtime — links, crumbs, chips and stat
+  // rules all read civic blue however the tokens were set. Keeping the default
+  // equal to the stylesheet's --accent makes the override a no-op until an
+  // admin deliberately chooses another colour under Admin -> Branding.
+  primaryColor: { env: 'ORG_PRIMARY_COLOR', def: '#353D4F' },
   primaryBody: { env: 'ORG_PRIMARY_BODY', def: 'Board of Governors' },
   primaryBodyType: { env: 'ORG_PRIMARY_BODY_TYPE', def: 'Governing Board' },
   membersLabel: { env: 'ORG_MEMBERS_LABEL', def: 'Board Members' },

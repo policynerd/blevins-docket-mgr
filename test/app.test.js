@@ -669,3 +669,127 @@ test('notifications: no-op unconfigured, queues when configured', () => {
   delete process.env.SMTP_HOST;
   delete process.env.SMTP_FROM;
 });
+
+// --- Branding: local asset paths ---------------------------------------------
+test('branding: a local /brand path cannot spell a traversal', () => {
+  const { isBrandSrc } = require('../src/views/layout');
+  // Legitimate shapes.
+  assert.equal(isBrandSrc('/brand/seal.png'), true);
+  assert.equal(isBrandSrc('/brand/fonts/FTSterlingTrial-Light.woff2'), true);
+  assert.equal(isBrandSrc('/assets/logo-light.svg'), true);
+  assert.equal(isBrandSrc('https://cdn.example.gov/seal.png'), true);
+  // Traversal and its near neighbours.
+  assert.equal(isBrandSrc('/brand/../../etc/passwd'), false);
+  assert.equal(isBrandSrc('/brand/..'), false);
+  assert.equal(isBrandSrc('/brand/sub/../../secret'), false);
+  assert.equal(isBrandSrc('/brand//etc/passwd'), false);   // empty segment
+  assert.equal(isBrandSrc('/brand/.hidden'), false);       // leading dot
+  assert.equal(isBrandSrc('/brand/'), false);              // no segment at all
+  assert.equal(isBrandSrc('/brand'), false);
+  // Other schemes and hosts stay out.
+  assert.equal(isBrandSrc('http://example.gov/seal.png'), false);
+  assert.equal(isBrandSrc('javascript:alert(1)'), false);
+  assert.equal(isBrandSrc('/etc/passwd'), false);
+});
+
+// --- Branding: @font-face declarations match what is actually deployed --------
+// Two failure modes this catches. A face declared without its file costs a 404
+// on every page load; and the trial cut of FT Sterling carries only 66 glyphs,
+// so a unicode-range wider than the font's own cmap hands the browser
+// characters it cannot draw.
+test('branding: every @font-face src resolves, and unicode-range matches the cmap', () => {
+  const cssPath = path.join(__dirname, '..', 'public', 'styles.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  const publicDir = path.join(__dirname, '..', 'public');
+
+  const faces = css.match(/@font-face\s*\{[^}]*\}/g) || [];
+  assert.ok(faces.length > 0, 'expected at least one @font-face');
+
+  for (const face of faces) {
+    for (const m of face.matchAll(/url\('([^']+)'\)/g)) {
+      const file = path.join(publicDir, m[1].replace(/^\//, ''));
+      assert.ok(fs.existsSync(file), `@font-face points at a missing file: ${m[1]}`);
+    }
+    // Every declared range must be covered by the font it is declared against.
+    const range = (face.match(/unicode-range:\s*([^;]+);/) || [])[1];
+    if (!range) continue;
+    const src = (face.match(/url\('([^']+\.otf)'\)/) || [])[1];
+    if (!src) continue;
+    const covered = cmapOf(path.join(publicDir, src.replace(/^\//, '')));
+    for (const part of range.split(',')) {
+      const [lo, hi] = part.trim().replace(/^U\+/i, '').split('-')
+        .map((h) => parseInt(h, 16));
+      for (let c = lo; c <= (hi === undefined ? lo : hi); c++) {
+        assert.ok(covered.has(c), `unicode-range claims U+${c.toString(16).toUpperCase()} but ${src} has no glyph for it`);
+      }
+    }
+  }
+});
+
+// Read the codepoints an OpenType file actually maps, straight from its cmap.
+function cmapOf(file) {
+  const b = fs.readFileSync(file);
+  const numTables = b.readUInt16BE(4);
+  let cmapOff = 0;
+  for (let i = 0; i < numTables; i++) {
+    const rec = 12 + i * 16;
+    if (b.slice(rec, rec + 4).toString('latin1') === 'cmap') cmapOff = b.readUInt32BE(rec + 8);
+  }
+  assert.ok(cmapOff, `no cmap table in ${file}`);
+  const out = new Set();
+  const nSub = b.readUInt16BE(cmapOff + 2);
+  for (let i = 0; i < nSub; i++) {
+    const sub = cmapOff + b.readUInt32BE(cmapOff + 4 + i * 8 + 4);
+    const fmt = b.readUInt16BE(sub);
+    if (fmt === 4) {
+      const segX2 = b.readUInt16BE(sub + 6);
+      const endO = sub + 14;
+      const startO = endO + segX2 + 2;
+      for (let s = 0; s < segX2 / 2; s++) {
+        const end = b.readUInt16BE(endO + s * 2);
+        const start = b.readUInt16BE(startO + s * 2);
+        if (start === 0xffff) continue;
+        for (let c = start; c <= end && c < 0xffff; c++) out.add(c);
+      }
+    } else if (fmt === 12) {
+      const nGroups = b.readUInt32BE(sub + 12);
+      for (let g = 0; g < nGroups; g++) {
+        const r = sub + 16 + g * 12;
+        for (let c = b.readUInt32BE(r); c <= b.readUInt32BE(r + 4); c++) out.add(c);
+      }
+    }
+  }
+  return out;
+}
+
+// --- Branding: status tints stay legible --------------------------------------
+// The house palette's amber and brass are brand inks chosen against white, and
+// both fall under WCAG AA when set as 11px badge type on their own dim tint.
+// Each pair below is one that the stylesheet actually paints; darker -ink steps
+// exist for exactly this reason, and this keeps them from being reverted to the
+// brand value by someone tidying up "duplicate" tokens.
+test('branding: text-on-tint token pairs clear WCAG AA', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+  const token = (name) => {
+    const m = css.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`));
+    assert.ok(m, `token --${name} is not defined as a literal hex`);
+    return m[1];
+  };
+  const relLum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.substr(i, 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const pairs = [
+    ['warn-ink', 'warn-dim'], ['gold-ink', 'gold-dim'],
+    ['good', 'good-dim'], ['bad', 'bad-dim'], ['cobalt', 'cobalt-dim'],
+  ];
+  for (const [ink, tint] of pairs) {
+    const r = ratio(token(ink), token(tint));
+    assert.ok(r >= 4.5, `--${ink} on --${tint} is ${r.toFixed(2)}:1, under the 4.5:1 AA floor`);
+  }
+});
