@@ -426,6 +426,24 @@ del.df-del { background: #fee2e2; color: #7f1d1d; padding: 0 1px; }
 .draft-side { position: sticky; top: 16px; }
 textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consolas, monospace; font-size: var(--t-body); line-height: 1.6; }
 
+/* Office / department / division lockup — the parent mark, a rule, then the
+   unit's own name, so a sub-unit reads as part of the institution rather than
+   as a separate brand. On the navy band so reversed artwork works. */
+.unit-lockup { display: flex; align-items: center; gap: var(--s6); background: var(--banner);
+  border-bottom: 3px solid var(--gold); border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--s7) var(--s8); margin-bottom: var(--s6); color: #fff; }
+.unit-lockup .brand-logo, .unit-lockup .brand-seal { width: 62px; height: 62px; flex: none; }
+.ul-rule { width: 1px; align-self: stretch; background: rgba(255,255,255,.35); flex: none; }
+.ul-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ul-text small { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 1.6px; color: #bcd4ec; }
+.ul-text strong { font-family: var(--serif); font-size: 25px; line-height: 1.15; letter-spacing: .2px; }
+.ul-text em { font-style: normal; font-size: var(--t-micro); text-transform: uppercase;
+  letter-spacing: 1.2px; color: #9fbcd9; }
+@media (max-width: 640px) {
+  .unit-lockup { padding: var(--s6); gap: var(--s5); }
+  .ul-text strong { font-size: 19px; }
+}
+
 /* Offer of a drafting form on an empty draft */
 .start-form { display: flex; align-items: center; justify-content: space-between; gap: var(--s7);
   flex-wrap: wrap; background: var(--zebra); border: 1px solid var(--line);
