@@ -86,7 +86,14 @@ function brandHead() {
 const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
 // Brand art may be hosted (https) or shipped with the app under /brand/.
 // A local path keeps the mark working offline and on first boot.
-const LOCAL_ASSET = /^\/(brand|assets)\/[A-Za-z0-9._-]+$/;
+//
+// The path is built from one segment at a time so a traversal cannot be
+// spelled: each segment must start with an alphanumeric, which rejects both
+// `..` and a leading dot, and the `/`-joined form leaves no way to write an
+// empty segment (`//`). serveStatic() refuses to leave PUBLIC_DIR as well, so
+// this is the outer of two independent checks rather than the only one.
+const SEGMENT = '[A-Za-z0-9][A-Za-z0-9._-]*';
+const LOCAL_ASSET = new RegExp(`^/(brand|assets)(/${SEGMENT})+$`);
 function isBrandSrc(v) { return HTTPS_URL.test(v) || LOCAL_ASSET.test(v); }
 
 // Favicon: an explicit favicon URL, else the logo URL, else an auto-generated
@@ -99,7 +106,7 @@ function faviconLink() {
   if (isBrandSrc(fav)) href = fav;
   else if (isBrandSrc(logo)) href = logo;
   else {
-    const color = /^#[0-9a-fA-F]{3,8}$/.test(ORG.primaryColor || '') ? ORG.primaryColor : '#15569e';
+    const color = /^#[0-9a-fA-F]{3,8}$/.test(ORG.primaryColor || '') ? ORG.primaryColor : '#353D4F';
     const glyph = escapeText(String(ORG.seal || '★').slice(0, 2));
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
       + `<rect width="64" height="64" rx="12" fill="${color}"/>`
@@ -368,4 +375,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden };
+module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc };
