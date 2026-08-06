@@ -145,13 +145,19 @@ function authMarkCarriesName() {
 }
 
 function authMark() {
+  // The artwork is decorative in every branch: the adjacent .auth-brand-text
+  // supplies the name and tagline, visibly or to assistive tech, so alt text
+  // here would announce the organization twice.
   const seal = String(ORG.logoUrl || '');
   if (isBrandSrc(seal)) {
-    return `<img class="brand-logo" src="${escapeText(seal)}" alt="${escapeText(ORG.name)} seal">`;
+    return `<img class="brand-logo" src="${escapeText(seal)}" alt="">`;
   }
-  const lockup = String(ORG.logoLockupUrl || ORG.logoLightUrl || '');
-  if (isBrandSrc(lockup)) {
-    return `<span class="auth-plate"><img class="auth-plate-img" src="${escapeText(lockup)}" alt="${escapeText(ORG.name)}"></span>`;
+  // Validate each candidate in turn. Branding values are stored unvalidated,
+  // so a malformed lockup must not shadow a usable reversed seal.
+  for (const cand of [String(ORG.logoLockupUrl || ''), String(ORG.logoLightUrl || '')]) {
+    if (isBrandSrc(cand)) {
+      return `<span class="auth-plate"><img class="auth-plate-img" src="${escapeText(cand)}" alt=""></span>`;
+    }
   }
   return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
 }
