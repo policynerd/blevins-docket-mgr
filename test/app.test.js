@@ -786,6 +786,7 @@ test('branding: text-on-tint token pairs clear WCAG AA', () => {
   };
   const pairs = [
     ['warn-ink', 'warn-dim'], ['gold-ink', 'gold-dim'],
+    ['gold-ink', 'stone'],   // every .card-head masthead in the app
     ['good', 'good-dim'], ['bad', 'bad-dim'], ['cobalt', 'cobalt-dim'],
   ];
   for (const [ink, tint] of pairs) {
