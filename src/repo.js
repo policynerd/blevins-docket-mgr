@@ -602,6 +602,139 @@ const meetings = {
     }
     return pos;
   },
+  // --- Agenda assembly ------------------------------------------------------
+  // Legislative files that could be heard at this meeting: live business, in
+  // this meeting's body (or not yet assigned to one), and not already sitting
+  // on an agenda that has not happened yet. A file that was heard at a past
+  // meeting is eligible again — that is how something comes back on appeal,
+  // after a continuance, or for a second reading.
+  readyForAgenda(meetingId) {
+    const mt = meetings.get(meetingId);
+    if (!mt) return [];
+    return db.prepare(`
+      SELECT m.*, b.name AS body_name,
+        (SELECT COUNT(*) FROM reports r WHERE r.matter_id = m.id) AS report_count,
+        (SELECT COUNT(*) FROM attachments a WHERE a.matter_id = m.id) AS attachment_count
+      FROM matters m
+      LEFT JOIN bodies b ON b.id = m.body_id
+      WHERE m.status IN ('Introduced', 'In Committee', 'On Agenda', 'Tabled')
+        AND (m.body_id = ? OR m.body_id IS NULL)
+        -- Never offer what is already on this agenda, whatever state the
+        -- meeting is in. Testing this against the meeting's own date and
+        -- status let a Final or Adjourned meeting offer its own items back.
+        AND NOT EXISTS (
+          SELECT 1 FROM agenda_items ai
+          WHERE ai.matter_id = m.id AND ai.meeting_id = ?
+        )
+        -- Nor what is booked on another meeting that has not happened. The
+        -- comparison is against today, not against this meeting's date: when
+        -- building a December agenda, business already set down for November
+        -- is spoken for, even though November falls earlier. A meeting in
+        -- session blocks regardless of the date on it.
+        AND NOT EXISTS (
+          SELECT 1 FROM agenda_items ai
+          JOIN meetings m2 ON m2.id = ai.meeting_id
+          WHERE ai.matter_id = m.id
+            AND m2.id <> ?
+            AND m2.status IN ('Scheduled', 'In Progress')
+            AND (m2.status = 'In Progress' OR m2.meeting_date >= date('now'))
+        )
+      ORDER BY m.intro_date, m.file_number`).all(mt.body_id, meetingId, meetingId);
+  },
+
+  // Place several files onto the agenda in one action. Each lands as its own
+  // item so it can be numbered, moved and voted separately; addItem() assigns
+  // the agenda number from what is already there.
+  addMatters(meetingId, matterIds, opts = {}) {
+    const ids = (Array.isArray(matterIds) ? matterIds : [matterIds])
+      .map((n) => parseInt(n, 10)).filter(Number.isInteger);
+    if (!ids.length) return { added: 0, skipped: 0 };
+    // Only files this meeting is actually allowed to hear, so a tampered id
+    // list cannot schedule an unrelated matter.
+    const eligible = new Set(meetings.readyForAgenda(meetingId).map((m) => m.id));
+    let added = 0; let skipped = 0;
+    db.exec('SAVEPOINT sp_add_matters');
+    try {
+      for (const id of ids) {
+        if (!eligible.has(id)) { skipped++; continue; }
+        // Spend the id. The eligible set is computed once, so without this a
+        // submitted list of [id, id] would place the same file on the agenda
+        // twice — the one duplicate the query itself cannot see.
+        eligible.delete(id);
+        meetings.addItem({
+          meeting_id: meetingId,
+          matter_id: id,
+          section: opts.section || null,
+          item_type: opts.item_type || 'Action',
+          requires_vote: opts.requires_vote == null ? 1 : (opts.requires_vote ? 1 : 0),
+        });
+        added++;
+      }
+      db.exec('RELEASE sp_add_matters');
+    } catch (e) {
+      db.exec('ROLLBACK TO sp_add_matters'); db.exec('RELEASE sp_add_matters');
+      throw e;
+    }
+    return { added, skipped };
+  },
+
+  setInPacket(itemId, val) {
+    db.prepare('UPDATE agenda_items SET in_packet=? WHERE id=?').run(val ? 1 : 0, itemId);
+  },
+
+  // --- Supporting document assembly ----------------------------------------
+  // Everything that goes into the packet, in agenda order, with each item's
+  // supporting material gathered behind it: the staff reports and attachments
+  // that travel with the legislative file, plus any documents hung on this
+  // occurrence. Tab numbers are assigned here so the builder screen, the
+  // table of contents and the assembled PDF all agree on them — the tab is
+  // what a member says out loud ("turn to tab 4"), so it cannot be computed
+  // twice and disagree.
+  packet(meetingId) {
+    const items = meetings.items(meetingId);
+    let tab = 0;
+    return items.map((it) => {
+      const included = it.in_packet == null ? true : !!it.in_packet;
+      const reports = it.matter_id
+        ? db.prepare('SELECT id, title, kind FROM reports WHERE matter_id = ? ORDER BY id').all(it.matter_id)
+        : [];
+      const attachments = it.matter_id ? matters.attachments(it.matter_id) : [];
+      const docs = meetings.itemDocs(it.id);
+      const material = reports.length + attachments.length + docs.length;
+      // Only material earns a tab. A procedural line like "Call to Order"
+      // carries nothing and would otherwise burn a number members then hunt
+      // for behind a divider that isn't there.
+      const hasTab = included && material > 0;
+      return {
+        item: it,
+        included,
+        tab: hasTab ? ++tab : null,
+        reports,
+        attachments,
+        docs,
+        material,
+      };
+    });
+  },
+
+  itemDocs(itemId) {
+    return db.prepare('SELECT * FROM agenda_item_docs WHERE agenda_item_id = ? ORDER BY sort_order, id')
+      .all(itemId);
+  },
+  addItemDoc(itemId, d) {
+    return db.prepare(`INSERT INTO agenda_item_docs
+      (agenda_item_id, name, url, file_path, size, content_type, note, sort_order)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
+      itemId, d.name, d.url || null, d.file_path || null, d.size || null,
+      d.content_type || null, d.note || null, d.sort_order || 0).lastInsertRowid;
+  },
+  getItemDoc(id) {
+    return db.prepare('SELECT * FROM agenda_item_docs WHERE id = ?').get(id);
+  },
+  deleteItemDoc(id) {
+    db.prepare('DELETE FROM agenda_item_docs WHERE id = ?').run(id);
+  },
+
   inSession() {
     return db.prepare(`
       SELECT mt.*, b.name AS body_name

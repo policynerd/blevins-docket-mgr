@@ -42,7 +42,7 @@ const announcement = require('./src/announcement');
 const draftingView = require('./src/views/drafting');
 const amendEngine = require('./src/amend');
 const docTemplates = require('./src/doc-templates');
-const { sameOrigin } = require('./src/security');
+const { sameOrigin, safeUrl } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
 const {
@@ -1738,7 +1738,7 @@ route('POST', /^\/admin\/meetings\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, admin.agendaManager(mt));
+  sendHtml(res, admin.agendaManager(mt, ctx.query));
 });
 route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
@@ -1753,6 +1753,56 @@ route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
     requires_vote: b.requires_vote === '1' ? 1 : undefined,
   });
   redirect(res, `/admin/meetings/${id}/agenda`);
+});
+
+// Bulk placement from the ready-for-agenda queue. addMatters() re-checks
+// eligibility against the meeting itself, so a stale or edited id list cannot
+// schedule a file this body has no business hearing.
+route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/add-matters$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const mt = repo.meetings.get(id);
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const ids = asArray(ctx.body && ctx.body.matter_id);
+  const { added, skipped } = repo.meetings.addMatters(id, ids, {
+    section: ctx.body.section || null,
+    item_type: ctx.body.item_type || 'Action',
+  });
+  live.pushUpdate(id);
+  // Report the skip count rather than swallowing it: a silent "nothing
+  // happened" is how a clerk finds out at the meeting.
+  const q = skipped ? `?added=${added}&skipped=${skipped}` : `?added=${added}`;
+  redirect(res, `/admin/meetings/${id}/agenda${q}`);
+});
+
+// --- Packet assembly ---------------------------------------------------------
+route('GET', /^\/admin\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, admin.packetBuilder(mt));
+});
+
+route('POST', /^\/admin\/agenda-items\/(\d+)\/in-packet$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  repo.meetings.setInPacket(item.id, ctx.body.value === '1');
+  redirect(res, `/admin/meetings/${item.meeting_id}/packet`);
+});
+
+route('POST', /^\/admin\/agenda-items\/(\d+)\/docs$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  const name = String(ctx.body.name || '').trim();
+  const url = String(ctx.body.url || '').trim();
+  if (name) repo.meetings.addItemDoc(item.id, { name, url: safeUrl(url) ? url : null });
+  redirect(res, `/admin/meetings/${item.meeting_id}/packet`);
+});
+
+route('POST', /^\/admin\/agenda-item-docs\/(\d+)\/delete$/, (req, res, ctx) => {
+  const doc = repo.meetings.getItemDoc(Number(ctx.params[0]));
+  if (!doc) return sendHtml(res, pages.notFound(), 404);
+  const item = repo.meetings.getItem(doc.agenda_item_id);
+  repo.meetings.deleteItemDoc(doc.id);
+  redirect(res, `/admin/meetings/${item ? item.meeting_id : ''}/packet`);
 });
 
 route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/reorder$/, (req, res, ctx) => {

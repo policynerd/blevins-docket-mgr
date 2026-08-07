@@ -457,7 +457,23 @@ function personForm(person) {
 }
 
 // --- Agenda manager (add items + record votes) ------------------------------
-function agendaManager(meeting) {
+// What the last bulk placement did. Reporting the refusals is the point: the
+// route drops ids the meeting is not allowed to hear, and a clerk who is not
+// told will find out at the meeting.
+function placementBanner(q) {
+  const added = parseInt((q && q.added) || '', 10);
+  const skipped = parseInt((q && q.skipped) || '', 10);
+  if (!Number.isInteger(added)) return '';
+  const noun = (n) => `${n} item${n === 1 ? '' : 's'}`;
+  if (skipped > 0) {
+    return `<p class="form-warn">Placed ${noun(added)} on the agenda. `
+      + `${noun(skipped)} could not be placed — no longer eligible for this meeting `
+      + `(already scheduled, in another body, or closed out). Reload to see the current list.</p>`;
+  }
+  return `<p class="saved-banner">Placed ${noun(added)} on the agenda.</p>`;
+}
+
+function agendaManager(meeting, query) {
   const items = repo.meetings.items(meeting.id);
   const openMatters = repo.matters.search({ limit: 300 })
     .map((m) => ({ value: m.id, label: `${m.file_number} — ${m.title}` }));
@@ -510,17 +526,171 @@ function agendaManager(meeting) {
         <a class="btn" href="/admin/meetings/${meeting.id}/edit">✎ Edit</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/live">● Run live</a>
         <a class="btn" href="/admin/meetings/${meeting.id}/minutes">🧾 Minutes</a>
-        <a class="btn" href="/meetings/${meeting.id}/packet">📄 Packet</a>
+        <a class="btn" href="/admin/meetings/${meeting.id}/packet">📄 Packet</a>
       </span>
     </div>
     <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
-    ${raw(card('Add agenda item', addItemForm))}
+    ${raw(placementBanner(query))}
+    ${raw(readyQueue(meeting))}
+    ${raw(card('Add an item by hand', addItemForm))}
     ${raw(card('Agenda items & voting',
       loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
     ${raw(speakerQueue(meeting))}
     <script src="/assets/agenda-reorder.js" defer></script>
+    <script src="/assets/check-all.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
+}
+
+// The docket waiting to be heard: files this body can take up that are not
+// already scheduled. Placing business on an agenda is a bulk act — a clerk
+// works down a list deciding what makes this meeting — so this is a checklist
+// with one placement action, not the one-at-a-time dropdown beneath it.
+function readyQueue(meeting) {
+  const ready = repo.meetings.readyForAgenda(meeting.id);
+  if (!ready.length) {
+    return card('Ready for agenda', emptyState(
+      'Nothing is waiting for this body. Files appear here once introduced and until they are scheduled.'));
+  }
+  const rows = ready.map((m) => html`
+    <tr>
+      <td class="rq-pick"><input type="checkbox" name="matter_id" value="${m.id}"
+        id="rq${m.id}" form="ready-queue"></td>
+      <td><label for="rq${m.id}">${m.file_number}</label></td>
+      <td>${typeBadge(m.type)}</td>
+      <td class="title-cell"><label for="rq${m.id}">${m.title}</label></td>
+      <td>${statusBadge(m.status)}</td>
+      <td class="rq-material muted">${raw(materialNote(m))}</td>
+    </tr>`).join('');
+
+  const body = `
+    <form class="form" id="ready-queue" method="post"
+      action="/admin/meetings/${meeting.id}/agenda/add-matters"></form>
+    <table class="data ready-queue">
+      <thead><tr>
+        <th class="rq-pick"><input type="checkbox" data-check-all="ready-queue" aria-label="Select all"></th>
+        <th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Material</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="rq-actions">
+      <label>Place under section
+        <select name="section" form="ready-queue">${selectOptions(repo.AGENDA_SECTIONS, 'New Business', { includeBlank: '— none —' })}</select>
+      </label>
+      <label>Item type
+        <select name="item_type" form="ready-queue">${selectOptions(repo.ITEM_TYPES, 'Action')}</select>
+      </label>
+      <button type="submit" class="btn primary" form="ready-queue">Place selected on agenda</button>
+    </div>`;
+  return card(`Ready for agenda (${ready.length})`, body);
+}
+
+// What supporting material a file already carries, so a clerk can see before
+// scheduling whether the packet for it will be empty.
+function materialNote(m) {
+  const bits = [];
+  if (m.report_count) bits.push(`${m.report_count} report${m.report_count > 1 ? 's' : ''}`);
+  if (m.attachment_count) bits.push(`${m.attachment_count} attachment${m.attachment_count > 1 ? 's' : ''}`);
+  return bits.length ? escapeText(bits.join(' · ')) : '<em>none</em>';
+}
+
+// --- Packet builder ----------------------------------------------------------
+// The assembled meeting packet, shown in the order it will be bound: every
+// agenda item in agenda order with its supporting material gathered behind it.
+// The point of the screen is to make an empty tab obvious before the packet
+// goes out, which is the failure that actually costs a meeting — a member
+// turning to tab 4 and finding nothing there.
+function packetBuilder(meeting) {
+  const rows = repo.meetings.packet(meeting.id);
+  const included = rows.filter((r) => r.included);
+  const withTabs = rows.filter((r) => r.tab);
+  const bare = included.filter((r) => r.material === 0 && r.item.matter_id);
+
+  const summary = `
+    <div class="stat-grid small">
+      <div class="stat"><span class="stat-n">${rows.length}</span><span class="stat-l">Agenda items</span></div>
+      <div class="stat"><span class="stat-n">${withTabs.length}</span><span class="stat-l">Tabs</span></div>
+      <div class="stat"><span class="stat-n">${included.reduce((n, r) => n + r.material, 0)}</span><span class="stat-l">Documents</span></div>
+      <div class="stat${bare.length ? ' stat-flag' : ''}"><span class="stat-n">${bare.length}</span><span class="stat-l">Files with no material</span></div>
+    </div>`;
+
+  const warning = bare.length ? `
+    <p class="form-warn">${bare.length} legislative file${bare.length > 1 ? 's are' : ' is'} on the agenda
+    with no staff report or attachment. Members will have nothing to read on
+    ${bare.length > 1 ? 'those items' : 'that item'}:
+    ${escapeText(bare.map((r) => r.item.file_number || r.item.title).join(', '))}.</p>` : '';
+
+  const blocks = rows.map((r) => packetRow(meeting, r)).join('');
+
+  const body = html`
+    <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> /
+      <a href="/admin/meetings/${meeting.id}/agenda">Agenda</a> / Packet</p>
+    <div class="detail-head">
+      <h1>Packet — ${meeting.body_name}</h1>
+      <span class="head-actions">
+        <a class="btn" href="/admin/meetings/${meeting.id}/agenda">← Agenda</a>
+        <a class="btn primary" href="/meetings/${meeting.id}/packet">📄 Download packet</a>
+      </span>
+    </div>
+    <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''} · ${meeting.location || ''}</p>
+    ${raw(summary)}
+    ${raw(warning)}
+    ${raw(card('Contents, in binding order', rows.length
+      ? `<div class="packet-list">${blocks}</div>`
+      : emptyState('No agenda items yet — build the agenda first.')))}`;
+  return layout({ title: 'Packet', active: '/calendar', body });
+}
+
+function packetRow(meeting, r) {
+  const it = r.item;
+  const title = it.matter_id
+    ? `${escapeText(it.file_number)} — ${escapeText(it.matter_title)}`
+    : escapeText(it.title || '(item)');
+  const num = it.agenda_number ? `<span class="pb-num">${escapeText(it.agenda_number)}</span>` : '';
+  const tab = r.tab ? `<span class="pb-tab">Tab ${r.tab}</span>` : '<span class="pb-tab pb-tab-none">no tab</span>';
+
+  const docLine = (name, kind, href, del) => `
+    <li class="pb-doc">
+      <span class="pb-kind">${escapeText(kind)}</span>
+      ${href ? `<a href="${escapeText(href)}">${escapeText(name)}</a>` : `<span class="pb-file">${escapeText(name)}</span>`}
+      ${del || ''}
+    </li>`;
+
+  const docs = [
+    ...r.reports.map((rep) => docLine(rep.title, rep.kind || 'Report', `/admin/reports/${rep.id}/edit`)),
+    ...r.attachments.map((a) => docLine(a.name, 'Attachment', a.url || (a.file_path ? `/files/${a.id}` : null))),
+    ...r.docs.map((d) => docLine(d.name, 'Item document', d.url || null,
+      `<form method="post" action="/admin/agenda-item-docs/${d.id}/delete" class="inline-del"
+         onsubmit="return confirm('Remove this document from the packet?')"><button type="submit" class="link-danger">Remove</button></form>`)),
+  ].join('');
+
+  const addDoc = `
+    <form class="form inline-form pb-add" method="post" action="/admin/agenda-items/${it.id}/docs">
+      <input type="text" name="name" placeholder="Document name" required>
+      <input type="url" name="url" placeholder="https://… (link)">
+      <button type="submit" class="btn">Attach</button>
+    </form>`;
+
+  const toggle = `
+    <form method="post" action="/admin/agenda-items/${it.id}/in-packet" class="inline">
+      <input type="hidden" name="value" value="${r.included ? '0' : '1'}">
+      <button type="submit" class="btn-link">${r.included ? 'Hold back' : 'Include'}</button>
+    </form>`;
+
+  return `
+    <section class="pb-item${r.included ? '' : ' pb-held'}${r.included && r.material === 0 && it.matter_id ? ' pb-bare' : ''}">
+      <header class="pb-head">
+        ${num}${tab}
+        <span class="pb-title">${title}</span>
+        ${it.section ? `<span class="pb-section muted">${escapeText(it.section)}</span>` : ''}
+        ${toggle}
+      </header>
+      ${r.included
+        ? (docs ? `<ul class="pb-docs">${docs}</ul>`
+                : `<p class="pb-empty">${it.matter_id ? 'No staff report or attachment on this file.' : 'Procedural item — nothing to bind.'}</p>`)
+        : '<p class="pb-empty">Held back — not in this packet.</p>'}
+      ${r.included ? addDoc : ''}
+    </section>`;
 }
 
 // Request-to-speak queue for a meeting (public sign-ups awaiting the clerk).
@@ -831,6 +1001,6 @@ function mailAdmin({ sent = false } = {}) {
 }
 
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaTemplateAdmin, commentsAdmin,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, packetBuilder, agendaTemplateAdmin, commentsAdmin,
   matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin, mailAdmin,
 };

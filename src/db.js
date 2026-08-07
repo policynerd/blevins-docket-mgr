@@ -133,6 +133,26 @@ CREATE TABLE IF NOT EXISTS agenda_items (
   notes TEXT
 );
 
+-- Supporting material hung on an agenda item rather than a legislative file:
+-- a presentation deck, a memo, the minutes being approved. Kept apart from
+-- the attachments table on purpose. An attachment belongs to the legislative file
+-- permanently and travels with it across every meeting that hears it; one of
+-- these belongs to a single occurrence on a single agenda, and a procedural
+-- item has no matter_id to hang an attachment from at all.
+CREATE TABLE IF NOT EXISTS agenda_item_docs (
+  id INTEGER PRIMARY KEY,
+  agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  url TEXT,
+  file_path TEXT,
+  size INTEGER,
+  content_type TEXT,
+  note TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agenda_item_docs_item ON agenda_item_docs(agenda_item_id);
+
 CREATE TABLE IF NOT EXISTS votes (
   id INTEGER PRIMARY KEY,
   agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
@@ -640,6 +660,10 @@ const COLUMN_MIGRATIONS = {
     requires_vote: 'INTEGER NOT NULL DEFAULT 0',
     item_type: 'TEXT', // 'Action' | 'Discussion' | 'Information' | NULL
     video_ts: 'TEXT',  // timestamp into the meeting video, "h:mm:ss" or seconds
+    // Whether this item's supporting material is assembled into the packet.
+    // Defaults on: the packet is the record of what members were given, so an
+    // item is included unless the clerk deliberately holds it back.
+    in_packet: 'INTEGER NOT NULL DEFAULT 1',
   },
   matters: {
     body_html: 'TEXT',
@@ -787,7 +811,7 @@ function reset() {
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
-    'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
+    'users', 'votes', 'agenda_item_docs', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   for (const t of tables) db.exec(`DROP TABLE IF EXISTS ${t};`);

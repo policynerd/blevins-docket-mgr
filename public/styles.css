@@ -247,18 +247,20 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 /* Cards / panels */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin-bottom: 18px; box-shadow: var(--shadow); }
-/* Section header: a stone band, a brass rule down the leading edge, and the
-   heading set in the same brass. The rule and the heading carrying one colour
-   is what makes it read as a masthead rather than a toolbar — the band alone
-   was doing none of that work. Brass because it is already this app's accent
-   (footer rule, primary button, active nav marker); --gold-ink rather than
-   --gold so 16px type clears AA on stone at 5.4:1. */
+/* Section header: a rule down the leading edge, the heading, and the band all
+   drawn from one hue — dark ink for the rule and type, the dim tint of that
+   same hue for the band behind them. That relationship is the treatment; a
+   neutral band under a coloured rule reads as a toolbar instead, because
+   nothing ties the two together.
+   Brass because it is already this app's accent (footer rule, primary button,
+   active nav marker). --gold-ink rather than --gold so 17px type clears AA on
+   the tint at 5.66:1. */
 /* The top corners are rounded to the card's own radius so the brass rule
    curves with it. Clipping the card instead (overflow:hidden) would do the
    same job but would also cut off any table wider than its card. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
   padding: 12px 16px; border-bottom: 1px solid var(--line);
-  border-left: 4px solid var(--gold-ink); background: var(--stone);
+  border-left: 4px solid var(--gold-ink); background: var(--gold-dim);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
 .card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0; color: var(--gold-ink); font-weight: 700; }
 .card-body { padding: 15px; }
@@ -963,3 +965,53 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .nm-body { font-weight: 600; }
 .nm-when { color: var(--muted); flex: 1; }
 
+
+/* --- Agenda assembly: the ready-for-agenda queue --------------------------- */
+.ready-queue .rq-pick { width: 34px; text-align: center; }
+.ready-queue label { display: block; cursor: pointer; font-weight: inherit; margin: 0; }
+.ready-queue tbody tr:hover td { background: var(--gold-dim); }
+.rq-material { font-size: var(--t-small); white-space: nowrap; }
+.rq-actions { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end;
+  gap: var(--s5); margin-top: var(--s5); padding-top: var(--s5);
+  border-top: 1px solid var(--line-soft); }
+/* This block sits outside the <form> (the form is empty and referenced by
+   `form=` so the checkboxes can live in the table), so .form's field styles
+   never reach it and the selects would collapse to their intrinsic width. */
+.rq-actions label { display: block; margin-bottom: 0; font-size: var(--t-body);
+  font-weight: 600; color: var(--blv-navy-mid); }
+.rq-actions select { width: 100%; padding: 8px 10px; margin-top: 6px;
+  border: 1px solid var(--line); border-radius: 3px; font-size: var(--t-body);
+  background: var(--card); }
+@media (max-width: 720px) { .rq-actions { grid-template-columns: 1fr; } }
+
+/* --- Packet builder ------------------------------------------------------- */
+.packet-list { display: flex; flex-direction: column; gap: var(--s5); }
+.pb-item { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.pb-head { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  padding: 10px 14px; background: var(--marble); border-bottom: 1px solid var(--line-soft);
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
+.pb-num { font-weight: 700; color: var(--accent-dark); min-width: 2.5em; }
+.pb-tab { font-size: var(--t-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 3px; background: var(--gold-dim); color: var(--gold-ink);
+  border: 1px solid var(--gold-line); white-space: nowrap; }
+.pb-tab-none { background: var(--stone); color: var(--muted); border-color: var(--line); }
+.pb-title { flex: 1; min-width: 12em; font-weight: 600; }
+.pb-section { font-size: var(--t-small); }
+.pb-docs { list-style: none; margin: 0; padding: 10px 14px; }
+.pb-doc { display: flex; align-items: center; gap: var(--s4); padding: 5px 0;
+  border-bottom: 1px solid var(--line-soft); font-size: var(--t-body); }
+.pb-doc:last-child { border-bottom: none; }
+.pb-kind { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); min-width: 9em; }
+.pb-empty { margin: 0; padding: 10px 14px; color: var(--muted); font-style: italic; font-size: var(--t-body); }
+.pb-add { display: flex; gap: var(--s3); padding: 10px 14px; border-top: 1px solid var(--line-soft);
+  background: var(--bg); border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px); }
+.pb-add input { flex: 1; min-width: 0; }
+/* Held-back and empty items are the two states worth catching before a packet
+   goes out, so each gets its own edge rather than blending into the stack. */
+.pb-held { opacity: .62; }
+.pb-held .pb-head { background: var(--stone); }
+.pb-bare { border-left: 3px solid var(--warn); }
+.pb-bare .pb-empty { color: var(--warn-ink); font-style: normal; }
+.stat-flag { border-top-color: var(--warn); }
+.stat-flag .stat-n { color: var(--warn-ink); }
