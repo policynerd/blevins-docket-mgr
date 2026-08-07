@@ -1320,9 +1320,12 @@ test('letter config: saving the list unchanged preserves every field', () => {
   // than the parser silently strips whatever it omits — here, every hint.
   const html = String(drafting.letterSectionsAdmin(false));
   const text = html.slice(html.indexOf('<textarea'), html.indexOf('</textarea>'));
+  // One pass over the entities. Chained replaces decoding &amp; first turn
+  // "&amp;lt;" into "<" — the escaped text for "&lt;" comes back as a real
+  // tag. A single pass cannot re-read what it has already written.
+  const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" };
   const body = text.slice(text.indexOf('>') + 1)
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ENTITIES[e]);
   const parsed = repo.letters.parseSectionList(body);
   assert.equal(parsed.ok, true, parsed.error);
   assert.deepEqual(parsed.list.map((s) => s.key), before.map((s) => s.key));
