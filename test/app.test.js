@@ -1446,3 +1446,66 @@ test('packet: an item held back contributes nothing and closes the tabs up', asy
   assert.match(text, /TAB 1/);
   assert.ok(!/TAB 2/.test(text), 'tabs did not close up after the held-back item');
 });
+
+// --- The brand boundary -------------------------------------------------------
+// Two brands live here. The corporate mark says which group operates the
+// system and belongs to the chrome; the board's seal system belongs to the
+// record. Comments do not hold a boundary — this does.
+test('brand: corporate colours stay out of the record', () => {
+  const CORP = ['--bh-cyan', '--bh-lime', '--bh-yellow', '--bh-orange', '--bh-magenta', '--bh-teal'];
+
+  // Nothing the system issues as a document may reach for a corporate colour.
+  // An ordinance carries the seal of the body that adopted it, not the logo of
+  // the parent company.
+  for (const f of ['documents.js', 'pdf.js', 'pdfdoc.js']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8');
+    for (const token of CORP) {
+      assert.ok(!src.includes(token), `${f} reaches for ${token}; documents carry the board's seal system`);
+    }
+  }
+
+  // In the stylesheet the corporate palette is confined to the chrome. These
+  // are the record's own surfaces and status inks; a corporate colour landing
+  // on one of them is the boundary eroding.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+  const recordRules = [
+    '.card', '.card-head', 'table.data', '.badge', '.st-passed', '.st-failed',
+    '.ld-doc', '.pk-item', '.pb-item', '.doc-body',
+  ];
+  for (const line of css.split('\n')) {
+    if (!CORP.some((t) => line.includes(`var(${t})`))) continue;
+    for (const sel of recordRules) {
+      assert.ok(!line.trimStart().startsWith(sel),
+        `a corporate colour is applied to ${sel}: ${line.trim().slice(0, 80)}`);
+    }
+  }
+});
+
+test('brand: a corporate colour used as type uses its dark step', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+  const hex = (name) => {
+    const m = css.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`));
+    assert.ok(m, `--${name} is not defined`);
+    return m[1];
+  };
+  const relLum = (h) => {
+    const c = [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  // The mark's own values are chosen to read as shapes, not as ink: cyan is
+  // 3.10:1 on white and lime 1.99:1, both under the floor for body text. The
+  // -ink steps exist so a brand colour can become type without dropping below
+  // it, and they are only useful if they actually clear it.
+  for (const name of ['bh-cyan-ink', 'bh-lime-ink']) {
+    const r = ratio(hex(name), '#FFFFFF');
+    assert.ok(r >= 4.5, `--${name} is ${r.toFixed(2)}:1 on white, under the 4.5:1 floor`);
+  }
+  // And the guard is only meaningful if the raw values really do fail — if the
+  // brand ever lightens these, this test should be revisited, not deleted.
+  assert.ok(ratio(hex('bh-cyan'), '#FFFFFF') < 4.5, 'cyan now passes; the -ink step may be redundant');
+});

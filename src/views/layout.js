@@ -76,6 +76,23 @@ function navFor(user) {
   return groups;
 }
 
+// The parent group, named in the surround. When a corporate mark has been
+// supplied it is shown; until then the mark's six colours stand in as chips,
+// so the endorsement is visible from the first boot rather than waiting on an
+// upload. Suppressed entirely when corpName is cleared.
+function corpEndorsement() {
+  const name = String(ORG.corpName || '').trim();
+  if (!name) return '';
+  const mark = String(ORG.corpMarkUrl || '');
+  const art = isBrandSrc(mark)
+    ? `<img src="${escapeText(mark)}" alt="">`
+    : '<span class="ce-dots" aria-hidden="true">'
+      + ['--bh-cyan', '--bh-lime', '--bh-yellow', '--bh-orange', '--bh-magenta', '--bh-teal']
+        .map((c) => `<i style="background:var(${c})"></i>`).join('')
+      + '</span>';
+  return `<span class="corp-endorse">${art}<span>A ${escapeText(name)} company</span></span>`;
+}
+
 // Brand color override (validated hex only) applied live via CSS variables.
 function brandHead() {
   const c = String(ORG.primaryColor || '');
@@ -242,6 +259,7 @@ function layout({ title, active, body, subtitle, head }) {
   ${head || ''}
 </head>
 <body>
+  <div class="bh-brand-bar" aria-hidden="true"></div>
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
   <div class="app">
     <aside class="sidebar" aria-label="Primary navigation">
@@ -255,6 +273,7 @@ function layout({ title, active, body, subtitle, head }) {
           <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
           <button type="submit">Search</button>
         </form>
+        <span class="util-left">${corpEndorsement()}</span>
         <span class="util-right">
           <a href="/api/v1">Developers / API</a>
           <a href="/legislation.rss">RSS</a>
@@ -285,6 +304,7 @@ function layout({ title, active, body, subtitle, head }) {
         <div class="footer-legal">
           © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
           · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
+          ${corpEndorsement() ? '&nbsp;·&nbsp;' + corpEndorsement() : ''}
         </div>
       </footer>
     </div>
