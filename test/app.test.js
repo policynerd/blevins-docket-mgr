@@ -1152,3 +1152,28 @@ test('pdf layout: an oversized word is split wherever it lands, not only at line
   }
   assert.ok(lines.join('').includes('notice.pdf'), 'the split lost part of the word');
 });
+
+test('legislation page offers only the documents its type can actually produce', () => {
+  const pages = require('../src/views/pages');
+  const b = repo.bodies.insert({ name: 'Offer Board', type: 'Governing Body', seats: 3 });
+  const ord = repo.matters.insertNumbered({ type: 'Ordinance', title: 'An offered ordinance', status: 'Introduced', body_id: b });
+  const res = repo.matters.insertNumbered({ type: 'Resolution', title: 'An offered resolution', status: 'Introduced', body_id: b });
+
+  const linksFor = (m) => {
+    const html = pages.matterDetail(repo.matters.get(m.id), {}, null);
+    return [...String(html).matchAll(/\/legislation\/[^"']*\/doc\/([a-z-]+\.pdf)/g)].map((x) => x[1]);
+  };
+
+  // Ordinance instruments are gated by matter type at the route, so offering
+  // them for a Resolution would link the page straight at a 404.
+  const resLinks = linksFor(res);
+  assert.ok(resLinks.includes('board-letter.pdf'));
+  assert.ok(resLinks.includes('approval-log.pdf'));
+  for (const gated of ['ordinance.pdf', 'ordinance-redline.pdf', 'summary.pdf']) {
+    assert.ok(!resLinks.includes(gated), `a Resolution was offered ${gated}`);
+  }
+
+  const ordLinks = linksFor(ord);
+  assert.ok(ordLinks.includes('ordinance.pdf'));
+  assert.ok(ordLinks.includes('ordinance-redline.pdf'));
+});

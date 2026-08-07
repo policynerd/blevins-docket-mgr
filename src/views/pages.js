@@ -364,7 +364,32 @@ function matterDetail(matter, query = {}, user = null) {
     + versionList)
     || emptyState('No text on file.');
 
-  const docsPanel = `<h3 class="tab-h">Documents &amp; reports</h3>${reportList}`
+  // Official outputs. These generate on request from the file's own record, so
+  // they are listed rather than stored — there is nothing to find until one is
+  // asked for. Ordinance-only instruments are offered only for an Ordinance,
+  // matching the routes, so the page never links to a 404.
+  const isOrdinance = matter.type === 'Ordinance';
+  const nextMeeting = repo.meetings.nextScheduled
+    ? repo.meetings.nextScheduled(require('../util').todayISO()) : null;
+  const docLink = (slug, label, note) => `<li class="off-doc">
+      <a href="/legislation/${encodeURIComponent(matter.file_number)}/doc/${slug}">${escapeText(label)}</a>
+      ${note ? `<span class="muted">${escapeText(note)}</span>` : ''}
+    </li>`;
+  const officialDocs = [
+    docLink('board-letter.pdf', 'Board letter', 'The item as carried to the body'),
+    isOrdinance ? docLink('ordinance.pdf', 'Ordinance (clean)', 'The instrument as it would read') : '',
+    isOrdinance ? docLink('ordinance-redline.pdf', 'Ordinance (redline)', 'Changes to the Code, struck and underlined') : '',
+    // The notice is only lawful against a meeting, so it is offered only when
+    // there is one to name.
+    isOrdinance && nextMeeting
+      ? docLink(`summary.pdf?meeting=${nextMeeting.id}`, 'Summary for publication',
+        `Legal notice for ${require('../util').formatDate(nextMeeting.meeting_date)}`) : '',
+    docLink('approval-log.pdf', 'Approval log', 'Who cleared this file, and when'),
+  ].filter(Boolean).join('');
+
+  const docsPanel = `<h3 class="tab-h">Official documents</h3>`
+    + `<ul class="official-docs">${officialDocs}</ul>`
+    + `<h3 class="tab-h">Documents &amp; reports</h3>${reportList}`
     + `<h3 class="tab-h">Attachments</h3>${attachmentList}`;
 
   const appearancesPanel = appearanceRows
