@@ -811,7 +811,7 @@ function reset() {
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
-    'users', 'votes', 'agenda_items', 'attachments', 'matter_history',
+    'users', 'votes', 'agenda_item_docs', 'agenda_items', 'attachments', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   for (const t of tables) db.exec(`DROP TABLE IF EXISTS ${t};`);

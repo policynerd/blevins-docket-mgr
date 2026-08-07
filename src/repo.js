@@ -619,14 +619,27 @@ const meetings = {
       LEFT JOIN bodies b ON b.id = m.body_id
       WHERE m.status IN ('Introduced', 'In Committee', 'On Agenda', 'Tabled')
         AND (m.body_id = ? OR m.body_id IS NULL)
+        -- Never offer what is already on this agenda, whatever state the
+        -- meeting is in. Testing this against the meeting's own date and
+        -- status let a Final or Adjourned meeting offer its own items back.
+        AND NOT EXISTS (
+          SELECT 1 FROM agenda_items ai
+          WHERE ai.matter_id = m.id AND ai.meeting_id = ?
+        )
+        -- Nor what is booked on another meeting that has not happened. The
+        -- comparison is against today, not against this meeting's date: when
+        -- building a December agenda, business already set down for November
+        -- is spoken for, even though November falls earlier. A meeting in
+        -- session blocks regardless of the date on it.
         AND NOT EXISTS (
           SELECT 1 FROM agenda_items ai
           JOIN meetings m2 ON m2.id = ai.meeting_id
           WHERE ai.matter_id = m.id
+            AND m2.id <> ?
             AND m2.status IN ('Scheduled', 'In Progress')
-            AND m2.meeting_date >= ?
+            AND (m2.status = 'In Progress' OR m2.meeting_date >= date('now'))
         )
-      ORDER BY m.intro_date, m.file_number`).all(mt.body_id, mt.meeting_date);
+      ORDER BY m.intro_date, m.file_number`).all(mt.body_id, meetingId, meetingId);
   },
 
   // Place several files onto the agenda in one action. Each lands as its own
@@ -644,6 +657,10 @@ const meetings = {
     try {
       for (const id of ids) {
         if (!eligible.has(id)) { skipped++; continue; }
+        // Spend the id. The eligible set is computed once, so without this a
+        // submitted list of [id, id] would place the same file on the agenda
+        // twice — the one duplicate the query itself cannot see.
+        eligible.delete(id);
         meetings.addItem({
           meeting_id: meetingId,
           matter_id: id,

@@ -1738,7 +1738,7 @@ route('POST', /^\/admin\/meetings\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, admin.agendaManager(mt));
+  sendHtml(res, admin.agendaManager(mt, ctx.query));
 });
 route('POST', /^\/admin\/meetings\/(\d+)\/agenda$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);

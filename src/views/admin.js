@@ -457,7 +457,23 @@ function personForm(person) {
 }
 
 // --- Agenda manager (add items + record votes) ------------------------------
-function agendaManager(meeting) {
+// What the last bulk placement did. Reporting the refusals is the point: the
+// route drops ids the meeting is not allowed to hear, and a clerk who is not
+// told will find out at the meeting.
+function placementBanner(q) {
+  const added = parseInt((q && q.added) || '', 10);
+  const skipped = parseInt((q && q.skipped) || '', 10);
+  if (!Number.isInteger(added)) return '';
+  const noun = (n) => `${n} item${n === 1 ? '' : 's'}`;
+  if (skipped > 0) {
+    return `<p class="form-warn">Placed ${noun(added)} on the agenda. `
+      + `${noun(skipped)} could not be placed — no longer eligible for this meeting `
+      + `(already scheduled, in another body, or closed out). Reload to see the current list.</p>`;
+  }
+  return `<p class="saved-banner">Placed ${noun(added)} on the agenda.</p>`;
+}
+
+function agendaManager(meeting, query) {
   const items = repo.meetings.items(meeting.id);
   const openMatters = repo.matters.search({ limit: 300 })
     .map((m) => ({ value: m.id, label: `${m.file_number} — ${m.title}` }));
@@ -514,12 +530,14 @@ function agendaManager(meeting) {
       </span>
     </div>
     <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
+    ${raw(placementBanner(query))}
     ${raw(readyQueue(meeting))}
     ${raw(card('Add an item by hand', addItemForm))}
     ${raw(card('Agenda items & voting',
       loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
     ${raw(speakerQueue(meeting))}
     <script src="/assets/agenda-reorder.js" defer></script>
+    <script src="/assets/check-all.js" defer></script>
   `;
   return layout({ title: 'Manage agenda', active: '/calendar', body });
 }
@@ -640,8 +658,8 @@ function packetRow(meeting, r) {
 
   const docs = [
     ...r.reports.map((rep) => docLine(rep.title, rep.kind || 'Report', `/admin/reports/${rep.id}/edit`)),
-    ...r.attachments.map((a) => docLine(a.name, 'Attachment', a.url || (a.file_path ? `/uploads/${a.id}` : null))),
-    ...r.docs.map((d) => docLine(d.name, 'Item document', d.url || (d.file_path ? `/agenda-docs/${d.id}` : null),
+    ...r.attachments.map((a) => docLine(a.name, 'Attachment', a.url || (a.file_path ? `/files/${a.id}` : null))),
+    ...r.docs.map((d) => docLine(d.name, 'Item document', d.url || null,
       `<form method="post" action="/admin/agenda-item-docs/${d.id}/delete" class="inline-del"
          onsubmit="return confirm('Remove this document from the packet?')"><button type="submit" class="link-danger">Remove</button></form>`)),
   ].join('');
