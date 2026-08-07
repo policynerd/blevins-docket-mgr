@@ -27,6 +27,7 @@ const legal = require('./src/views/legal');
 const sso = require('./src/sso');
 const importer = require('./src/import');
 const pdfGen = require('./src/pdf');
+const documents = require('./src/documents');
 const org = require('./src/org');
 const backup = require('./src/backup');
 const upload = require('./src/upload');
@@ -419,6 +420,59 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
   if (!ver) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.matterVersionPage(m, ver));
 });
+// --- Official outputs --------------------------------------------------------
+// The five documents a docket produces. All are public: an ordinance, the
+// redline showing what it changes, and the summary published as legal notice
+// are the record, and the board letter and approval log are what a records
+// request asks for. Anything not yet public is gated by the matter itself.
+const OFFICIAL_DOCS = {
+  'board-letter': { fn: (m) => documents.boardLetter(m), slug: 'board-letter' },
+  'ordinance': { fn: (m) => documents.ordinance(m), slug: 'ordinance' },
+  'ordinance-redline': { fn: (m) => documents.ordinance(m, { redline: true }), slug: 'ordinance-redline' },
+  'approval-log': { fn: (m) => documents.approvalLog(m), slug: 'approval-log' },
+};
+
+// The notice needs the meeting it gives notice of, so it takes one rather than
+// inventing a date. Without a meeting there is nothing lawful to publish.
+route('GET', /^\/legislation\/([^/]+)\/doc\/summary\.pdf$/, async (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const meetingId = Number(ctx.query.meeting);
+  const meeting = Number.isInteger(meetingId) ? repo.meetings.get(meetingId) : null;
+  try {
+    const bytes = await documents.summaryForPublication(m, meeting, {
+      publicUrl: ctx.query.url || null,
+      authority: ctx.query.authority || null,
+    });
+    sendPdf(res, bytes, `${m.file_number}-summary.pdf`);
+  } catch (e) {
+    console.error('Document generation failed:', e);
+    sendHtml(res, pages.notFound(), 500);
+  }
+});
+
+route('GET', /^\/legislation\/([^/]+)\/doc\/([a-z-]+)\.pdf$/, async (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const spec = OFFICIAL_DOCS[ctx.params[1]];
+  if (!spec) return sendHtml(res, pages.notFound(), 404);
+  try {
+    const bytes = await spec.fn(m);
+    sendPdf(res, bytes, `${m.file_number}-${spec.slug}.pdf`);
+  } catch (e) {
+    console.error('Document generation failed:', e);
+    sendHtml(res, pages.notFound(), 500);
+  }
+});
+
+function sendPdf(res, bytes, filename) {
+  const safe = String(filename).replace(/["\r\n]/g, '');
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Length': Buffer.byteLength(Buffer.from(bytes)),
+    'Content-Disposition': `attachment; filename="${safe}"`,
+  });
+  res.end(Buffer.from(bytes));
+}
+
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
   if (!m) return sendHtml(res, pages.notFound(), 404);
@@ -1326,6 +1380,7 @@ function matterOr404(res, ref) {
   if (!m) { sendHtml(res, pages.notFound(), 404); return null; }
   return m;
 }
+
 route('GET', /^\/admin\/legislation\/([^/]+)\/draft$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   sendHtml(res, draftingView.draftPage(m, { saved: ctx.query.saved === '1' }));

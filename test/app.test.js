@@ -934,3 +934,148 @@ test('reset() drops agenda_item_docs so documents cannot outlive their item', ()
   assert.ok(list[0].indexOf("'agenda_item_docs'") < list[0].indexOf("'agenda_items'"),
     'agenda_item_docs must be dropped before agenda_items');
 });
+
+// --- Official document outputs ------------------------------------------------
+// Structured after the artifacts a Legistar-backed board produces for one
+// docket: board letter, clean ordinance, redline, published summary, approval
+// log. These assert the parts that carry legal weight — that the instrument is
+// identified, that its own effective-date clause is not duplicated, and that
+// the provision tree survives into the PDF.
+const documents = require('../src/documents');
+
+async function pdfText(bytes) {
+  // pdf-lib Flate-compresses content streams, so the drawn strings have to be
+  // inflated before they can be read back. Doing it here keeps the test path
+  // dependency-free rather than pulling in a PDF parser.
+  const zlib = require('node:zlib');
+  const buf = Buffer.from(bytes);
+  const out = [];
+  // Walk every stream object, inflate what inflates, and collect Tj operands.
+  let idx = 0;
+  for (;;) {
+    const start = buf.indexOf('stream', idx);
+    if (start === -1) break;
+    let s = start + 6;
+    if (buf[s] === 0x0d) s++;
+    if (buf[s] === 0x0a) s++;
+    const end = buf.indexOf('endstream', s);
+    if (end === -1) break;
+    idx = end + 9;
+    let body;
+    try { body = zlib.inflateSync(buf.subarray(s, end)).toString('latin1'); }
+    catch { body = buf.subarray(s, end).toString('latin1'); }
+    // pdf-lib emits hex strings (<4F52...> Tj) for embedded fonts and literal
+    // strings for some paths, so both forms are read.
+    for (const m of body.matchAll(/<([0-9A-Fa-f\s]+)>\s*Tj/g)) {
+      const hex = m[1].replace(/\s+/g, '');
+      let str = '';
+      for (let i = 0; i + 1 < hex.length; i += 2) str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+      out.push(str);
+    }
+    for (const m of body.matchAll(/\(((?:\\.|[^()\\])*)\)\s*Tj/g)) {
+      out.push(m[1].replace(/\\([()\\])/g, '$1'));
+    }
+  }
+  // Collapse the wrap: these assertions test that a phrase is present, not
+  // where the line broke, and a title that wraps mid-phrase would otherwise
+  // fail a match that is actually correct in the document.
+  return out.join(' ').replace(/\s+/g, ' ');
+}
+
+test('documents: an ordinance carries its identity, enacting clause and provisions', async () => {
+  const b = repo.bodies.insert({ name: 'Doc Board', type: 'Governing Body', seats: 5 });
+  const m = repo.matters.insertNumbered({
+    type: 'Ordinance', title: 'An Ordinance restricting single-use containers',
+    status: 'Introduced', body_id: b,
+  });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run(
+    'SECTION 1. Purpose.\nThe Board finds that this ordinance reduces waste.\n'
+    + 'SECTION 2. Prohibition.\nNo establishment shall distribute prepared food as follows:\n'
+    + '(a) This applies to all licensed establishments.\n'
+    + '(1) Containers for raw meat are exempt.\n', m.id);
+
+  const text = await pdfText(await documents.ordinance(repo.matters.get(m.id)));
+  assert.match(text, /ORDINANCE NO\./);
+  assert.match(text, /AN ORDINANCE RESTRICTING SINGLE-USE CONTAINERS/);
+  assert.match(text, /ordains as follows/);
+  // The enacting clause must not stutter when body and org are the same name.
+  // The stutter is "The X of X ordains" — assert on the repeated name itself,
+  // not on a leading "of" that the real string never has.
+  const bodyName = require('../src/org').ORG.primaryBody;
+  assert.ok(!text.includes(bodyName + ' of ' + bodyName), 'organisation name repeated in the enacting clause');
+  // Provisions survive with their markers at every depth.
+  assert.match(text, /SECTION 1\./);
+  assert.match(text, /SECTION 2\./);
+  assert.match(text, /\(a\)/);
+  assert.match(text, /\(1\)/);
+  assert.match(text, /APPROVED AS TO FORM AND LEGALITY/);
+});
+
+test('documents: the standard effective-date clause is not added when the text has one', async () => {
+  const b = repo.bodies.insert({ name: 'Eff Board', type: 'Governing Body', seats: 3 });
+  const withOwn = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Has its own', status: 'Introduced', body_id: b });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run(
+    'SECTION 1. Purpose.\nA purpose.\nSECTION 2. Effective Date.\nThis ordinance shall take effect immediately.', withOwn.id);
+  const withOwnText = await pdfText(await documents.ordinance(repo.matters.get(withOwn.id)));
+  // Two effective-date clauses is the ambiguity the clause exists to remove.
+  assert.equal((withOwnText.match(/EFFECTIVE DATE/g) || []).length, 0,
+    'boilerplate heading added on top of the drafted one');
+
+  const without = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Has none', status: 'Introduced', body_id: b });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run('SECTION 1. Purpose.\nA purpose only.', without.id);
+  const withoutText = await pdfText(await documents.ordinance(repo.matters.get(without.id)));
+  assert.match(withoutText, /EFFECTIVE DATE/, 'standard clause missing when the text supplies none');
+});
+
+test('documents: an undrafted ordinance says so rather than printing an empty instrument', async () => {
+  const b = repo.bodies.insert({ name: 'Empty Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Not yet drafted', status: 'Draft', body_id: b });
+  const text = await pdfText(await documents.ordinance(repo.matters.get(m.id)));
+  assert.match(text, /has not been drafted/i);
+});
+
+test('documents: the board letter states fiscal impact even when there is none', async () => {
+  const b = repo.bodies.insert({ name: 'BL Board', type: 'Governing Body', seats: 3 });
+  const p = repo.people.insert({ full_name: 'Dana Sponsor', email: 'dana@test.gov' });
+  repo.bodies.addMember(b, p, 'Chair');
+  const m = repo.matters.insertNumbered({
+    type: 'Resolution', title: 'A Resolution of thanks', status: 'Introduced',
+    body_id: b, summary: 'Thanks the retiring clerk.',
+  });
+  repo.matters.addSponsor(m.id, p);
+
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  assert.match(text, /AGENDA ITEM/);
+  assert.match(text, /SUBJECT/);
+  assert.match(text, /OVERVIEW/);
+  // A board acts on the number; silence reads as "not considered".
+  assert.match(text, /FISCAL IMPACT/);
+  assert.match(text, /no fiscal impact/i);
+  assert.match(text, /DANA SPONSOR/); // roster rail
+});
+
+test('documents: the approval log reproduces the routing record', async () => {
+  const b = repo.bodies.insert({ name: 'Log Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Routed item', status: 'Introduced', body_id: b });
+  repo.workflow.start(m.id, []);
+  const text = await pdfText(await documents.approvalLog(repo.matters.get(m.id)));
+  assert.match(text, /BOARD LETTER APPROVAL LOG/);
+  assert.match(text, /Routed item/);
+  const steps = repo.workflow.forMatter(m.id);
+  assert.ok(steps.length > 0, 'expected a default route');
+  // Every routed step appears; a log that silently omits one is worse than none.
+  for (const s of steps) assert.ok(text.includes(s.name), `step missing from log: ${s.name}`);
+});
+
+test('documents: the published summary carries the meeting it gives notice of', async () => {
+  const b = repo.bodies.insert({ name: 'Notice Board', type: 'Governing Body', seats: 3 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-07-04', meeting_time: '9:00 AM', location: 'Boardroom' });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'A noticed ordinance', status: 'Introduced', body_id: b });
+  const text = await pdfText(await documents.summaryForPublication(
+    repo.matters.get(m.id), repo.meetings.get(mtId), { authority: 'Bylaws Article VII' }));
+  assert.match(text, /SUMMARY OF PROPOSED ORDINANCE/);
+  assert.match(text, /Notice is hereby given/);
+  assert.match(text, /A NOTICED ORDINANCE/);
+  assert.match(text, /Boardroom/);
+  assert.match(text, /Bylaws Article VII/);
+});
