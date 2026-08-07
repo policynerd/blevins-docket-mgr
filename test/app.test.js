@@ -794,3 +794,92 @@ test('branding: text-on-tint token pairs clear WCAG AA', () => {
     assert.ok(r >= 4.5, `--${ink} on --${tint} is ${r.toFixed(2)}:1, under the 4.5:1 AA floor`);
   }
 });
+
+// --- Agenda assembly ---------------------------------------------------------
+test('agenda assembly: ready queue is scoped to the body and to live business', () => {
+  const b = repo.bodies.insert({ name: 'Assembly Board', type: 'Governing Body', seats: 5 });
+  const other = repo.bodies.insert({ name: 'Assembly Committee', type: 'Committee', seats: 3 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-09-01' });
+
+  const live1 = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Live one', status: 'Introduced', body_id: b });
+  const live2 = repo.matters.insertNumbered({ type: 'Resolution', title: 'Live two', status: 'In Committee', body_id: b });
+  const done = repo.matters.insertNumbered({ type: 'Motion', title: 'Finished', status: 'Enacted', body_id: b });
+  const elsewhere = repo.matters.insertNumbered({ type: 'Motion', title: 'Other body', status: 'Introduced', body_id: other });
+  const unassigned = repo.matters.insertNumbered({ type: 'Motion', title: 'No body yet', status: 'Introduced' });
+
+  const ready = repo.meetings.readyForAgenda(mtId).map((m) => m.title);
+  assert.deepEqual(ready.sort(), ['Live one', 'Live two', 'No body yet']);
+  assert.ok(!ready.includes('Finished'));   // terminal status
+  assert.ok(!ready.includes('Other body')); // belongs to another body
+
+  // Bulk placement takes only what is eligible, and says how much it refused.
+  const res = repo.meetings.addMatters(mtId, [live1.id, live2.id, done.id, elsewhere.id], { section: 'New Business' });
+  assert.equal(res.added, 2);
+  assert.equal(res.skipped, 2);
+
+  // Scheduled business drops out of the queue; unassigned is still waiting.
+  assert.deepEqual(repo.meetings.readyForAgenda(mtId).map((m) => m.title), ['No body yet']);
+  assert.equal(repo.meetings.items(mtId).length, 2);
+  void unassigned;
+});
+
+test('agenda assembly: a file heard in the past is eligible again', () => {
+  const b = repo.bodies.insert({ name: 'Repeat Board', type: 'Governing Body', seats: 5 });
+  const past = repo.meetings.insert({ body_id: b, meeting_date: '2000-01-01' });
+  const future = repo.meetings.insert({ body_id: b, meeting_date: '2099-12-01' });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Continued item', status: 'In Committee', body_id: b });
+
+  repo.meetings.addMatters(past, [m.id]);
+  // Already heard, so it can come back for a second reading or a continuance.
+  assert.ok(repo.meetings.readyForAgenda(future).some((x) => x.id === m.id));
+  // But once it is on the future agenda it is not offered twice.
+  repo.meetings.addMatters(future, [m.id]);
+  assert.ok(!repo.meetings.readyForAgenda(future).some((x) => x.id === m.id));
+});
+
+// --- Supporting document assembly --------------------------------------------
+test('packet: tabs go only to items carrying material, and renumber on exclusion', () => {
+  const b = repo.bodies.insert({ name: 'Packet Board', type: 'Governing Body', seats: 5 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-10-01' });
+  const m1 = repo.matters.insertNumbered({ type: 'Ordinance', title: 'With docs', status: 'Introduced', body_id: b });
+  const m2 = repo.matters.insertNumbered({ type: 'Resolution', title: 'Also with docs', status: 'Introduced', body_id: b });
+  const bare = repo.matters.insertNumbered({ type: 'Motion', title: 'Nothing attached', status: 'Introduced', body_id: b });
+
+  repo.meetings.addItem({ meeting_id: mtId, title: 'Call to Order', section: 'Call to Order' });
+  repo.meetings.addMatters(mtId, [m1.id, m2.id, bare.id]);
+
+  const items = repo.meetings.items(mtId);
+  const i1 = items.find((i) => i.matter_id === m1.id);
+  const i2 = items.find((i) => i.matter_id === m2.id);
+  repo.matters.addAttachment({ matter_id: m1.id, name: 'Site plan', url: 'https://example.gov/plan.pdf' });
+  repo.meetings.addItemDoc(i2.id, { name: 'Deck', url: 'https://example.gov/deck.pdf' });
+
+  let packet = repo.meetings.packet(mtId);
+  const byTitle = (t) => packet.find((r) => (r.item.matter_title || r.item.title) === t);
+  assert.equal(byTitle('Call to Order').tab, null);    // procedural, nothing to bind
+  assert.equal(byTitle('Nothing attached').tab, null); // on the agenda but empty
+  assert.equal(byTitle('With docs').tab, 1);
+  assert.equal(byTitle('Also with docs').tab, 2);
+
+  // Holding the first back moves the second up — tabs must stay contiguous,
+  // since a member is told to turn to a physical divider.
+  repo.meetings.setInPacket(i1.id, 0);
+  packet = repo.meetings.packet(mtId);
+  assert.equal(byTitle('With docs').included, false);
+  assert.equal(byTitle('With docs').tab, null);
+  assert.equal(byTitle('Also with docs').tab, 1);
+});
+
+test('packet: item documents are scoped to the item and die with it', () => {
+  const b = repo.bodies.insert({ name: 'Doc Board', type: 'Governing Body', seats: 5 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-11-01' });
+  repo.meetings.addItem({ meeting_id: mtId, title: 'Presentation', section: 'Reports' });
+  const item = repo.meetings.items(mtId)[0];
+  const docId = repo.meetings.addItemDoc(item.id, { name: 'Slides', url: 'https://example.gov/s.pdf' });
+  assert.equal(repo.meetings.itemDocs(item.id).length, 1);
+  assert.equal(repo.meetings.getItemDoc(docId).name, 'Slides');
+  // A procedural item carries documents even though it has no legislative file.
+  assert.equal(item.matter_id, null);
+  repo.meetings.removeItem(item.id);
+  assert.equal(repo.meetings.itemDocs(item.id).length, 0); // cascaded
+});
