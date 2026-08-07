@@ -750,6 +750,33 @@ const meetings = {
       ORDER BY mt.meeting_date ASC, mt.meeting_time ASC
       LIMIT 1`).get(fromDate);
   },
+  // The next meeting at which a given file is actually set to be heard.
+  //
+  // Distinct from nextScheduled(), which answers "what meets next" across every
+  // body. A published notice states that this ordinance will be considered at
+  // the named meeting, so it has to be a meeting the ordinance is on — the
+  // global next meeting may belong to another body entirely, and naming it
+  // would put a false statement into a legal notice.
+  nextAppearance(matterId, fromDate) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name
+      FROM agenda_items ai
+      JOIN meetings mt ON mt.id = ai.meeting_id
+      JOIN bodies b ON b.id = mt.body_id
+      WHERE ai.matter_id = ?
+        AND mt.meeting_date >= ?
+        AND mt.status NOT IN ('Cancelled', 'Adjourned', 'Final')
+      ORDER BY mt.meeting_date ASC, mt.meeting_time ASC
+      LIMIT 1`).get(matterId, fromDate);
+  },
+
+  // Whether a file is on a given meeting's agenda. The notice route needs this
+  // because the meeting arrives as a query parameter.
+  isOnAgenda(meetingId, matterId) {
+    return !!db.prepare('SELECT 1 FROM agenda_items WHERE meeting_id = ? AND matter_id = ?')
+      .get(meetingId, matterId);
+  },
+
   todayDocket(date) {
     return db.prepare(`
       SELECT mt.*, b.name AS body_name

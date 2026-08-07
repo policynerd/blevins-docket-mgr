@@ -1015,3 +1015,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .pb-bare .pb-empty { color: var(--warn-ink); font-style: normal; }
 .stat-flag { border-top-color: var(--warn); }
 .stat-flag .stat-n { color: var(--warn-ink); }
+
+/* Official outputs on a legislative file — generated on request from the
+   file's own record, so they are offered rather than listed as stored files. */
+.official-docs { list-style: none; margin: 0 0 4px; padding: 0; }
+.off-doc { display: flex; align-items: baseline; gap: var(--s4); flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.off-doc:last-child { border-bottom: none; }
+.off-doc a { font-weight: 600; }
+.off-doc a::before { content: "📄"; margin-right: var(--s3); }
+.off-doc .muted { font-size: var(--t-small); }

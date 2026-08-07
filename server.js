@@ -449,6 +449,10 @@ route('GET', /^\/legislation\/([^/]+)\/doc\/summary\.pdf$/, async (req, res, ctx
   const meetingId = Number(ctx.query.meeting);
   const meeting = Number.isInteger(meetingId) ? repo.meetings.get(meetingId) : null;
   if (!meeting) return sendHtml(res, pages.notFound(), 404);
+  // The meeting arrives as a query parameter, so it has to be checked against
+  // this file's agenda placements. A notice naming a meeting where the item is
+  // not set to be heard is a false statement published under statute.
+  if (!repo.meetings.isOnAgenda(meeting.id, m.id)) return sendHtml(res, pages.notFound(), 404);
   try {
     const bytes = await documents.summaryForPublication(m, meeting, {
       publicUrl: ctx.query.url || null,
