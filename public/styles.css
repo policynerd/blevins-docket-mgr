@@ -247,18 +247,20 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 /* Cards / panels */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin-bottom: 18px; box-shadow: var(--shadow); }
-/* Section header: a stone band, a brass rule down the leading edge, and the
-   heading set in the same brass. The rule and the heading carrying one colour
-   is what makes it read as a masthead rather than a toolbar — the band alone
-   was doing none of that work. Brass because it is already this app's accent
-   (footer rule, primary button, active nav marker); --gold-ink rather than
-   --gold so 16px type clears AA on stone at 5.4:1. */
+/* Section header: a rule down the leading edge, the heading, and the band all
+   drawn from one hue — dark ink for the rule and type, the dim tint of that
+   same hue for the band behind them. That relationship is the treatment; a
+   neutral band under a coloured rule reads as a toolbar instead, because
+   nothing ties the two together.
+   Brass because it is already this app's accent (footer rule, primary button,
+   active nav marker). --gold-ink rather than --gold so 17px type clears AA on
+   the tint at 5.66:1. */
 /* The top corners are rounded to the card's own radius so the brass rule
    curves with it. Clipping the card instead (overflow:hidden) would do the
    same job but would also cut off any table wider than its card. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
   padding: 12px 16px; border-bottom: 1px solid var(--line);
-  border-left: 4px solid var(--gold-ink); background: var(--stone);
+  border-left: 4px solid var(--gold-ink); background: var(--gold-dim);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
 .card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0; color: var(--gold-ink); font-weight: 700; }
 .card-body { padding: 15px; }
