@@ -1176,4 +1176,40 @@ test('legislation page offers only the documents its type can actually produce',
   const ordLinks = linksFor(ord);
   assert.ok(ordLinks.includes('ordinance.pdf'));
   assert.ok(ordLinks.includes('ordinance-redline.pdf'));
+
+  // The summary names its meeting as the hearing, so it may only be offered
+  // against a meeting this ordinance is actually on. An unrelated meeting
+  // existing in the database must not produce a link — this test file shares
+  // one database and earlier tests leave future meetings behind, so a global
+  // "next meeting" lookup would appear to work here while being wrong.
+  const otherBody = repo.bodies.insert({ name: 'Unrelated Body', type: 'Committee', seats: 3 });
+  repo.meetings.insert({ body_id: otherBody, meeting_date: '2099-01-05' });
+  assert.ok(!linksFor(ord).includes('summary.pdf'),
+    'offered a notice against a meeting this ordinance is not on');
+
+  // Once it is set down for a hearing, the link appears and carries that
+  // meeting's id rather than any other.
+  const hearing = repo.meetings.insert({ body_id: b, meeting_date: '2099-02-10' });
+  repo.meetings.addItem({ meeting_id: hearing, matter_id: ord.id, section: 'Ordinances' });
+  const html = String(pages.matterDetail(repo.matters.get(ord.id), {}, null));
+  assert.match(html, /summary\.pdf\?meeting=/);
+  const picked = html.match(/summary\.pdf\?meeting=(\d+)/);
+  assert.equal(Number(picked[1]), Number(hearing),
+    'the notice named a meeting other than the one this ordinance is set for');
+});
+
+test('notice: the meeting must be one the ordinance is actually set for', () => {
+  const b = repo.bodies.insert({ name: 'Notice Guard Board', type: 'Governing Body', seats: 3 });
+  const other = repo.bodies.insert({ name: 'Notice Other Body', type: 'Committee', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Guarded notice', status: 'Introduced', body_id: b });
+  const heard = repo.meetings.insert({ body_id: b, meeting_date: '2099-03-01' });
+  const unrelated = repo.meetings.insert({ body_id: other, meeting_date: '2099-03-02' });
+  repo.meetings.addItem({ meeting_id: heard, matter_id: m.id });
+
+  assert.equal(repo.meetings.isOnAgenda(heard, m.id), true);
+  assert.equal(repo.meetings.isOnAgenda(unrelated, m.id), false);
+  assert.equal(repo.meetings.nextAppearance(m.id, '2026-01-01').id, heard);
+  // A cancelled hearing is not a hearing.
+  repo.meetings.update(heard, { body_id: b, meeting_date: '2099-03-01', status: 'Cancelled' });
+  assert.equal(repo.meetings.nextAppearance(m.id, '2026-01-01'), undefined);
 });

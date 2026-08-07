@@ -369,8 +369,10 @@ function matterDetail(matter, query = {}, user = null) {
   // asked for. Ordinance-only instruments are offered only for an Ordinance,
   // matching the routes, so the page never links to a 404.
   const isOrdinance = matter.type === 'Ordinance';
-  const nextMeeting = repo.meetings.nextScheduled
-    ? repo.meetings.nextScheduled(require('../util').todayISO()) : null;
+  // The meeting this file is actually set to be heard at — not whatever meets
+  // next. The notice names it as the hearing, so it has to be one this file is
+  // on; the global next meeting may belong to another body.
+  const nextMeeting = repo.meetings.nextAppearance(matter.id, require('../util').todayISO());
   const docLink = (slug, label, note) => `<li class="off-doc">
       <a href="/legislation/${encodeURIComponent(matter.file_number)}/doc/${slug}">${escapeText(label)}</a>
       ${note ? `<span class="muted">${escapeText(note)}</span>` : ''}
