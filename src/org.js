@@ -21,12 +21,6 @@ const FIELDS = {
   // supplied the sidebar shows it alone rather than repeating the name in type.
   logoLockupUrl: { env: 'ORG_LOGO_LOCKUP_URL', def: '' },
   faviconUrl: { env: 'ORG_FAVICON_URL', def: '' },
-  // The parent group. Named in the surround as an endorsement — the board's
-  // own mark keeps the primary position — so that the system reads as one of
-  // the group's without the corporate logo appearing on an instrument of
-  // record. Leave corpName empty to suppress the endorsement entirely.
-  corpName: { env: 'ORG_CORP_NAME', def: 'Blevins Holdings' },
-  corpMarkUrl: { env: 'ORG_CORP_MARK_URL', def: '' },
   // Blevins Holdings slate navy. brandHead() emits this as a `--accent`
   // override on every page, so a default that disagreed with the house
   // stylesheet quietly undid it at runtime — links, crumbs, chips and stat
@@ -48,7 +42,7 @@ const FIELDS = {
 
 // Fields surfaced in the Branding admin form (others stay env/default only).
 const EDITABLE = ['name', 'tagline', 'seal', 'logoUrl', 'logoLightUrl', 'logoLockupUrl',
-  'faviconUrl', 'corpName', 'corpMarkUrl', 'primaryColor', 'primaryBody',
+  'faviconUrl', 'primaryColor', 'primaryBody',
   'primaryBodyType', 'membersLabel', 'chairTitle', 'viceChairTitle', 'memberTitle',
   'clerkTitle', 'clerkOffice', 'meetingLocation', 'emailDomain'];
 
