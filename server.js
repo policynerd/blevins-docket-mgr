@@ -425,19 +425,30 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
 // redline showing what it changes, and the summary published as legal notice
 // are the record, and the board letter and approval log are what a records
 // request asks for. Anything not yet public is gated by the matter itself.
+// `types` restricts a document to the matter types it can honestly describe.
+// An ordinance is a specific instrument: it says "ORDINANCE NO.", it ordains,
+// and it carries an effective-date clause. Rendering a Resolution or a Motion
+// through that template produces a formal-looking document that misstates what
+// the body actually adopted. The board letter and the approval log carry any
+// item, because that is what they are for.
 const OFFICIAL_DOCS = {
-  'board-letter': { fn: (m) => documents.boardLetter(m), slug: 'board-letter' },
-  'ordinance': { fn: (m) => documents.ordinance(m), slug: 'ordinance' },
-  'ordinance-redline': { fn: (m) => documents.ordinance(m, { redline: true }), slug: 'ordinance-redline' },
-  'approval-log': { fn: (m) => documents.approvalLog(m), slug: 'approval-log' },
+  'board-letter': { fn: (m) => documents.boardLetter(m), slug: 'board-letter', types: null },
+  'ordinance': { fn: (m) => documents.ordinance(m), slug: 'ordinance', types: ['Ordinance'] },
+  'ordinance-redline': { fn: (m) => documents.ordinance(m, { redline: true }), slug: 'ordinance-redline', types: ['Ordinance'] },
+  'approval-log': { fn: (m) => documents.approvalLog(m), slug: 'approval-log', types: null },
 };
 
 // The notice needs the meeting it gives notice of, so it takes one rather than
 // inventing a date. Without a meeting there is nothing lawful to publish.
 route('GET', /^\/legislation\/([^/]+)\/doc\/summary\.pdf$/, async (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  // The notice is only lawful against a meeting: it tells the public when and
+  // where the body will consider the ordinance. Without one there is nothing
+  // to publish, so this refuses rather than issuing a notice with no hearing.
+  if (m.type !== 'Ordinance') return sendHtml(res, pages.notFound(), 404);
   const meetingId = Number(ctx.query.meeting);
   const meeting = Number.isInteger(meetingId) ? repo.meetings.get(meetingId) : null;
+  if (!meeting) return sendHtml(res, pages.notFound(), 404);
   try {
     const bytes = await documents.summaryForPublication(m, meeting, {
       publicUrl: ctx.query.url || null,
@@ -454,6 +465,7 @@ route('GET', /^\/legislation\/([^/]+)\/doc\/([a-z-]+)\.pdf$/, async (req, res, c
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   const spec = OFFICIAL_DOCS[ctx.params[1]];
   if (!spec) return sendHtml(res, pages.notFound(), 404);
+  if (spec.types && !spec.types.includes(m.type)) return sendHtml(res, pages.notFound(), 404);
   try {
     const bytes = await spec.fn(m);
     sendPdf(res, bytes, `${m.file_number}-${spec.slug}.pdf`);

@@ -1079,3 +1079,76 @@ test('documents: the published summary carries the meeting it gives notice of', 
   assert.match(text, /Boardroom/);
   assert.match(text, /Bylaws Article VII/);
 });
+
+test('documents: the redline draws both sides of a code amendment', async () => {
+  const b = repo.bodies.insert({ name: 'Redline Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'An Ordinance amending the Code', status: 'Introduced', body_id: b });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run('SECTION 1. Purpose.\nTo amend.', m.id);
+  repo.code.addAmendment(m.id, {
+    op: 'amend', citation: '4.03',
+    new_text: 'The Director shall publish the schedule each January.',
+  });
+
+  const redline = await pdfText(await documents.ordinance(repo.matters.get(m.id), { redline: true }));
+  // comparativePrint() returns currentText/proposedText. Reading `current` and
+  // `proposed` produced a redline that drew neither side while still looking
+  // like a complete instrument — the failure this document exists to prevent.
+  assert.match(redline, /CHANGES TO THE CODE/);
+  assert.match(redline, /4\.03/);
+  assert.match(redline, /The Director shall publish the schedule each January/);
+
+  const clean = await pdfText(await documents.ordinance(repo.matters.get(m.id)));
+  assert.match(clean, /SECTIONS AMENDED/);
+  assert.match(clean, /The Director shall publish the schedule each January/);
+  assert.ok(!/\(no text\)/.test(clean), 'amendment text rendered as a placeholder');
+});
+
+test('documents: recitals survive into the ordinance', async () => {
+  const b = repo.bodies.insert({ name: 'Recital Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'An Ordinance with recitals', status: 'Introduced', body_id: b });
+  // parse() keeps everything before the first section in `preamble`; flatten()
+  // returns only sections, so recitals were being dropped silently.
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run(
+    'WHEREAS the Board has determined that action is necessary; and\n'
+    + 'WHEREAS notice was duly given;\n'
+    + 'SECTION 1. Purpose.\nTo act.', m.id);
+  const text = await pdfText(await documents.ordinance(repo.matters.get(m.id)));
+  assert.match(text, /WHEREAS the Board has determined/);
+  assert.match(text, /WHEREAS notice was duly given/);
+  // Recitals come before the enacting clause.
+  assert.ok(text.indexOf('WHEREAS the Board') < text.indexOf('ordains as follows'),
+    'recitals must precede the enacting clause');
+
+  // A recitals-only draft is drafted, not empty.
+  const only = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Recitals only', status: 'Draft', body_id: b });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run('WHEREAS something is true;', only.id);
+  const onlyText = await pdfText(await documents.ordinance(repo.matters.get(only.id)));
+  assert.ok(!/has not been drafted/i.test(onlyText), 'a recitals-only draft reported as undrafted');
+});
+
+test('documents: a summary cannot be produced without the meeting it notices', async () => {
+  const b = repo.bodies.insert({ name: 'NoMeet Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Unnoticed', status: 'Introduced', body_id: b });
+  await assert.rejects(() => documents.summaryForPublication(repo.matters.get(m.id), null),
+    /requires the meeting/);
+});
+
+test('pdf layout: an oversized word is split wherever it lands, not only at line start', () => {
+  const { Doc } = require('../src/pdfdoc');
+  // A URL longer than the measure arriving mid-paragraph used to be pushed
+  // whole, running off the page edge.
+  const long = 'https://records.example.gov/' + 'x'.repeat(160) + '/notice.pdf';
+  const fake = {
+    contentW: 400,
+    wrap: Doc.prototype.wrap,
+    f: null,
+  };
+  const font = { widthOfTextAtSize: (s, size) => s.length * size * 0.5 };
+  const lines = Doc.prototype.wrap.call(fake, 'See the notice at ' + long + ' for details.',
+    { width: 200, size: 10, font });
+  for (const l of lines) {
+    assert.ok(font.widthOfTextAtSize(l, 10) <= 200,
+      `line overflows the measure: ${l.slice(0, 40)}… (${font.widthOfTextAtSize(l, 10)}pt)`);
+  }
+  assert.ok(lines.join('').includes('notice.pdf'), 'the split lost part of the word');
+});

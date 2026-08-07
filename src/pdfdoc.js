@@ -80,19 +80,31 @@ class Doc {
     const out = [];
     for (const para of String(str == null ? '' : str).split('\n')) {
       if (!para.trim()) { out.push(''); continue; }
+      // Split a word that cannot fit the measure on its own, returning the
+      // trailing chunk to carry on the current line. Applied wherever an
+      // oversized word lands, not only when it opens a line — a long URL
+      // arriving mid-paragraph would otherwise be pushed whole and run off
+      // the page.
+      const hardSplit = (word) => {
+        let chunk = '';
+        for (const ch of word) {
+          if (font.widthOfTextAtSize(chunk + ch, size) > width && chunk) { out.push(chunk); chunk = ch; }
+          else chunk += ch;
+        }
+        return chunk;
+      };
+
       let line = '';
       for (const word of para.trim().split(/\s+/)) {
+        const oversized = font.widthOfTextAtSize(word, size) > width;
+        if (oversized) {
+          if (line) { out.push(line); line = ''; }
+          line = hardSplit(word);
+          continue;
+        }
         const trial = line ? line + ' ' + word : word;
-        if (font.widthOfTextAtSize(trial, size) <= width || !line) {
-          if (font.widthOfTextAtSize(trial, size) > width && !line) {
-            let chunk = '';
-            for (const ch of word) {
-              if (font.widthOfTextAtSize(chunk + ch, size) > width && chunk) { out.push(chunk); chunk = ch; }
-              else chunk += ch;
-            }
-            line = chunk;
-          } else line = trial;
-        } else { out.push(line); line = word; }
+        if (font.widthOfTextAtSize(trial, size) <= width) line = trial;
+        else { out.push(line); line = word; }
       }
       if (line) out.push(line);
     }

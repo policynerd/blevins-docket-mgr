@@ -177,6 +177,19 @@ async function ordinance(matter, opts = {}) {
       + (redline ? ' · REDLINE' : '')),
   });
 
+  // Body from the parsed provision tree, so numbering and indentation follow
+  // the document's own structure rather than being re-typed here.
+  // flatten() yields { id, level, marker, heading, text, depth }. Indentation
+  // comes from `depth` rather than a level lookup so a document nested deeper
+  // than the five named levels still steps in rather than collapsing flat.
+  const parsed = matter.full_text ? legisdoc.parse(matter.full_text) : null;
+  const nodes = parsed ? legisdoc.flatten(parsed) : [];
+  // parse() keeps everything before the first section in `preamble`; flatten()
+  // returns only sections. Recitals are substantive, so they are rendered in
+  // their conventional place — after the title, before the enacting clause —
+  // and they count towards whether the instrument has been drafted at all.
+  const preamble = (parsed && parsed.preamble) ? parsed.preamble.filter((l) => String(l).trim()) : [];
+
   doc.text(`ORDINANCE NO. ${matter.ordinance_number || '__________'}`,
     { size: 12, style: 'b', align: 'center', after: 10 });
   doc.text(upper(matter.title), { size: 12, style: 'b', align: 'center', after: 6 });
@@ -188,17 +201,11 @@ async function ordinance(matter, opts = {}) {
   }
   doc.rule({ after: 16 });
 
+  for (const line of preamble) doc.text(line, { size: 11, after: 6 });
+  if (preamble.length) doc.gap(6);
   doc.text(enactingClause(), { size: 11, after: 14 });
 
-  // Body from the parsed provision tree, so numbering and indentation follow
-  // the document's own structure rather than being re-typed here.
-  // flatten() yields { id, level, marker, heading, text, depth }. Indentation
-  // comes from `depth` rather than a level lookup so a document nested deeper
-  // than the five named levels still steps in rather than collapsing flat.
-  const parsed = matter.full_text ? legisdoc.parse(matter.full_text) : null;
-  const nodes = parsed ? legisdoc.flatten(parsed) : [];
-
-  if (!nodes.length) {
+  if (!nodes.length && !preamble.length) {
     doc.text('[The text of this ordinance has not been drafted. Nothing is printed here '
       + 'rather than an empty instrument being represented as complete.]',
     { size: 10.5, style: 'i', color: MUTED, after: 12 });
@@ -218,8 +225,10 @@ async function ordinance(matter, opts = {}) {
   }
 
   // Amending instructions, shown as a comparative print when this is a redline.
-  let prints = [];
-  try { prints = amend.comparativePrint(matter.id) || []; } catch { prints = []; }
+  // Not wrapped in a try: a failure here means the code changes are unknown,
+  // and an official instrument that silently omits them is worse than no
+  // document. Let it reach the route's error handler.
+  const prints = amend.comparativePrint(matter.id) || [];
   if (prints.length) {
     doc.gap(8);
     doc.heading(redline ? 'CHANGES TO THE CODE' : 'SECTIONS AMENDED', { size: 11 });
@@ -228,14 +237,14 @@ async function ordinance(matter, opts = {}) {
       doc.text(`${upper(a.op || 'amend')} — ${a.citation || ''}`,
         { size: 10.5, style: 'b', after: 4 });
       if (!redline) {
-        doc.text(p.proposed || '(no text)', { size: 10.5, indent: 22, after: 8 });
+        doc.text(p.proposedText || '(no text)', { size: 10.5, indent: 22, after: 8 });
         continue;
       }
-      if (p.current) {
-        doc.text(p.current, { size: 10.5, indent: 22, strike: true, color: MUTED, after: 4 });
+      if (p.currentText) {
+        doc.text(p.currentText, { size: 10.5, indent: 22, strike: true, color: MUTED, after: 4 });
       }
-      if (p.proposed) {
-        doc.text(p.proposed, { size: 10.5, indent: 22, underline: true, after: 8 });
+      if (p.proposedText) {
+        doc.text(p.proposedText, { size: 10.5, indent: 22, underline: true, after: 8 });
       }
     }
   }
@@ -270,6 +279,12 @@ async function ordinance(matter, opts = {}) {
 // clock, so it carries where and when the body will consider the ordinance and
 // where the full text can be inspected.
 async function summaryForPublication(matter, meeting, opts = {}) {
+  // Enforced here rather than only at the route: this notice states when and
+  // where the body will consider the ordinance, and publishing one without a
+  // hearing to point at is not a lesser notice, it is not a notice.
+  if (!meeting || !meeting.meeting_date) {
+    throw new Error('A summary for publication requires the meeting it gives notice of.');
+  }
   const doc = await Doc.create({
     margin: { top: 90, right: 90, bottom: 90, left: 90 },
     footer: officialFooter(`${ORG.name} · Notice · ${matter.file_number}`),
