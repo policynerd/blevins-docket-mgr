@@ -477,6 +477,7 @@ function matterDetail(matter, query = {}, user = null) {
         ${auth.hasRole(user, 'clerk') ? raw(`
         <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
         <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft" title="Structured drafting, validation and the provision outline">Draft text</a>
+        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter" title="Write the board letter as its standard sections">Board letter</a>
         <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare" title="Compare versions, or this measure against current law">Comparative print</a>
         <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
           <button type="submit" class="btn">+ Draft staff report</button>

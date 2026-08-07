@@ -1213,3 +1213,150 @@ test('notice: the meeting must be one the ordinance is actually set for', () => 
   repo.meetings.update(heard, { body_id: b, meeting_date: '2099-03-01', status: 'Cancelled' });
   assert.equal(repo.meetings.nextAppearance(m.id, '2026-01-01'), undefined);
 });
+
+// --- Board letter sections ----------------------------------------------------
+test('letter: sections compose in configured order and blanks are omitted', async () => {
+  const b = repo.bodies.insert({ name: 'Letter Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({
+    type: 'Ordinance', title: 'A lettered ordinance', status: 'Introduced', body_id: b,
+    summary: 'A short summary of the item.',
+  });
+  repo.letters.save(m.id, 'background', 'How this arrived here.');
+  repo.letters.save(m.id, 'recommendation', 'Approve the introduction.');
+
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  const order = ['OVERVIEW', 'RECOMMENDATION(S)', 'FISCAL IMPACT', 'BACKGROUND'];
+  let at = -1;
+  for (const label of order) {
+    const i = text.indexOf(label);
+    assert.ok(i > at, `${label} is out of order in the letter`);
+    at = i;
+  }
+  // A section nobody answered is left out; an empty heading asserts an answer
+  // was given.
+  for (const blank of ['EQUITY IMPACT STATEMENT', 'BUSINESS IMPACT STATEMENT', 'LINKAGE']) {
+    assert.ok(!text.includes(blank), `${blank} printed with nothing under it`);
+  }
+});
+
+test('letter: required sections are reported until written', () => {
+  const b = repo.bodies.insert({ name: 'Missing Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Incomplete', status: 'Draft', body_id: b });
+  const required = repo.letters.sections().filter((s) => s.required).map((s) => s.label);
+  assert.deepEqual(repo.letters.missing(m.id), required);
+
+  for (const s of repo.letters.sections()) {
+    if (s.required) repo.letters.save(m.id, s.key, 'Answered.');
+  }
+  assert.deepEqual(repo.letters.missing(m.id), []);
+});
+
+test('letter: a section key outside the configured list is refused', () => {
+  const b = repo.bodies.insert({ name: 'Key Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Motion', title: 'Keyed', status: 'Draft', body_id: b });
+  // Filing text under a key nothing renders loses it silently.
+  assert.equal(repo.letters.save(m.id, 'not-a-section', 'text'), false);
+  assert.equal(repo.letters.save(m.id, 'background', 'text'), true);
+  assert.equal(repo.letters.forMatter(m.id)['not-a-section'], undefined);
+});
+
+test('letter: overview and fiscal fall back to the file when unwritten', async () => {
+  const b = repo.bodies.insert({ name: 'Fallback Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({
+    type: 'Resolution', title: 'Falls back', status: 'Introduced', body_id: b,
+    summary: 'The summary standing in for an overview.',
+  });
+  repo.matters.setFiscal(m.id, { fiscal_impact: 12500, fiscal_recurring: 1 });
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  assert.match(text, /The summary standing in for an overview/);
+  assert.match(text, /12,500\.00/);
+  assert.match(text, /ongoing annual cost/);
+  // The fallback must land in its configured slot, not after everything else.
+  assert.ok(text.indexOf('OVERVIEW') < text.indexOf('FISCAL IMPACT'));
+});
+
+test('letter: attachments are lettered so they can be cited', async () => {
+  const b = repo.bodies.insert({ name: 'Attach Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'With attachments', status: 'Introduced', body_id: b });
+  repo.matters.addAttachment({ matter_id: m.id, name: 'Clean ordinance', url: 'https://example.gov/a.pdf' });
+  repo.matters.addAttachment({ matter_id: m.id, name: 'Redline ordinance', url: 'https://example.gov/b.pdf' });
+  repo.matters.addAttachment({ matter_id: m.id, name: 'Summary of proposed ordinance', url: 'https://example.gov/c.pdf' });
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  assert.match(text, /ATTACHMENT\(S\)/);
+  assert.match(text, /Attachment A: Clean ordinance/);
+  assert.match(text, /Attachment B: Redline ordinance/);
+  assert.match(text, /Attachment C: Summary of proposed ordinance/);
+});
+
+test('letter config: a bad row rejects the whole list rather than dropping a section', () => {
+  const P = repo.letters.parseSectionList;
+  // A row without a delimiter used to be filtered out silently, removing that
+  // section from the form and orphaning everything authored under it.
+  const bad = P('overview | OVERVIEW | required\nRECOMMENDATIONS\nbackground | BACKGROUND');
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /Line 2/);
+
+  // The same answer must not render under two headings.
+  const dup = P('overview | OVERVIEW\noverview | SECOND OVERVIEW');
+  assert.equal(dup.ok, false);
+  assert.match(dup.error, /more than once/);
+
+  assert.equal(P('').ok, false);
+  assert.equal(P('bad key! | LABEL').ok, false);
+  assert.equal(P('overview | OVERVIEW | maybe').ok, false);
+
+  const good = P('overview | OVERVIEW | required | What is before the body.\nnotes | NOTES | optional');
+  assert.equal(good.ok, true);
+  assert.equal(good.list.length, 2);
+  assert.equal(good.list[0].required, true);
+  assert.equal(good.list[0].hint, 'What is before the body.');
+  assert.equal(good.list[1].required, false);
+});
+
+test('letter config: saving the list unchanged preserves every field', () => {
+  const drafting = require('../src/views/drafting');
+  const before = repo.letters.sections();
+  // Round-trip the rendered form through the parser. A serialisation narrower
+  // than the parser silently strips whatever it omits — here, every hint.
+  const html = String(drafting.letterSectionsAdmin(false));
+  const text = html.slice(html.indexOf('<textarea'), html.indexOf('</textarea>'));
+  // One pass over the entities. Chained replaces decoding &amp; first turn
+  // "&amp;lt;" into "<" — the escaped text for "&lt;" comes back as a real
+  // tag. A single pass cannot re-read what it has already written.
+  const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" };
+  const body = text.slice(text.indexOf('>') + 1)
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ENTITIES[e]);
+  const parsed = repo.letters.parseSectionList(body);
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.deepEqual(parsed.list.map((s) => s.key), before.map((s) => s.key));
+  assert.deepEqual(parsed.list.map((s) => s.required), before.map((s) => s.required));
+  for (const s of parsed.list) {
+    const orig = before.find((o) => o.key === s.key);
+    assert.equal(s.hint, orig.hint || '', `hint lost for ${s.key}`);
+    assert.equal(s.label, orig.label);
+  }
+});
+
+test('letter: attachment labels continue past Z', async () => {
+  const b = repo.bodies.insert({ name: 'Many Attach Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Many attachments', status: 'Introduced', body_id: b });
+  for (let i = 0; i < 28; i++) {
+    repo.matters.addAttachment({ matter_id: m.id, name: `Exhibit ${i + 1}`, url: 'https://example.gov/x.pdf' });
+  }
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  assert.match(text, /Attachment Z: Exhibit 26/);
+  // fromCharCode(65 + 26) is "[", which is not a citable label.
+  assert.match(text, /Attachment AA: Exhibit 27/);
+  assert.match(text, /Attachment AB: Exhibit 28/);
+  assert.ok(!text.includes('Attachment ['), 'lettering ran past the alphabet');
+});
+
+test('legislation page links to board letter authoring', () => {
+  const pages = require('../src/views/pages');
+  const b = repo.bodies.insert({ name: 'Reach Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Reachable', status: 'Introduced', body_id: b });
+  // A screen with no link into it is not shipped, whatever its routes do.
+  const html = String(pages.matterDetail(repo.matters.get(m.id), {}, { role: 'clerk', id: 1 }));
+  assert.match(html, new RegExp(`/admin/legislation/${m.file_number}/letter`),
+    'no way to reach the board letter authoring screen');
+});

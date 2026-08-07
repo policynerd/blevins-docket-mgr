@@ -66,6 +66,15 @@ function officialFooter(series) {
   };
 }
 
+// Attachment labels: A…Z, then AA, AB… String.fromCharCode(65 + i) turns into
+// "[" at the 27th attachment, which is not a citable label.
+function attachmentLabel(i) {
+  let n = i;
+  let out = '';
+  do { out = String.fromCharCode(65 + (n % 26)) + out; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return out;
+}
+
 // --- 1. Board letter ---------------------------------------------------------
 // The instrument that carries a matter to the body: masthead, the roster of
 // members down the left rail, then SUBJECT and the standing report sections.
@@ -121,46 +130,69 @@ async function boardLetter(matter, opts = {}) {
   doc.heading('SUBJECT', { size: 11 });
   doc.text(subject, { size: 11, style: 'b', after: 12 });
 
-  // --- Standing sections ---
-  const section = (title, content) => {
-    const paras = Array.isArray(content) ? content : paragraphs(content);
-    if (!paras.length) return;
-    doc.heading(title, { size: 11 });
-    for (const p of paras) doc.text(p, { size: 10.5, after: 6 });
-    doc.gap(4);
+  // The standard sections, in the configured order, each carrying what was
+  // written for it. A section with nothing written is omitted rather than
+  // printed as an empty heading — the form is a set of questions, and a
+  // heading with no answer under it asserts one was given.
+  // Two sections have structured data behind them and can be answered from the
+  // file when nobody has written them: the summary stands in for OVERVIEW, and
+  // the fiscal fields for FISCAL IMPACT. Both are resolved inside the loop so
+  // they print in their configured position — appending a fallback after the
+  // loop puts it out of order, which for a form document is a defect.
+  const fiscalFromFile = () => {
+    const out = [];
+    if (matter.fiscal_impact != null && matter.fiscal_impact !== '') {
+      const amt = Number(matter.fiscal_impact);
+      out.push(`Estimated impact: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        + (matter.fiscal_recurring ? ' (ongoing annual cost)' : ' (one-time)'));
+    }
+    if (matter.fiscal_note) out.push(...paragraphs(matter.fiscal_note));
+    // Silence on cost reads as "not considered", and a board acts on the number.
+    if (!out.length) out.push('There is no fiscal impact associated with this action.');
+    return out;
   };
 
-  section('OVERVIEW', matter.summary || '');
-
-  if (opts.recommendation || (report && report.kind === 'Recommendation')) {
-    section('RECOMMENDATION(S)', opts.recommendation || report.body_html);
+  const composed = repo.letters.compose(matter.id);
+  for (const sec of composed) {
+    let paras;
+    if (sec.filled) paras = paragraphs(sec.body_html);
+    else if (sec.key === 'overview') paras = matter.summary ? paragraphs(matter.summary) : [];
+    else if (sec.key === 'fiscal') paras = fiscalFromFile();
+    else paras = [];
+    if (!paras.length) continue;
+    doc.heading(sec.label, { size: 11 });
+    for (const para of paras) doc.text(para, { size: 10.5, after: 6 });
+    doc.gap(4);
   }
 
-  // Fiscal impact is structured on the matter, so it is stated rather than
-  // pulled from prose — the number and whether it recurs are the parts a board
-  // acts on.
-  const fiscalLines = [];
-  if (matter.fiscal_impact != null && matter.fiscal_impact !== '') {
-    const amt = Number(matter.fiscal_impact);
-    fiscalLines.push(`Estimated impact: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      + (matter.fiscal_recurring ? ' (ongoing annual cost)' : ' (one-time)'));
-  }
-  if (matter.fiscal_note) fiscalLines.push(...paragraphs(matter.fiscal_note));
-  if (!fiscalLines.length) fiscalLines.push('There is no fiscal impact associated with this action.');
-  section('FISCAL IMPACT', fiscalLines);
-
-  if (report && report.body_html && report.kind !== 'Recommendation') {
-    section('BACKGROUND', report.body_html);
+  // Nothing written at all: say so rather than issuing a letter that looks
+  // complete because its headings are missing.
+  if (!composed.some((sec) => sec.filled) && !matter.summary) {
+    doc.text('[No board letter has been written for this file.]',
+      { size: 10.5, style: 'i', color: MUTED, after: 8 });
   }
 
   const sponsors = repo.matters.sponsors(matter.id);
   if (sponsors.length) {
-    section('SPONSOR(S)', [sponsors.map((s) => s.full_name).join(', ')]);
+    doc.heading('SPONSOR(S)', { size: 11 });
+    doc.text(sponsors.map((sp) => sp.full_name).join(', '), { size: 10.5, after: 10 });
   }
 
-  doc.gap(18);
+  doc.gap(14);
   doc.text('Respectfully submitted,', { size: 10.5 });
-  doc.signature(ORG.clerkTitle || 'Clerk of the Board');
+  doc.signature(opts.submitterTitle || ORG.clerkTitle || 'Clerk of the Board');
+
+  // Attachments are lettered here and cited that way in debate ("Attachment
+  // B"), so the letter is where the lettering is fixed.
+  const atts = repo.matters.attachments(matter.id);
+  if (atts.length) {
+    doc.gap(10);
+    doc.heading('ATTACHMENT(S)', { size: 11 });
+    atts.forEach((a, i) => {
+      doc.text(`Attachment ${attachmentLabel(i)}: ${a.name}`,
+        { size: 10.5, hanging: 18, after: 4 });
+    });
+  }
 
   return doc.save();
 }
@@ -349,7 +381,7 @@ async function approvalLog(matter) {
   field('FILE NUMBER', matter.file_number);
   field('ORIGINATING BODY', (body && body.name) || ORG.name);
   field('ATTACHMENTS', attachments.length
-    ? attachments.map((a, i) => `${String.fromCharCode(65 + i)}. ${a.name}`).join('\n')
+    ? attachments.map((a, i) => `${attachmentLabel(i)}. ${a.name}`).join('\n')
     : 'None');
 
   doc.gap(6);
