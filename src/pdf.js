@@ -4,6 +4,10 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const { ORG } = require('./org');
 const repo = require('./repo');
 const { formatDate, formatDateTime } = require('./util');
+const { Doc, MUTED: MUTED2 } = require('./pdfdoc');
+const documents = require('./documents');
+
+function upper(v) { return String(v == null ? '' : v).toUpperCase(); }
 
 const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
 
@@ -30,136 +34,182 @@ const INK = rgb(0.08, 0.08, 0.08);
 const MUTED = rgb(0.45, 0.45, 0.45);
 const ACCENT = rgb(0.083, 0.337, 0.62);
 
+// The meeting packet: the documents themselves, bound in agenda order.
+//
+// This used to be a listing — it printed the names of the attachments and
+// stopped. A packet whose contents are a table of names is not a packet; a
+// member sitting down with it has nothing to read. Each item's material is
+// now generated and bound behind a tab divider, in the order the tab numbers
+// were assigned by repo.meetings.packet(), so the divider, the table of
+// contents and the item itself cannot disagree about which tab is which.
+//
+// Items the clerk held back are omitted entirely, and items carrying nothing
+// keep their place in the contents without taking a tab.
 async function generatePacket(meeting) {
-  const pdfDoc = await PDFDocument.create();
-  const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const rows = repo.meetings.packet(meeting.id);
+  const out = await PDFDocument.create();
+  const problems = [];
 
-  function addPage() {
-    return { page: pdfDoc.addPage([W, H]), y: H - MARGIN };
-  }
+  // Merge one generated or fetched PDF into the packet.
+  const merge = async (bytes) => {
+    if (!bytes) return 0;
+    const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const pages = await out.copyPages(src, src.getPageIndices());
+    for (const pg of pages) out.addPage(pg);
+    return pages.length;
+  };
 
-  function drawLine(page, text, { x = MARGIN, y, size = 10, font = fontR, color = INK } = {}) {
-    const str = String(text == null ? '' : text);
-    if (!str) return;
-    page.drawText(str, { x, y, size, font, color, maxWidth: CONTENT_W });
-  }
-
-  // ---- Cover page ----
-  let { page, y } = addPage();
-
-  drawLine(page, ORG.name, { y, size: 20, font: fontB, color: ACCENT });
-  y -= 28;
-  drawLine(page, meeting.body_name, { y, size: 16, font: fontB });
-  y -= 24;
-  drawLine(page, 'Agenda Packet', { y, size: 14, color: MUTED });
-  y -= 22;
-  drawLine(page, formatDateTime(meeting.meeting_date, meeting.meeting_time), { y, size: 12 });
-  y -= 16;
-  if (meeting.location) {
-    drawLine(page, meeting.location, { y, size: 12, color: MUTED });
-    y -= 16;
-  }
-  drawLine(page, 'Status: ' + (meeting.status || ''), { y, size: 11, color: MUTED });
-
-  // ---- Agenda items ----
-  const items = repo.meetings.items(meeting.id);
-  let current = addPage();
-  page = current.page;
-  y = current.y;
-
-  function ensure(needed) {
-    if (y - needed < MARGIN) {
-      current = addPage();
-      page = current.page;
-      y = current.y;
+  // Generate a document, but never let one bad item take the whole packet
+  // down. A packet that fails entirely on the morning of a meeting is worse
+  // than one that names what is missing, and the name is what lets a clerk
+  // fix it before distribution.
+  const safely = async (label, fn) => {
+    try { return await fn(); } catch (e) {
+      problems.push(`${label}: ${e.message}`);
+      return null;
     }
+  };
+
+  // --- Cover and contents ---
+  // No page count in this footer: the front matter does not know how long the
+  // packet is, and reporting its own length here read "1 of 1" on the cover of
+  // a twelve-page packet. Packet-wide numbering is stamped after the merge.
+  const front = await Doc.create({
+    footer: (d) => {
+      d.at(d.margin.left, d.margin.bottom - 26, `${ORG.name} \u00b7 Agenda packet`,
+        { size: 8, style: 'sans', color: MUTED2 });
+    },
+  });
+  front.text(upper(ORG.name), { size: 16, style: 'b', after: 6 });
+  front.text(meeting.body_name || '', { size: 13, style: 'b', after: 4 });
+  front.text('AGENDA PACKET', { size: 11, style: 'sans', color: MUTED2, after: 10 });
+  front.rule({ after: 14 });
+  front.text(formatDateTime(meeting.meeting_date, meeting.meeting_time), { size: 12, after: 4 });
+  if (meeting.location) front.text(meeting.location, { size: 11, color: MUTED2, after: 4 });
+  front.text(`Status: ${meeting.status || ''}`, { size: 10, color: MUTED2, after: 18 });
+
+  const withTabs = rows.filter((r) => r.tab);
+  front.heading('CONTENTS', { size: 12 });
+  if (!withTabs.length) {
+    front.text('No item on this agenda carries supporting material.',
+      { size: 10.5, style: 'i', color: MUTED2, after: 8 });
   }
+  for (const r of rows) {
+    if (!r.included) continue;
+    const it = r.item;
+    const num = it.agenda_number ? `${it.agenda_number}. ` : '';
+    const title = it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)');
+    const tab = r.tab ? `Tab ${r.tab}` : '\u2014';
+    front.text(`${tab}    ${num}${title}`, { size: 10.5, indent: 0, hanging: 52, after: 3 });
+  }
+  await merge(await front.save());
 
-  let lastSection = null;
-  for (const it of items) {
-    if (it.section && it.section !== lastSection) {
-      lastSection = it.section;
-      ensure(28);
-      drawLine(page, it.section.toUpperCase(), { y, size: 11, font: fontB, color: ACCENT });
-      y -= 18;
+  // --- Each item's material, behind its tab ---
+  for (const r of rows) {
+    // A tab is only assigned to an included item, so this covers both: an item
+    // the clerk held back never reaches here.
+    if (!r.tab) continue;
+    const it = r.item;
+    const matter = it.matter_id ? repo.matters.get(it.matter_id) : null;
+
+    // Divider: what this tab is, so a packet opened at random is navigable.
+    const div = await Doc.create({});
+    div.gap(150);
+    div.text(`TAB ${r.tab}`, { size: 28, style: 'b', align: 'center', after: 14 });
+    if (it.agenda_number) {
+      div.text(`Agenda item ${it.agenda_number}`, { size: 12, style: 'sans', color: MUTED2, align: 'center', after: 8 });
     }
+    div.text(matter ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || ''),
+      { size: 13, align: 'center', after: 6 });
+    if (it.section) div.text(it.section, { size: 10, style: 'sans', color: MUTED2, align: 'center' });
+    await merge(await div.save());
 
-    ensure(48);
-    const numPart = it.agenda_number ? it.agenda_number + '. ' : '';
-    const filePart = it.file_number ? '[' + it.file_number + '] ' : '';
-    const titleLine = numPart + filePart + (it.matter_title || it.title || '');
-    drawLine(page, titleLine, { y, size: 10, font: fontB });
-    y -= 14;
+    if (matter) {
+      await merge(await safely(`${it.file_number} board letter`,
+        () => documents.boardLetter(matter, { date: meeting.meeting_date })));
 
-    if (it.matter_type) {
-      drawLine(page, it.matter_type, { y, size: 9, color: MUTED });
-      y -= 12;
-    }
-
-    if (it.action) {
-      const actionText = 'Action: ' + it.action + (it.result ? ' — ' + it.result : '');
-      drawLine(page, actionText, { y, size: 9 });
-      y -= 12;
-    }
-
-    if (it.matter_id) {
-      const tally = repo.votes.tally(it.id);
-      const total = (tally.Yea || 0) + (tally.Nay || 0) + (tally.Abstain || 0) +
-        (tally.Recused || 0) + (tally.Absent || 0);
-      if (total > 0) {
-        const t = `Vote: Yea ${tally.Yea}, Nay ${tally.Nay}` +
-          (tally.Abstain ? `, Abstain ${tally.Abstain}` : '') +
-          (tally.Absent ? `, Absent ${tally.Absent}` : '');
-        ensure(14);
-        drawLine(page, t, { y, size: 9 });
-        y -= 12;
+      if (matter.type === 'Ordinance') {
+        await merge(await safely(`${it.file_number} ordinance`,
+          () => documents.ordinance(matter)));
+        await merge(await safely(`${it.file_number} redline`,
+          () => documents.ordinance(matter, { redline: true })));
+        // The notice belongs in the packet only for the meeting it notices,
+        // which is this one.
+        await merge(await safely(`${it.file_number} summary`,
+          () => documents.summaryForPublication(matter, meeting)));
       }
 
-      const attachments = repo.matters.attachments(it.matter_id);
-      if (attachments.length) {
-        ensure(14);
-        drawLine(page, 'Attachments:', { y, size: 9, font: fontB });
-        y -= 12;
-        for (const a of attachments) {
-          ensure(13);
-          drawLine(page, '  • ' + a.name, { y, size: 9, color: MUTED });
-          y -= 12;
+      for (const rep of r.reports) {
+        const full = repo.reports.get(rep.id);
+        if (full) {
+          await merge(await safely(`${it.file_number} ${rep.title}`,
+            () => documents.reportDoc(matter, full)));
         }
       }
     }
 
-    y -= 8;
-  }
-
-  // ---- Append external PDF attachments ----
-  const seen = new Set();
-  for (const it of items) {
-    if (!it.matter_id) continue;
-    const attachments = repo.matters.attachments(it.matter_id);
-    for (const a of attachments) {
-      if (!a.url || seen.has(a.url)) continue;
-      seen.add(a.url);
-      const bytes = await fetchPdfBytes(a.url);
-      if (!bytes) continue;
-      try {
-        const extDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-        // Separator page
-        const { page: sep } = addPage();
-        drawLine(sep, a.name, { y: H / 2 + 20, size: 14, font: fontB });
-        const context = it.file_number || (it.matter_title ? it.matter_title.slice(0, 80) : '');
-        if (context) drawLine(sep, context, { y: H / 2, size: 11, color: MUTED });
-        // Copy pages
-        const indices = extDoc.getPageIndices();
-        const copied = await pdfDoc.copyPages(extDoc, indices);
-        for (const cp of copied) pdfDoc.addPage(cp);
-      } catch {
-        // Skip unreadable or encrypted PDFs silently
+    // Attachments and item documents: bind the PDF where it can be fetched,
+    // and where it cannot, say so on its own page rather than leaving a gap
+    // the reader has to notice.
+    const files = [
+      ...r.attachments.map((a) => ({ name: a.name, url: a.url, kind: 'Attachment' })),
+      ...r.docs.map((d) => ({ name: d.name, url: d.url, kind: 'Item document' })),
+    ];
+    for (const f of files) {
+      const bytes = f.url ? await fetchPdfBytes(f.url) : null;
+      const sep = await Doc.create({});
+      sep.gap(120);
+      sep.text(f.kind.toUpperCase(), { size: 10, style: 'sans', color: MUTED2, align: 'center', after: 8 });
+      sep.text(f.name, { size: 14, style: 'b', align: 'center', after: 8 });
+      if (!bytes) {
+        sep.text(f.url
+          ? 'This document is stored outside the packet and could not be retrieved when the packet was built.'
+          : 'This document has no file or link attached to it.',
+        { size: 10.5, style: 'i', color: MUTED2, align: 'center' });
+        if (f.url) sep.text(f.url, { size: 9, color: MUTED2, align: 'center' });
+        problems.push(`${it.file_number || it.title}: ${f.name} could not be bound`);
       }
+      await merge(await sep.save());
+      if (bytes) await safely(`${f.name}`, () => merge(bytes));
     }
   }
 
-  return pdfDoc.save();
+  // --- What could not be bound ---
+  // Printed at the front of the reader's attention rather than buried: this
+  // is the page that tells a clerk the packet is short before it goes out.
+  if (problems.length) {
+    const warn = await Doc.create({});
+    warn.text('INCOMPLETE PACKET', { size: 14, style: 'b', after: 8 });
+    warn.text(`${problems.length} document${problems.length === 1 ? '' : 's'} could not be included:`,
+      { size: 11, after: 10 });
+    for (const p of problems) warn.text(`\u2022 ${p}`, { size: 10.5, indent: 12, hanging: 12, after: 4 });
+    warn.gap(10);
+    warn.text('Resolve these before distributing the packet.', { size: 10.5, style: 'i' });
+    const bytes = await warn.save();
+    const src = await PDFDocument.load(bytes);
+    const pages = await out.copyPages(src, src.getPageIndices());
+    // Insert after the cover so it is seen, not appended where it is not.
+    pages.reverse().forEach((pg) => out.insertPage(1, pg));
+  }
+
+  // Packet-wide page numbers, stamped bottom-centre after everything is bound.
+  // Each embedded document already carries its own "Page 1 of 3" at the edges,
+  // which is the right number for that document and the wrong one for the
+  // packet; this is the number a chair means by "turn to page 40". Centre
+  // keeps the two from colliding.
+  const stamp = await out.embedFont(StandardFonts.Helvetica);
+  const pages = out.getPages();
+  pages.forEach((pg, i) => {
+    const label = `${i + 1} / ${pages.length}`;
+    const w = stamp.widthOfTextAtSize(label, 8);
+    const { width } = pg.getSize();
+    pg.drawText(label, {
+      x: (width - w) / 2, y: 26, size: 8, font: stamp,
+      color: rgb(0.42, 0.46, 0.52),
+    });
+  });
+
+  return out.save();
 }
 
 // Strip HTML to plain paragraphs for the consent body (the result is drawn as
