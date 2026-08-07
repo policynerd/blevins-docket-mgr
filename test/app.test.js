@@ -1446,3 +1446,73 @@ test('packet: an item held back contributes nothing and closes the tabs up', asy
   assert.match(text, /TAB 1/);
   assert.ok(!/TAB 2/.test(text), 'tabs did not close up after the held-back item');
 });
+
+// --- The seal ------------------------------------------------------------------
+test('seal: the legend fits its arc at any name length', () => {
+  const seal = require('../src/seal');
+  const size = (svg) => Number((svg.match(/font-size="([\d.]+)" letter-spacing/) || [])[1]);
+  // SVG stops drawing at the end of a path, so a legend that does not fit is
+  // not compressed — it loses its head and tail and reads as nonsense. The
+  // type has to shrink, not just the tracking.
+  const short = seal.sealSvg({ size: 150, legend: 'Board of Governors' });
+  const long = seal.sealSvg({ size: 150, legend: 'Board of Governors of Blevins Holdings Corporation' });
+  assert.ok(size(long) < size(short), 'a longer legend must be set smaller');
+
+  // Past the readable floor the name is cut at a word boundary and marked,
+  // rather than left for the renderer to drop silently.
+  const huge = seal.sealSvg({ size: 150,
+    legend: 'Board of Governors of Blevins Holdings Corporation and its Subsidiaries' });
+  assert.match(huge, /\u2026/, 'an unfittable legend must be visibly truncated');
+
+  // Whatever the length, the estimated run has to fit the arc it is set on.
+  for (const legend of ['BG', 'Finance Committee', 'Board of Governors',
+    'Board of Governors of Blevins Holdings Corporation and its Subsidiaries']) {
+    const svg = seal.sealSvg({ size: 150, legend });
+    const fs2 = size(svg);
+    const track = Number((svg.match(/font-size="[\d.]+" letter-spacing="([\d.-]+)"/) || [])[1]);
+    // Measure what is actually set, which for a very long name is a
+    // deliberately truncated form rather than the whole thing.
+    const set = (svg.match(/text-anchor="middle">([^<]*)<\/textPath>/) || [])[1] || '';
+    const run = set.length * (0.62 * fs2 + track);
+    assert.ok(run <= Math.PI * 42.4 * 0.85,
+      `"${legend}" needs ${run.toFixed(1)} units on an arc of ${(Math.PI * 42.4 * 0.84).toFixed(1)}`);
+  }
+});
+
+test('seal: gives way to the cipher where a legend could not be read', () => {
+  const seal = require('../src/seal');
+  assert.match(seal.sealSvg({ size: 96 }), /seal-svg/);
+  // A ring legend at 40px is ornament pretending to be information.
+  assert.match(seal.sealSvg({ size: 40 }), /monogram-svg/);
+  assert.match(seal.sealSvg({ size: 63 }), /monogram-svg/);
+});
+
+test('seal: the ground names the surface, and the device reverses onto it', () => {
+  const seal = require('../src/seal');
+  // layout.js reads `variant: light` as light-coloured artwork FOR a dark
+  // ground — the opposite of this module's reading. The two conventions
+  // meeting put a white disc on the navy rail, so this asserts the direction.
+  const onDark = seal.sealSvg({ size: 96, ground: 'dark' });
+  const onLight = seal.sealSvg({ size: 96, ground: 'light' });
+  assert.match(onDark, /#D9B450/, 'a device on a dark ground is brass');
+  assert.ok(!/fill="#FFFFFF"/.test(onDark), 'a device on a dark ground leaves its field open');
+  assert.match(onLight, /#353D4F/, 'a device on paper is navy');
+  assert.match(onLight, /fill="#FFFFFF"/, 'a device on paper carries a white field');
+});
+
+test('seal: the cipher is built from the words that carry the name', () => {
+  const seal = require('../src/seal');
+  // "BOG" reads as a word, not a cipher — articles and conjunctions are skipped.
+  assert.equal(seal.initials('Board of Governors'), 'BG');
+  assert.equal(seal.initials('Finance Committee'), 'FC');
+  assert.equal(seal.initials('Department of Public Works and Utilities'), 'DPW');
+  assert.equal(seal.initials(''), 'BG');
+});
+
+test('seal: the legend is escaped, not interpolated', () => {
+  const seal = require('../src/seal');
+  // The legend is the organisation name, which is admin-editable.
+  const svg = seal.sealSvg({ size: 96, legend: '<script>alert(1)</script>', counter: 'A & B' });
+  assert.ok(!svg.includes('<script>'), 'markup survived into the seal');
+  assert.match(svg, /&amp;/);
+});

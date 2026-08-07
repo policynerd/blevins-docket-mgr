@@ -106,13 +106,10 @@ function faviconLink() {
   if (isBrandSrc(fav)) href = fav;
   else if (isBrandSrc(logo)) href = logo;
   else {
-    const color = /^#[0-9a-fA-F]{3,8}$/.test(ORG.primaryColor || '') ? ORG.primaryColor : '#353D4F';
-    const glyph = escapeText(String(ORG.seal || '★').slice(0, 2));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
-      + `<rect width="64" height="64" rx="12" fill="${color}"/>`
-      + `<text x="32" y="46" font-size="38" text-anchor="middle" fill="#ffffff" `
-      + `font-family="Georgia,'Times New Roman',serif">${glyph}</text></svg>`;
-    href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    // The cipher in its roundel. A seal's legend is unreadable at tab size, so
+    // the favicon carries the monogram, which is the mark that survives there.
+    const seal = require('../seal');
+    href = seal.dataUri(seal.monogramSvg({ size: 64, ground: 'dark' }));
   }
   return `<link rel="icon" href="${href}">`;
 }
@@ -120,7 +117,7 @@ function faviconLink() {
 // Banner mark: a logo image when an https logo URL is configured, else the seal glyph.
 // The board's mark. `variant: 'light'` is for dark grounds (the navy rail),
 // where the reversed artwork is used when one has been supplied.
-function brandMark({ variant = 'light', cls = 'brand-logo' } = {}) {
+function brandMark({ variant = 'light', cls = 'brand-logo', size } = {}) {
   const light = String(ORG.logoLightUrl || '');
   const dark = String(ORG.logoUrl || '');
   // On a dark ground prefer the reversed mark, else fall back to the standard one.
@@ -130,7 +127,11 @@ function brandMark({ variant = 'light', cls = 'brand-logo' } = {}) {
   if (src) {
     return `<img class="${escapeText(cls)}" src="${escapeText(src)}" alt="${escapeText(ORG.name)} seal">`;
   }
-  return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
+  // No artwork supplied: draw the board's own seal rather than standing a bare
+  // glyph in for it. Below 64px sealSvg() gives way to the cipher on its own,
+  // so the rail gets a legible roundel and a masthead gets the full device.
+  const seal = require('../seal');
+  return `<span class="brand-seal-mark">${seal.sealSvg({ size: size || 46, ground: variant === 'light' ? 'dark' : 'light' })}</span>`;
 }
 
 // The sidebar masthead. A horizontal lockup already contains the organization
@@ -179,7 +180,10 @@ function authMark() {
       return `<span class="auth-plate"><img class="auth-plate-img" src="${escapeText(cand)}" alt=""></span>`;
     }
   }
-  return `<span class="brand-seal" aria-hidden="true">${escapeText(ORG.seal)}</span>`;
+  // The sign-in page sits on paper and has room for the whole device — the
+  // one place in the interface where the legend can actually be read.
+  const device = require('../seal');
+  return `<span class="brand-seal-mark" aria-hidden="true">${device.sealSvg({ size: 112, ground: 'light' })}</span>`;
 }
 
 function statusBadge(status) {
