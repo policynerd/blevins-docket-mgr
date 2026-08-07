@@ -856,18 +856,32 @@ test('packet: tabs go only to items carrying material, and renumber on exclusion
 
   let packet = repo.meetings.packet(mtId);
   const byTitle = (t) => packet.find((r) => (r.item.matter_title || r.item.title) === t);
-  assert.equal(byTitle('Call to Order').tab, null);    // procedural, nothing to bind
-  assert.equal(byTitle('Nothing attached').tab, null); // on the agenda but empty
-  assert.equal(byTitle('With docs').tab, 1);
-  assert.equal(byTitle('Also with docs').tab, 2);
 
-  // Holding the first back moves the second up — tabs must stay contiguous,
-  // since a member is told to turn to a physical divider.
+  // A procedural line produces nothing at all and takes no tab.
+  assert.equal(byTitle('Call to Order').tab, null);
+  assert.equal(byTitle('Call to Order').generated, 0);
+
+  // A legislative file always takes a tab, because the system generates a
+  // board letter for it whether or not anyone attached anything. Counting only
+  // authored material left a drafted ordinance with no attachments untabbed,
+  // and therefore never bound into the packet.
+  assert.equal(byTitle('Nothing attached').material, 0);   // still nothing to read
+  assert.ok(byTitle('Nothing attached').tab, 'a file on the agenda must take a tab');
+  // An ordinance also generates the clean text, the redline and the notice.
+  assert.equal(byTitle('With docs').generated, 4);
+  assert.equal(byTitle('Also with docs').generated, 1);
+
+  const firstTab = byTitle('With docs').tab;
+  const secondTab = byTitle('Also with docs').tab;
+  assert.ok(firstTab < secondTab, 'tabs follow agenda order');
+
+  // Holding an item back moves the ones behind it up — tabs must stay
+  // contiguous, since a member is told to turn to a physical divider.
   repo.meetings.setInPacket(i1.id, 0);
   packet = repo.meetings.packet(mtId);
   assert.equal(byTitle('With docs').included, false);
   assert.equal(byTitle('With docs').tab, null);
-  assert.equal(byTitle('Also with docs').tab, 1);
+  assert.equal(byTitle('Also with docs').tab, secondTab - 1);
 });
 
 test('packet: item documents are scoped to the item and die with it', () => {
@@ -1359,4 +1373,76 @@ test('legislation page links to board letter authoring', () => {
   const html = String(pages.matterDetail(repo.matters.get(m.id), {}, { role: 'clerk', id: 1 }));
   assert.match(html, new RegExp(`/admin/legislation/${m.file_number}/letter`),
     'no way to reach the board letter authoring screen');
+});
+
+// --- The packet binds documents, not names -----------------------------------
+test('packet: each item\'s material is bound behind its tab', async () => {
+  const pdfGen = require('../src/pdf');
+  const b = repo.bodies.insert({ name: 'Bind Board', type: 'Governing Body', seats: 3 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-06-01', meeting_time: '6:00 PM', location: 'Boardroom' });
+  const ord = repo.matters.insertNumbered({ type: 'Ordinance', title: 'A bound ordinance', status: 'Introduced', body_id: b });
+  const res = repo.matters.insertNumbered({ type: 'Resolution', title: 'A bound resolution', status: 'Introduced', body_id: b });
+  db.prepare('UPDATE matters SET full_text=? WHERE id=?').run('SECTION 1. Purpose.\nTo bind.', ord.id);
+  db.prepare('INSERT INTO reports (matter_id,title,kind,body_html) VALUES (?,?,?,?)')
+    .run(res.id, 'Fiscal Note', 'Fiscal Note', '<p>No net cost.</p>');
+
+  repo.meetings.addItem({ meeting_id: mtId, title: 'Call to Order', section: 'Call to Order' });
+  repo.meetings.addMatters(mtId, [ord.id, res.id]);
+
+  const text = await pdfText(await pdfGen.generatePacket(repo.meetings.get(mtId)));
+
+  // The packet used to be a listing of document names. These assert the
+  // documents themselves are present.
+  assert.match(text, /AGENDA PACKET/);
+  assert.match(text, /CONTENTS/);
+  assert.match(text, /TAB 1/);
+  assert.match(text, /AGENDA ITEM/, 'no board letter bound');
+  assert.match(text, /ORDINANCE NO\./, 'no ordinance bound');
+  assert.match(text, /REDLINE/, 'no redline bound');
+  assert.match(text, /SUMMARY OF PROPOSED ORDINANCE/, 'no notice bound');
+  assert.match(text, /No net cost/, 'no staff report bound');
+
+  // The resolution must not be bound as an ordinance.
+  const ordCount = (text.match(/ORDINANCE NO\./g) || []).length;
+  assert.equal(ordCount, 2, 'expected clean + redline for the one ordinance only');
+
+  // A procedural item keeps its place in the contents but takes no tab.
+  assert.match(text, /Call to Order/);
+});
+
+test('packet: a document that cannot be bound is named, not silently dropped', async () => {
+  const pdfGen = require('../src/pdf');
+  const b = repo.bodies.insert({ name: 'Gap Board', type: 'Governing Body', seats: 3 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-06-02' });
+  const m = repo.matters.insertNumbered({ type: 'Motion', title: 'Has an unreachable exhibit', status: 'Introduced', body_id: b });
+  repo.matters.addAttachment({ matter_id: m.id, name: 'Exhibit 1 — Map', url: 'https://example.invalid/nowhere.pdf' });
+  repo.meetings.addMatters(mtId, [m.id]);
+
+  const text = await pdfText(await pdfGen.generatePacket(repo.meetings.get(mtId)));
+  // A gap the reader has to notice is the failure mode; the packet says so.
+  assert.match(text, /INCOMPLETE PACKET/);
+  assert.match(text, /Exhibit 1/);
+  assert.match(text, /could not be/i);
+});
+
+test('packet: an item held back contributes nothing and closes the tabs up', async () => {
+  const pdfGen = require('../src/pdf');
+  const b = repo.bodies.insert({ name: 'Held Board', type: 'Governing Body', seats: 3 });
+  const mtId = repo.meetings.insert({ body_id: b, meeting_date: '2099-06-03' });
+  const one = repo.matters.insertNumbered({ type: 'Motion', title: 'Held back item', status: 'Introduced', body_id: b });
+  const two = repo.matters.insertNumbered({ type: 'Motion', title: 'Kept item', status: 'Introduced', body_id: b });
+  repo.meetings.addMatters(mtId, [one.id, two.id]);
+  const items = repo.meetings.items(mtId);
+  db.prepare('INSERT INTO reports (matter_id,title,kind,body_html) VALUES (?,?,?,?)')
+    .run(one.id, 'R1', 'Report', '<p>Withheld content marker.</p>');
+  db.prepare('INSERT INTO reports (matter_id,title,kind,body_html) VALUES (?,?,?,?)')
+    .run(two.id, 'R2', 'Report', '<p>Kept content marker.</p>');
+
+  repo.meetings.setInPacket(items.find((i) => i.matter_id === one.id).id, 0);
+  const text = await pdfText(await pdfGen.generatePacket(repo.meetings.get(mtId)));
+  assert.ok(!text.includes('Withheld content marker'), 'held-back material was bound anyway');
+  assert.match(text, /Kept content marker/);
+  // The kept item takes tab 1, not tab 2.
+  assert.match(text, /TAB 1/);
+  assert.ok(!/TAB 2/.test(text), 'tabs did not close up after the held-back item');
 });

@@ -700,11 +700,25 @@ const meetings = {
         : [];
       const attachments = it.matter_id ? matters.attachments(it.matter_id) : [];
       const docs = meetings.itemDocs(it.id);
+      // Two different questions, kept apart because they have different answers.
+      //
+      // `material` is what somebody wrote or attached. It drives the builder's
+      // warning that members will have nothing to read on an item — a board
+      // letter assembled from an empty file is not substance.
       const material = reports.length + attachments.length + docs.length;
-      // Only material earns a tab. A procedural line like "Call to Order"
-      // carries nothing and would otherwise burn a number members then hunt
-      // for behind a divider that isn't there.
-      const hasTab = included && material > 0;
+      // `generated` is what the system will produce for this item regardless:
+      // every legislative file yields a board letter, and an ordinance also
+      // yields the clean text, the redline and the published notice. These are
+      // pages that will sit behind the divider, so they decide whether the item
+      // earns a tab at all. Counting only authored material left an ordinance
+      // with drafted text but no attachments untabbed, and therefore unbound.
+      const generated = it.matter_id
+        ? (1 + (it.matter_type === 'Ordinance' ? 3 : 0))
+        : 0;
+      // A procedural line like "Call to Order" produces nothing and would
+      // otherwise burn a number members hunt for behind a divider that is not
+      // there.
+      const hasTab = included && (material + generated) > 0;
       return {
         item: it,
         included,
@@ -713,6 +727,7 @@ const meetings = {
         attachments,
         docs,
         material,
+        generated,
       };
     });
   },

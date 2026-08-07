@@ -358,6 +358,27 @@ async function summaryForPublication(matter, meeting, opts = {}) {
   return doc.save();
 }
 
+// --- Staff report -------------------------------------------------------------
+// A report attached to a file, rendered so it can be bound into the packet.
+// Reports are authored as rich text, so this is a plain rendering of that
+// prose under a heading identifying what it is and what it belongs to.
+async function reportDoc(matter, report) {
+  const doc = await Doc.create({
+    footer: officialFooter(`${ORG.name} \u00b7 ${matter.file_number} \u00b7 ${report.kind || 'Report'}`),
+  });
+  doc.text(upper(report.kind || 'Report'), { size: 10, style: 'sans', color: MUTED, after: 4 });
+  doc.text(report.title || matter.title, { size: 13, style: 'b', after: 4 });
+  doc.text(`${matter.file_number} \u2014 ${matter.title}`, { size: 10, color: MUTED, after: 6 });
+  if (report.author_name) doc.text(`Prepared by ${report.author_name}`, { size: 10, color: MUTED, after: 4 });
+  doc.rule({ after: 14 });
+  const paras = paragraphs(report.body_html);
+  if (!paras.length) {
+    doc.text('[This report has no text.]', { size: 10.5, style: 'i', color: MUTED });
+  }
+  for (const para of paras) doc.text(para, { size: 10.5, after: 7 });
+  return doc.save();
+}
+
 // --- 5. Approval log ---------------------------------------------------------
 // Who cleared this item, in what order, and when. Rows come from the routing
 // record, so the log cannot drift from the approvals the system actually holds.
@@ -410,4 +431,4 @@ async function approvalLog(matter) {
   return doc.save();
 }
 
-module.exports = { boardLetter, ordinance, summaryForPublication, approvalLog, paragraphs };
+module.exports = { boardLetter, ordinance, summaryForPublication, approvalLog, reportDoc, attachmentLabel, paragraphs };
