@@ -2033,6 +2033,44 @@ const letters = {
     }
     return LETTER_SECTIONS_DEFAULT;
   },
+  // Parse the edited section list. Strict on purpose: a row that silently
+  // fails to parse removes a section from the form and orphans everything
+  // already written under it, while the clerk is told the save succeeded.
+  // Any bad row rejects the whole submission.
+  //
+  // Format: key | LABEL | required | hint     (required and hint optional)
+  parseSectionList(text) {
+    const rows = String(text || '').split('\n')
+      .map((l) => l.trim()).filter(Boolean);
+    if (!rows.length) return { ok: false, error: 'The section list cannot be empty.' };
+    const list = [];
+    const seen = new Set();
+    for (const [i, row] of rows.entries()) {
+      const parts = row.split('|').map((x) => x.trim());
+      const [key, label, flag, hint] = parts;
+      if (!key || !label) {
+        return { ok: false, error: `Line ${i + 1}: expected "key | LABEL", got "${row}".` };
+      }
+      if (!/^[a-z0-9_-]+$/i.test(key)) {
+        return { ok: false, error: `Line ${i + 1}: "${key}" is not a valid key (letters, digits, - and _ only).` };
+      }
+      if (seen.has(key.toLowerCase())) {
+        // A duplicate key renders the same stored answer under two headings.
+        return { ok: false, error: `Line ${i + 1}: "${key}" appears more than once.` };
+      }
+      if (flag && !/^(required|optional)$/i.test(flag)) {
+        return { ok: false, error: `Line ${i + 1}: third field must be "required" or "optional", got "${flag}".` };
+      }
+      seen.add(key.toLowerCase());
+      list.push({
+        key, label,
+        required: /^required$/i.test(flag || ''),
+        hint: hint || '',
+      });
+    }
+    return { ok: true, list };
+  },
+
   setSections(list) {
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('letter.sections', ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)

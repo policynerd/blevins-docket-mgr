@@ -1427,18 +1427,20 @@ route('POST', /^\/admin\/legislation\/([^/]+)\/letter$/, (req, res, ctx) => {
 
 route('GET', /^\/admin\/letter-sections\/?$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;
-  sendHtml(res, draftingView.letterSectionsAdmin(ctx.query.saved === '1'));
+  sendHtml(res, draftingView.letterSectionsAdmin(ctx.query.saved === '1',
+    { error: ctx.query.error || '' }));
 });
 route('POST', /^\/admin\/letter-sections$/, (req, res, ctx) => {
   if (!need(ctx, res, 'clerk')) return;
-  const list = String(ctx.body.sections || '').split('\n')
-    .map((line) => line.split('|').map((x) => x.trim()))
-    .filter((p) => p[0] && p[1])
-    .map((p) => ({ key: p[0], label: p[1], required: /^required$/i.test(p[2] || '') }));
-  // A list that parsed to nothing would blank the letter form for every file,
-  // so an unparseable submission is refused rather than saved.
-  if (list.length) repo.letters.setSections(list);
-  redirect(res, `/admin/letter-sections?saved=${list.length ? '1' : '0'}`);
+  // Strict: a row that fails to parse would remove a section from the form and
+  // orphan everything written under it, so a bad row rejects the whole list and
+  // says which line rather than reporting success over a silent loss.
+  const parsed = repo.letters.parseSectionList(ctx.body.sections);
+  if (!parsed.ok) {
+    return redirect(res, `/admin/letter-sections?error=${encodeURIComponent(parsed.error)}`);
+  }
+  repo.letters.setSections(parsed.list);
+  redirect(res, '/admin/letter-sections?saved=1');
 });
 
 route('POST', /^\/admin\/legislation\/([^/]+)\/draft\/form$/, (req, res, ctx) => {

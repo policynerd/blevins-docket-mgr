@@ -66,6 +66,15 @@ function officialFooter(series) {
   };
 }
 
+// Attachment labels: A…Z, then AA, AB… String.fromCharCode(65 + i) turns into
+// "[" at the 27th attachment, which is not a citable label.
+function attachmentLabel(i) {
+  let n = i;
+  let out = '';
+  do { out = String.fromCharCode(65 + (n % 26)) + out; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return out;
+}
+
 // --- 1. Board letter ---------------------------------------------------------
 // The instrument that carries a matter to the body: masthead, the roster of
 // members down the left rail, then SUBJECT and the standing report sections.
@@ -180,7 +189,7 @@ async function boardLetter(matter, opts = {}) {
     doc.gap(10);
     doc.heading('ATTACHMENT(S)', { size: 11 });
     atts.forEach((a, i) => {
-      doc.text(`Attachment ${String.fromCharCode(65 + i)}: ${a.name}`,
+      doc.text(`Attachment ${attachmentLabel(i)}: ${a.name}`,
         { size: 10.5, hanging: 18, after: 4 });
     });
   }
@@ -372,7 +381,7 @@ async function approvalLog(matter) {
   field('FILE NUMBER', matter.file_number);
   field('ORIGINATING BODY', (body && body.name) || ORG.name);
   field('ATTACHMENTS', attachments.length
-    ? attachments.map((a, i) => `${String.fromCharCode(65 + i)}. ${a.name}`).join('\n')
+    ? attachments.map((a, i) => `${attachmentLabel(i)}. ${a.name}`).join('\n')
     : 'None');
 
   doc.gap(6);

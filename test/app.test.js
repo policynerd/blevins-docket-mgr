@@ -1287,3 +1287,73 @@ test('letter: attachments are lettered so they can be cited', async () => {
   assert.match(text, /Attachment B: Redline ordinance/);
   assert.match(text, /Attachment C: Summary of proposed ordinance/);
 });
+
+test('letter config: a bad row rejects the whole list rather than dropping a section', () => {
+  const P = repo.letters.parseSectionList;
+  // A row without a delimiter used to be filtered out silently, removing that
+  // section from the form and orphaning everything authored under it.
+  const bad = P('overview | OVERVIEW | required\nRECOMMENDATIONS\nbackground | BACKGROUND');
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /Line 2/);
+
+  // The same answer must not render under two headings.
+  const dup = P('overview | OVERVIEW\noverview | SECOND OVERVIEW');
+  assert.equal(dup.ok, false);
+  assert.match(dup.error, /more than once/);
+
+  assert.equal(P('').ok, false);
+  assert.equal(P('bad key! | LABEL').ok, false);
+  assert.equal(P('overview | OVERVIEW | maybe').ok, false);
+
+  const good = P('overview | OVERVIEW | required | What is before the body.\nnotes | NOTES | optional');
+  assert.equal(good.ok, true);
+  assert.equal(good.list.length, 2);
+  assert.equal(good.list[0].required, true);
+  assert.equal(good.list[0].hint, 'What is before the body.');
+  assert.equal(good.list[1].required, false);
+});
+
+test('letter config: saving the list unchanged preserves every field', () => {
+  const drafting = require('../src/views/drafting');
+  const before = repo.letters.sections();
+  // Round-trip the rendered form through the parser. A serialisation narrower
+  // than the parser silently strips whatever it omits — here, every hint.
+  const html = String(drafting.letterSectionsAdmin(false));
+  const text = html.slice(html.indexOf('<textarea'), html.indexOf('</textarea>'));
+  const body = text.slice(text.indexOf('>') + 1)
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  const parsed = repo.letters.parseSectionList(body);
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.deepEqual(parsed.list.map((s) => s.key), before.map((s) => s.key));
+  assert.deepEqual(parsed.list.map((s) => s.required), before.map((s) => s.required));
+  for (const s of parsed.list) {
+    const orig = before.find((o) => o.key === s.key);
+    assert.equal(s.hint, orig.hint || '', `hint lost for ${s.key}`);
+    assert.equal(s.label, orig.label);
+  }
+});
+
+test('letter: attachment labels continue past Z', async () => {
+  const b = repo.bodies.insert({ name: 'Many Attach Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Many attachments', status: 'Introduced', body_id: b });
+  for (let i = 0; i < 28; i++) {
+    repo.matters.addAttachment({ matter_id: m.id, name: `Exhibit ${i + 1}`, url: 'https://example.gov/x.pdf' });
+  }
+  const text = await pdfText(await documents.boardLetter(repo.matters.get(m.id)));
+  assert.match(text, /Attachment Z: Exhibit 26/);
+  // fromCharCode(65 + 26) is "[", which is not a citable label.
+  assert.match(text, /Attachment AA: Exhibit 27/);
+  assert.match(text, /Attachment AB: Exhibit 28/);
+  assert.ok(!text.includes('Attachment ['), 'lettering ran past the alphabet');
+});
+
+test('legislation page links to board letter authoring', () => {
+  const pages = require('../src/views/pages');
+  const b = repo.bodies.insert({ name: 'Reach Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Reachable', status: 'Introduced', body_id: b });
+  // A screen with no link into it is not shipped, whatever its routes do.
+  const html = String(pages.matterDetail(repo.matters.get(m.id), {}, { role: 'clerk', id: 1 }));
+  assert.match(html, new RegExp(`/admin/legislation/${m.file_number}/letter`),
+    'no way to reach the board letter authoring screen');
+});

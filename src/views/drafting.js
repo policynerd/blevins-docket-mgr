@@ -362,18 +362,28 @@ function letterPage(matter, opts = {}) {
 }
 
 // The standard section list, edited as one section per line: KEY | LABEL | required
-function letterSectionsAdmin(saved) {
+function letterSectionsAdmin(saved, opts = {}) {
   const current = repo.letters.sections();
-  const asText = current.map((s) => `${s.key} | ${s.label}${s.required ? ' | required' : ''}`).join('\n');
+  // Serialise every field the parser reads back, hint included. Emitting a
+  // narrower form than the parser accepts means saving the list unchanged
+  // silently strips whatever was left out — here, the guidance under every
+  // section heading.
+  const asText = current.map((s) =>
+    [s.key, s.label, s.required ? 'required' : 'optional', s.hint || ''].join(' | ').replace(/ \| $/, '')
+  ).join('\n');
   const body = html`
     <p class="crumbs"><a href="/admin">Clerk Workspace</a> / Board letter sections</p>
     <h1>Board letter sections</h1>
     <p class="muted">The questions every board letter must answer, in the order they appear.
       Which questions a board asks is its own policy, so this list is configuration.</p>
     ${saved ? raw('<p class="saved-banner">Section list saved.</p>') : ''}
+    ${opts.error ? raw(`<p class="form-error">${escapeText(opts.error)}</p>`) : ''}
     ${raw(card('Standard sections', `
-      <p class="muted">One per line: <code>key | LABEL | required</code>. The key is what the
-        stored text is filed under, so renaming a key orphans anything already written for it.</p>
+      <p class="muted">One per line: <code>key | LABEL | required | hint</code>.
+        The third field is <code>required</code> or <code>optional</code>; the hint is the
+        guidance shown under the heading while authoring. The key is what the stored text is
+        filed under, so renaming a key orphans anything already written for it.
+        A line that does not parse rejects the whole list rather than quietly dropping a section.</p>
       <form class="form" method="post" action="/admin/letter-sections">
         <textarea name="sections" rows="12">${escapeText(asText)}</textarea>
         <div class="form-actions">
