@@ -153,6 +153,27 @@ CREATE TABLE IF NOT EXISTS agenda_item_docs (
 );
 CREATE INDEX IF NOT EXISTS idx_agenda_item_docs_item ON agenda_item_docs(agenda_item_id);
 
+-- The named sections of a board letter, authored per file.
+--
+-- A board letter is not prose with incidental headings: it is a fixed set of
+-- questions the body requires answered before it will hear an item -- what is
+-- recommended, what it costs, what the background is. Each answer is stored
+-- against its section key so the document can be assembled in the standard
+-- order, a missing required section can be detected before the item is
+-- agendised, and a section can be revised without rewriting the letter.
+--
+-- The section list itself is configuration (settings key 'letter.sections'),
+-- because which questions a board asks is that board's policy.
+CREATE TABLE IF NOT EXISTS letter_sections (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  section_key TEXT NOT NULL,
+  body_html TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (matter_id, section_key)
+);
+CREATE INDEX IF NOT EXISTS idx_letter_sections_matter ON letter_sections(matter_id);
+
 CREATE TABLE IF NOT EXISTS votes (
   id INTEGER PRIMARY KEY,
   agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
@@ -811,7 +832,7 @@ function reset() {
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
-    'users', 'votes', 'agenda_item_docs', 'agenda_items', 'attachments', 'matter_history',
+    'users', 'votes', 'agenda_item_docs', 'agenda_items', 'attachments', 'letter_sections', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');
   for (const t of tables) db.exec(`DROP TABLE IF EXISTS ${t};`);

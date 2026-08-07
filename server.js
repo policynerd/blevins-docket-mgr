@@ -1410,6 +1410,37 @@ route('POST', /^\/admin\/legislation\/([^/]+)\/draft$/, (req, res, ctx) => {
   redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/draft?saved=1`);
 });
 // Insert a drafting form into an empty draft.
+// --- Board letter authoring --------------------------------------------------
+route('GET', /^\/admin\/legislation\/([^/]+)\/letter$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  sendHtml(res, draftingView.letterPage(m, { saved: ctx.query.saved === '1' }));
+});
+// Each section saves on its own, so a half-written letter is never lost to an
+// all-or-nothing submit. save() rejects a key that is not in the configured
+// list rather than filing text under a section nothing will ever render.
+route('POST', /^\/admin\/legislation\/([^/]+)\/letter$/, (req, res, ctx) => {
+  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const ok = repo.letters.save(m.id, String(ctx.body.section || ''), String(ctx.body.body_html || ''));
+  const suffix = ok ? '?saved=1' : '?saved=0';
+  redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/letter${suffix}`);
+});
+
+route('GET', /^\/admin\/letter-sections\/?$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  sendHtml(res, draftingView.letterSectionsAdmin(ctx.query.saved === '1'));
+});
+route('POST', /^\/admin\/letter-sections$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'clerk')) return;
+  const list = String(ctx.body.sections || '').split('\n')
+    .map((line) => line.split('|').map((x) => x.trim()))
+    .filter((p) => p[0] && p[1])
+    .map((p) => ({ key: p[0], label: p[1], required: /^required$/i.test(p[2] || '') }));
+  // A list that parsed to nothing would blank the letter form for every file,
+  // so an unparseable submission is refused rather than saved.
+  if (list.length) repo.letters.setSections(list);
+  redirect(res, `/admin/letter-sections?saved=${list.length ? '1' : '0'}`);
+});
+
 route('POST', /^\/admin\/legislation\/([^/]+)\/draft\/form$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
   // Never overwrite work in progress — the control is only offered when empty.

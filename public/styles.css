@@ -1025,3 +1025,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .off-doc a { font-weight: 600; }
 .off-doc a::before { content: "📄"; margin-right: var(--s3); }
 .off-doc .muted { font-size: var(--t-small); }
+
+/* --- Board letter authoring ------------------------------------------------ */
+.ls-block { border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); margin-bottom: var(--s5); }
+.ls-block .form { padding: 14px 16px; margin: 0; }
+.ls-head { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.ls-head h3 { margin: 0; font-size: var(--t-base); color: var(--accent-dark);
+  letter-spacing: .04em; }
+.ls-hint { font-size: var(--t-small); margin: 4px 0 8px; }
+/* A required section still blank is the one thing this screen exists to show. */
+.ls-missing { border-left: 3px solid var(--warn); }
+.ls-filled { border-left: 3px solid var(--good); }
+.ls-block textarea { font-family: var(--serif-text); }

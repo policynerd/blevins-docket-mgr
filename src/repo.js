@@ -1989,6 +1989,92 @@ const consents = {
 // ---------------------------------------------------------------------------
 // Audit log (state-changing requests by signed-in users)
 // ---------------------------------------------------------------------------
+// --- Board letter sections ---------------------------------------------------
+// The standard sections, in the order they appear in the letter. Modelled on
+// the form a Legistar-backed board uses, but held as configuration: which
+// questions a board requires answered before it will hear an item is that
+// board's policy, not this application's.
+//
+// `required` marks a section the letter is incomplete without. The rest are
+// answered when they apply and omitted when they do not — printing an empty
+// heading imitates the form while saying nothing.
+const LETTER_SECTIONS_DEFAULT = [
+  { key: 'overview', label: 'OVERVIEW', required: true,
+    hint: 'What is before the body, in a paragraph.' },
+  { key: 'recommendation', label: 'RECOMMENDATION(S)', required: true,
+    hint: 'The numbered actions being asked for, and on what date.' },
+  { key: 'equity', label: 'EQUITY IMPACT STATEMENT', required: false,
+    hint: 'Who this reaches, and who it may miss.' },
+  { key: 'sustainability', label: 'SUSTAINABILITY IMPACT STATEMENT', required: false,
+    hint: "Effect on the board's sustainability commitments." },
+  { key: 'fiscal', label: 'FISCAL IMPACT', required: true,
+    hint: 'Cost, funding source, and whether it recurs. State "None" if there is none.' },
+  { key: 'business', label: 'BUSINESS IMPACT STATEMENT', required: false,
+    hint: 'Effect on regulated or contracting businesses.' },
+  { key: 'advisory', label: 'ADVISORY BOARD STATEMENT', required: false,
+    hint: 'Any advisory body that considered this, and what it said.' },
+  { key: 'background', label: 'BACKGROUND', required: true,
+    hint: 'How the item arrived here: prior direction, authority, what changed.' },
+  { key: 'linkage', label: 'LINKAGE TO THE STRATEGIC PLAN', required: false,
+    hint: 'Which strategic objective this serves.' },
+];
+
+const letters = {
+  // The configured section list, falling back to the standard form. A stored
+  // list that cannot be parsed is ignored rather than allowed to blank the
+  // letter form for every file.
+  sections() {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'letter.sections'").get();
+    if (row && row.value) {
+      try {
+        const parsed = JSON.parse(row.value);
+        if (Array.isArray(parsed) && parsed.length && parsed.every((x) => x && x.key && x.label)) return parsed;
+      } catch (_) { /* fall through to the default */ }
+    }
+    return LETTER_SECTIONS_DEFAULT;
+  },
+  setSections(list) {
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('letter.sections', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+      .run(JSON.stringify(list));
+  },
+
+  forMatter(matterId) {
+    const rows = db.prepare('SELECT section_key, body_html FROM letter_sections WHERE matter_id = ?')
+      .all(matterId);
+    const byKey = {};
+    for (const r of rows) byKey[r.section_key] = r.body_html || '';
+    return byKey;
+  },
+
+  // The letter as it will be assembled: every configured section, in order,
+  // carrying whatever has been written for it.
+  compose(matterId) {
+    const written = letters.forMatter(matterId);
+    return letters.sections().map((s) => Object.assign({}, s, {
+      body_html: written[s.key] || '',
+      filled: !!String(written[s.key] || '').trim(),
+    }));
+  },
+
+  // Which required sections are still blank. The clerk needs this before the
+  // item goes on an agenda, which is the point at which it stops being fixable.
+  missing(matterId) {
+    return letters.compose(matterId).filter((s) => s.required && !s.filled).map((s) => s.label);
+  },
+
+  save(matterId, key, html) {
+    const valid = letters.sections().some((s) => s.key === key);
+    if (!valid) return false;
+    db.prepare(`INSERT INTO letter_sections (matter_id, section_key, body_html, updated_at)
+      VALUES (?,?,?,datetime('now'))
+      ON CONFLICT(matter_id, section_key)
+      DO UPDATE SET body_html = excluded.body_html, updated_at = excluded.updated_at`)
+      .run(matterId, key, html);
+    return true;
+  },
+};
+
 const audit = {
   record({ userId, userName, method, path, ip }) {
     db.prepare(`INSERT INTO audit_log (user_id, user_name, method, path, ip)
@@ -2208,6 +2294,7 @@ module.exports = {
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
+  letters, LETTER_SECTIONS_DEFAULT,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
   proposals, implementation, vendors, procurement, tas, consents, code,
   RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, CODE_OPS,

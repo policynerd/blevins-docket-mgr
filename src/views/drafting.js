@@ -308,4 +308,78 @@ function codeSection(section) {
   return layout({ title: `§${section.citation}`, active: '/code', body });
 }
 
-module.exports = { draftPage, codePage, comparePage, codeIndex, codeSection };
+module.exports = {
+  letterPage, letterSectionsAdmin, draftPage, codePage, comparePage, codeIndex, codeSection };
+
+// --- Board letter authoring --------------------------------------------------
+// The letter is a fixed set of questions the body requires answered before it
+// will hear an item, so it is authored as those questions rather than as free
+// prose. Each section saves on its own: a clerk writes the background on
+// Tuesday and the recommendation on Thursday, and a single all-or-nothing form
+// would lose whichever half was open when the session expired.
+function letterPage(matter, opts = {}) {
+  const composed = repo.letters.compose(matter.id);
+  const missing = composed.filter((s) => s.required && !s.filled);
+  const done = composed.filter((s) => s.filled).length;
+
+  const status = missing.length
+    ? `<p class="form-warn">Not ready to agendise — ${missing.length} required section${missing.length === 1 ? '' : 's'} still blank:
+       ${escapeText(missing.map((s) => s.label).join(', '))}.</p>`
+    : `<p class="saved-banner">All required sections are written.</p>`;
+
+  const blocks = composed.map((s) => `
+    <section class="ls-block${s.filled ? ' ls-filled' : ''}${s.required && !s.filled ? ' ls-missing' : ''}">
+      <form class="form" method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter">
+        <input type="hidden" name="section" value="${escapeText(s.key)}">
+        <div class="ls-head">
+          <h3>${escapeText(s.label)}</h3>
+          ${s.required ? '<span class="badge pending-badge">Required</span>' : '<span class="muted">Optional</span>'}
+        </div>
+        <p class="muted ls-hint">${escapeText(s.hint || '')}</p>
+        <textarea name="body_html" rows="6" placeholder="—">${escapeText(s.body_html || '')}</textarea>
+        <div class="form-actions">
+          <button type="submit" class="btn">Save ${escapeText(s.label.toLowerCase())}</button>
+        </div>
+      </form>
+    </section>`).join('');
+
+  const body = html`
+    <p class="crumbs"><a href="/legislation/${raw(encodeURIComponent(matter.file_number))}">${matter.file_number}</a> / Board letter</p>
+    <div class="detail-head">
+      <h1>Board letter — ${matter.file_number}</h1>
+      <span class="head-actions">
+        <a class="btn" href="/admin/legislation/${raw(encodeURIComponent(matter.file_number))}/draft">✎ Drafting</a>
+        <a class="btn primary" href="/legislation/${raw(encodeURIComponent(matter.file_number))}/doc/board-letter.pdf">📄 Preview letter</a>
+      </span>
+    </div>
+    <p class="muted">${matter.title}</p>
+    ${opts.saved ? raw('<p class="saved-banner">Section saved.</p>') : ''}
+    ${raw(status)}
+    <p class="muted">${raw(String(done))} of ${raw(String(composed.length))} sections written.
+      The section list is set under <a href="/admin/letter-sections">Board letter sections</a>.</p>
+    ${raw(blocks)}`;
+  return layout({ title: 'Board letter', active: '/admin', body });
+}
+
+// The standard section list, edited as one section per line: KEY | LABEL | required
+function letterSectionsAdmin(saved) {
+  const current = repo.letters.sections();
+  const asText = current.map((s) => `${s.key} | ${s.label}${s.required ? ' | required' : ''}`).join('\n');
+  const body = html`
+    <p class="crumbs"><a href="/admin">Clerk Workspace</a> / Board letter sections</p>
+    <h1>Board letter sections</h1>
+    <p class="muted">The questions every board letter must answer, in the order they appear.
+      Which questions a board asks is its own policy, so this list is configuration.</p>
+    ${saved ? raw('<p class="saved-banner">Section list saved.</p>') : ''}
+    ${raw(card('Standard sections', `
+      <p class="muted">One per line: <code>key | LABEL | required</code>. The key is what the
+        stored text is filed under, so renaming a key orphans anything already written for it.</p>
+      <form class="form" method="post" action="/admin/letter-sections">
+        <textarea name="sections" rows="12">${escapeText(asText)}</textarea>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Save section list</button>
+          <a class="btn-link" href="/admin">Cancel</a>
+        </div>
+      </form>`))}`;
+  return layout({ title: 'Board letter sections', active: '/admin', body });
+}
