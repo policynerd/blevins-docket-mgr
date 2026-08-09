@@ -1446,3 +1446,314 @@ test('packet: an item held back contributes nothing and closes the tabs up', asy
   assert.match(text, /TAB 1/);
   assert.ok(!/TAB 2/.test(text), 'tabs did not close up after the held-back item');
 });
+
+// --- The seal ------------------------------------------------------------------
+test('seal: the legend fits its arc at any name length', () => {
+  const seal = require('../src/seal');
+  const size = (svg) => Number((svg.match(/font-size="([\d.]+)" letter-spacing/) || [])[1]);
+  // SVG stops drawing at the end of a path, so a legend that does not fit is
+  // not compressed — it loses its head and tail and reads as nonsense. The
+  // type has to shrink, not just the tracking.
+  const short = seal.sealSvg({ size: 150, legend: 'Board of Governors' });
+  const long = seal.sealSvg({ size: 150, legend: 'Board of Governors of Blevins Holdings Corporation' });
+  assert.ok(size(long) < size(short), 'a longer legend must be set smaller');
+
+  // Past the readable floor the name is cut at a word boundary and marked,
+  // rather than left for the renderer to drop silently.
+  const huge = seal.sealSvg({ size: 150,
+    legend: 'Board of Governors of Blevins Holdings Corporation and its Subsidiaries' });
+  assert.match(huge, /\u2026/, 'an unfittable legend must be visibly truncated');
+
+  // Whatever the length, the estimated run has to fit the arc it is set on.
+  for (const legend of ['BG', 'Finance Committee', 'Board of Governors',
+    'Board of Governors of Blevins Holdings Corporation and its Subsidiaries']) {
+    const svg = seal.sealSvg({ size: 150, legend });
+    const fs2 = size(svg);
+    const track = Number((svg.match(/font-size="[\d.]+" letter-spacing="([\d.-]+)"/) || [])[1]);
+    // Measure what is actually set, which for a very long name is a
+    // deliberately truncated form rather than the whole thing.
+    const set = (svg.match(/text-anchor="middle">([^<]*)<\/textPath>/) || [])[1] || '';
+    const run = set.length * (0.62 * fs2 + track);
+    assert.ok(run <= Math.PI * 42.4 * 0.85,
+      `"${legend}" needs ${run.toFixed(1)} units on an arc of ${(Math.PI * 42.4 * 0.84).toFixed(1)}`);
+  }
+});
+
+test('seal: gives way to the cipher where a legend could not be read', () => {
+  const seal = require('../src/seal');
+  assert.match(seal.sealSvg({ size: 96 }), /seal-svg/);
+  // A ring legend at 40px is ornament pretending to be information.
+  assert.match(seal.sealSvg({ size: 40 }), /monogram-svg/);
+  assert.match(seal.sealSvg({ size: 63 }), /monogram-svg/);
+});
+
+test('seal: the ground names the surface, and the device reverses onto it', () => {
+  const seal = require('../src/seal');
+  // layout.js reads `variant: light` as light-coloured artwork FOR a dark
+  // ground — the opposite of this module's reading. The two conventions
+  // meeting put a white disc on the navy rail, so this asserts the direction.
+  const onDark = seal.sealSvg({ size: 96, ground: 'dark' });
+  const onLight = seal.sealSvg({ size: 96, ground: 'light' });
+  assert.match(onDark, /#D9B450/, 'a device on a dark ground is brass');
+  assert.ok(!/fill="#FFFFFF"/.test(onDark), 'a device on a dark ground leaves its field open');
+  assert.match(onLight, /#353D4F/, 'a device on paper is navy');
+  assert.match(onLight, /fill="#FFFFFF"/, 'a device on paper carries a white field');
+});
+
+test('seal: the cipher is built from the words that carry the name', () => {
+  const seal = require('../src/seal');
+  // "BOG" reads as a word, not a cipher — articles and conjunctions are skipped.
+  assert.equal(seal.initials('Board of Governors'), 'BG');
+  assert.equal(seal.initials('Finance Committee'), 'FC');
+  assert.equal(seal.initials('Department of Public Works and Utilities'), 'DPW');
+  assert.equal(seal.initials(''), 'BG');
+});
+
+test('seal: the flank ornament takes a full Unicode code point, not one UTF-16 code unit', () => {
+  const seal = require('../src/seal');
+  const { ORG } = require('../src/org');
+  const prev = ORG.seal;
+  try {
+    // An emoji outside the Basic Multilingual Plane is two UTF-16 code
+    // units. Slicing the first unit alone yields a lone surrogate, which
+    // renders as a replacement character rather than the glyph.
+    ORG.seal = '\u{1F3DB}️'; // classical building emoji
+    const svg = seal.sealSvg({ size: 96 });
+    assert.ok(svg.includes('\u{1F3DB}'), 'the ornament glyph was cut to a lone surrogate');
+    assert.ok(!svg.includes('�'), 'a replacement character leaked into the seal');
+  } finally {
+    ORG.seal = prev;
+  }
+});
+
+test('seal: the legend is escaped, not interpolated', () => {
+  const seal = require('../src/seal');
+  // The legend is the organisation name, which is admin-editable.
+  const svg = seal.sealSvg({ size: 96, legend: '<script>alert(1)</script>', counter: 'A & B' });
+  assert.ok(!svg.includes('<script>'), 'markup survived into the seal');
+  assert.match(svg, /&amp;/);
+});
+
+// --- Typesetting: justification and footnotes ---------------------------------
+// Word positions in drawing order, read straight from each Tm/Tj pair in the
+// content stream. text() now draws one word per operator (needed to place a
+// justified gap or a superscript marker between words), so this is what lets
+// a test tell a stretched line from a natural one without a PDF renderer.
+function pdfWordRuns(bytes) {
+  const zlib = require('node:zlib');
+  const buf = Buffer.from(bytes);
+  const runs = [];
+  let idx = 0;
+  for (;;) {
+    const start = buf.indexOf('stream', idx);
+    if (start === -1) break;
+    let s = start + 6;
+    if (buf[s] === 0x0d) s++;
+    if (buf[s] === 0x0a) s++;
+    const end = buf.indexOf('endstream', s);
+    if (end === -1) break;
+    idx = end + 9;
+    let body;
+    try { body = zlib.inflateSync(buf.subarray(s, end)).toString('latin1'); }
+    catch { continue; }
+    if (!body.includes(' Tm')) continue; // not a page content stream
+    const pageRuns = [];
+    const re = /1 0 0 1 ([-\d.]+) ([-\d.]+) Tm\s*\n(?:<([0-9A-Fa-f\s]+)>|\(((?:\\.|[^()\\])*)\))\s*Tj/g;
+    for (const m of body.matchAll(re)) {
+      let text;
+      if (m[3]) {
+        const hex = m[3].replace(/\s+/g, '');
+        text = '';
+        for (let i = 0; i + 1 < hex.length; i += 2) text += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+      } else {
+        text = m[4].replace(/\\([()\\])/g, '$1');
+      }
+      pageRuns.push({ x: Number(m[1]), y: Number(m[2]), text });
+    }
+    if (pageRuns.length) runs.push(pageRuns);
+  }
+  return runs; // one array per page
+}
+
+test('typesetting: justify stretches every line but the last to reach the full measure', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const words = 'Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november '
+    + 'oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one';
+  const probe = await Doc.create({});
+  const wordWidth = (w) => probe.f.r.widthOfTextAtSize(w, 11);
+
+  const build = async (justify) => {
+    const doc = await Doc.create({});
+    doc.text(words, { size: 11, justify });
+    return doc.save();
+  };
+  const ragged = pdfWordRuns(await build(false))[0];
+  const justified = pdfWordRuns(await build(true))[0];
+
+  const rightEdge = 72 + probe.contentW; // margin.left + contentW
+  const lineEnd = (runs, y) => {
+    const onLine = runs.filter((r) => r.y === y);
+    const last = onLine[onLine.length - 1];
+    return last.x + wordWidth(last.text);
+  };
+  const firstLineY = ragged[0].y;
+
+  // Same text, same wrap points — justification changes spacing, not where a
+  // line breaks — so both must still wrap identically.
+  assert.deepEqual(ragged.map((r) => r.text), justified.map((r) => r.text));
+
+  // Unjustified: natural word-spacing leaves the first line short of the
+  // margin, same as any ordinary word processor set left-aligned.
+  assert.ok(lineEnd(ragged, firstLineY) < rightEdge - 5,
+    `expected the unjustified line to fall short of the margin (ended at ${lineEnd(ragged, firstLineY).toFixed(1)}, margin ${rightEdge})`);
+
+  // Justified: the line's own right edge — start of the last word plus that
+  // word's real width — lands on the margin, not merely somewhere further
+  // right than before.
+  assert.ok(Math.abs(lineEnd(justified, firstLineY) - rightEdge) < 1.5,
+    `justified line did not reach the margin (ended at ${lineEnd(justified, firstLineY).toFixed(1)}, margin ${rightEdge})`);
+
+  // The last line of the block must stay ragged even with justify:true —
+  // stretching a paragraph's final, often short, line is the one thing full
+  // justification is not supposed to do.
+  const lastLineY = Math.min(...ragged.map((r) => r.y));
+  assert.equal(lineEnd(justified, lastLineY), lineEnd(ragged, lastLineY),
+    'the last line of the paragraph was stretched; only interior lines should justify');
+});
+
+test('typesetting: a hanging line justifies to the same right edge as the first', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const probe = await Doc.create({});
+  const wordWidth = (w) => probe.f.r.widthOfTextAtSize(w, 11);
+  const indent = 22;
+  const hanging = 18;
+
+  const doc = await Doc.create({});
+  // A hanging block long enough to wrap to three lines: first line at
+  // `indent`, continuation lines at `indent + hanging` — a narrower measure,
+  // rendered further right. Both must still reach the same right edge once
+  // justified, which only happens if the first line is justified against the
+  // *wider* target (margin.left + indent + width) rather than the narrower
+  // one it was wrapped against.
+  doc.text('(a) A statutory subsection long enough to run past two full lines so that the '
+    + 'hanging indent actually engages more than once and every continuation line has its '
+    + 'own right edge to check against the first',
+  { size: 11, indent, hanging, justify: true });
+  const runs = pdfWordRuns(await doc.save())[0];
+  const byLine = [...new Set(runs.map((r) => r.y))].sort((a, b) => b - a);
+  assert.ok(byLine.length >= 3, `expected at least three lines, wrapped to ${byLine.length}`);
+
+  const lineEnd = (y) => {
+    const onLine = runs.filter((r) => r.y === y);
+    const last = onLine[onLine.length - 1];
+    return last.x + wordWidth(last.text);
+  };
+  // The right edge every interior line should reach: margin + indent + width,
+  // derived independently of how text() computed it internally.
+  const expectedEdge = probe.margin.left + indent + (probe.contentW - indent);
+  for (const y of byLine.slice(0, -1)) {
+    assert.ok(Math.abs(lineEnd(y) - expectedEdge) < 1.5,
+      `interior line at y=${y} ended at ${lineEnd(y).toFixed(1)}, expected ${expectedEdge.toFixed(1)}`);
+  }
+});
+
+test('typesetting: a footnote marker prints where it is registered, and only the last line is exempt from justification', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  doc.text('This clause cites the statute^1 as its basis.',
+    { size: 11, justify: true, notes: { 1: 'The cited statute, in full.' } });
+  const bytes = await doc.save();
+  const text = await pdfText(bytes);
+  assert.match(text, /statute/);
+  assert.match(text, /1\. The cited statute, in full\./, 'the footnote text was not printed');
+  // The marker digit is its own run, drawn immediately after the word it
+  // footnotes and raised — not literally concatenated into "statute1".
+  const runs = pdfWordRuns(bytes)[0];
+  const wordIdx = runs.findIndex((r) => r.text === 'statute');
+  assert.ok(wordIdx >= 0, 'the footnoted word was not found as its own run');
+  const marker = runs[wordIdx + 1];
+  assert.equal(marker.text, '1');
+  assert.ok(marker.y > runs[wordIdx].y, 'the marker was not raised above the baseline');
+});
+
+test('typesetting: need() treats a registered footnote as part of the bottom margin', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: 'A note.' } });
+  assert.ok(doc.footnoteReserve > 0, 'registering a note did not reserve any space');
+
+  const pagesBefore = doc.pages.length;
+  // Placed exactly far enough above the reserved band that ignoring the
+  // reserve would say this fits, and honouring it would not.
+  doc.y = doc.margin.bottom + doc.footnoteReserve + 2;
+  doc.need(10);
+  assert.equal(doc.pages.length, pagesBefore + 1,
+    'need() let body text run into the space reserved for this page\'s footnote');
+});
+
+test('typesetting: a footnote registered on a later page prints on that page, not the first', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  // Fill page 1 to force a break, then register a note — it must not bleed
+  // onto the page it was nowhere near.
+  for (let i = 0; i < 40; i++) doc.text(`Filler line number ${i} to consume the page.`, { size: 11, after: 4 });
+  doc.text('A cited clause^1 on the second page.', { size: 11, notes: { 1: 'Second-page note text.' } });
+  const bytes = await doc.save();
+  const pages = pdfWordRuns(bytes);
+  assert.ok(pages.length >= 2, 'expected the filler to force a second page');
+  const hasNote = (page) => page.some((r) => r.text.includes('Second-page'));
+  assert.ok(!hasNote(pages[0]), 'the footnote leaked onto the first page');
+  assert.ok(pages.slice(1).some(hasNote), 'the footnote never appeared on any later page');
+});
+
+test('typesetting: a marker landing near the bottom margin reserves its note\'s space before choosing the page', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  const lead = 11 * 1.32;
+  // Positioned so the line itself clears the bare bottom margin (fits with no
+  // reserve) but not the margin plus its own note's one-line height. If the
+  // reserve is counted only after the line is admitted — i.e. too late — this
+  // line stays on page one and the note band save() draws later overlaps it.
+  doc.y = doc.margin.bottom + lead + 4;
+  const pagesBefore = doc.pages.length;
+  // At this y the bare line fits (y - lead clears margin.bottom): only
+  // counting its note's height ahead of time pushes it to a new page.
+  assert.ok(doc.y - lead >= doc.margin.bottom, 'test setup: the line should fit by margin alone');
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: 'A note that must not overlap the line above it.' } });
+  assert.equal(doc.pages.length, pagesBefore + 1,
+    'the footnoted line was drawn on a page with no room left for its own note');
+});
+
+test('typesetting: a paragraph break exempts that paragraph\'s own last line from justification, not only the block\'s', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  // A short line ending the first paragraph, followed by a second paragraph —
+  // if only the very last line of the whole block is exempt, this short line
+  // gets stretched across the full measure.
+  doc.text('Short end.\nA second paragraph long enough that it wraps onto more than one line by itself.',
+    { size: 11, justify: true });
+  const bytes = await doc.save();
+  const runs = pdfWordRuns(bytes)[0];
+  const end = runs.find((r) => r.text === 'end.');
+  const shortLineY = end.y;
+  const shortLineWords = runs.filter((r) => Math.abs(r.y - shortLineY) < 0.5);
+  const lastWord = shortLineWords[shortLineWords.length - 1];
+  const rightEdge = lastWord.x + 20; // Times-Roman width of "end." at 11pt is well under 20pt
+  const marginRight = doc.margin.left + doc.contentW;
+  assert.ok(rightEdge < marginRight - 30,
+    'a paragraph-final short line was stretched toward the full measure');
+});
+
+test('typesetting: a footnote long enough to wrap reserves and draws more than one line', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  const longNote = 'A citation long enough that, set at the footnote size across the page\'s '
+    + 'content width, it cannot possibly fit on a single line and must wrap onto at least a second one.';
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: longNote } });
+  const reserveAfterOneLine = 10.5;
+  assert.ok(doc.footnoteReserve > reserveAfterOneLine * 1.5,
+    'a long footnote reserved space for only one line');
+  const bytes = await doc.save();
+  const text = await pdfText(bytes);
+  assert.match(text, /content width/, 'the wrapped tail of the long note was not printed');
+});

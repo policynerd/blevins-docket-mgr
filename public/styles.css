@@ -1038,3 +1038,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .ls-missing { border-left: 3px solid var(--warn); }
 .ls-filled { border-left: 3px solid var(--good); }
 .ls-block textarea { font-family: var(--serif-text); }
+
+/* The drawn seal, where no artwork has been uploaded. It sizes itself from the
+   slot it is given, so these only reserve the space. */
+.brand-seal-mark { flex: none; display: block; line-height: 0; }
+.brand-seal-mark svg { display: block; }
+.auth-brand .brand-seal-mark svg { width: 112px; height: 112px; }
+.unit-lockup .brand-seal-mark svg { width: 62px; height: 62px; }
