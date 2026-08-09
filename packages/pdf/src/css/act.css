@@ -445,6 +445,39 @@ th {
   font-weight: bold;
 }
 
+/* --------------------------------------------------- numbered sections ---- */
+
+/* `tblock` is the generic numbered block used by the board letter and the
+   fiscal statement — "1. OVERVIEW" and its body. Distinct from `article`,
+   which carries enacting text and is set tighter. */
+
+tblock {
+  margin-top: 14pt;
+}
+
+tblock > num {
+  display: inline-block;
+  min-width: 2.2em;
+  font-weight: bold;
+}
+
+tblock > heading {
+  display: inline;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* A nested block is a sub-heading within a section, not a new section. */
+tblock tblock {
+  margin-top: 10pt;
+  margin-left: 2.2em;
+}
+
+tblock tblock > heading {
+  text-transform: none;
+}
+
 /* Metadata is not content. It travels with the document and must never
    print. */
 meta,
@@ -452,5 +485,18 @@ identification,
 references,
 proprietary,
 preservation {
+  display: none;
+}
+
+/* Drafting guidance is written to the drafter, not the reader.
+ *
+ * It lives in the document tree so it is versioned with the draft and travels
+ * with it, and it is hidden *here*, in the export stylesheet, rather than
+ * stripped on the way out. That difference matters: stripping is a step
+ * somebody has to remember, and the one time it is forgotten the instructions
+ * are published as part of a legal instrument. Hiding is the default, and the
+ * editor opts back in by overriding this rule.
+ */
+guidance {
   display: none;
 }
