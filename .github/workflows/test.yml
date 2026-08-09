@@ -13,6 +13,29 @@ jobs:
   # rendering.
   test:
     runs-on: ubuntu-latest
+
+    # The schema tests assert on constraints — a case-insensitive unique index,
+    # a composite key, cascade and restrict rules — which exist only in the
+    # database. Running them against anything but a real PostgreSQL would test
+    # a substitute's agreement with itself.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blevins_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/blevins_test
+
     steps:
       - uses: actions/checkout@v4
       # No `version:` here on purpose. The action errors out if the version is
@@ -32,6 +55,9 @@ jobs:
       # mismatch leaves the download unused and the tests unable to launch.
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Apply database migrations
+        run: pnpm db:migrate
 
       - run: pnpm typecheck
       - run: pnpm test
