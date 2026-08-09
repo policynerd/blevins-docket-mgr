@@ -1,0 +1,456 @@
+/*
+ * The legal act stylesheet.
+ *
+ * This file *is* the typesetting engine. There is no layout code in this
+ * package that decides where a line breaks, how a paragraph justifies, or when
+ * a page turns — Chromium's layout engine does all of it, driven from here, the
+ * same way LEOS drives iText's html2pdf from its own bill.css. Hand-placing
+ * text runs (which is what the previous pdf-lib implementation did) can imitate
+ * the result but cannot reproduce it: real font metrics, real justification,
+ * real widow and orphan control, and real page-bottom footnotes only come from
+ * a real layout engine.
+ *
+ * Two obligations follow from rendering Akoma Ntoso element names directly:
+ *
+ *   1. Unknown elements are `display: inline` by default. Every structural
+ *      element must therefore be given an explicit display here, or an entire
+ *      article collapses into a single run-on line. The "structure" section
+ *      below is not decoration; it is load-bearing.
+ *
+ *   2. The vocabulary lives in this file. A new AKN element is a rule here,
+ *      not a change to the renderer.
+ */
+
+/* ---------------------------------------------------------------- page ---- */
+
+@page {
+  size: Letter;
+  /* Room at the foot for the running footer and any footnote band. */
+  margin: 1in 1in 0.9in 1in;
+
+  @bottom-center {
+    content: counter(page) " of " counter(pages);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 8.5pt;
+    color: #5a6070;
+    padding-top: 6pt;
+  }
+
+  /* The footnote band. A rule the width of the measure would read as a page
+     division; the short rule is the printer's convention and says "notes"
+     without interrupting the page. */
+  @footnote {
+    border-top: 0.5pt solid #8d8d8d;
+    width: 40%;
+    margin-top: 8pt;
+    padding-top: 4pt;
+  }
+}
+
+/* The first page of an instrument carries no folio: it is identified by its
+   own masthead, and a "1 of 6" under a title block reads as a draft artefact. */
+@page :first {
+  @bottom-center {
+    content: none;
+  }
+}
+
+/* ----------------------------------------------------------- typography ---- */
+
+akomaNtoso {
+  display: block;
+  font-family: "Times New Roman", Times, Liberation Serif, serif;
+  font-size: 12pt;
+  line-height: 1.25;
+  text-align: justify;
+  color: #000;
+  /* Justification without hyphenation opens rivers at a narrow measure. At the
+     ~6.5in measure of a Letter page with 1in margins it reads cleanly, and
+     hyphenating a statutory citation across a line break makes it harder to
+     quote accurately. Off, deliberately. */
+  hyphens: none;
+  /* Kerning and standard ligatures are what separate typeset text from
+     rendered text. `text-rendering` asks the engine not to trade them away. */
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+}
+
+/* A line stranded alone at the top or bottom of a page is the most visible
+   failure in a long legal document. Three lines is the printer's convention. */
+p,
+content,
+paragraph,
+recital,
+citation {
+  orphans: 3;
+  widows: 3;
+}
+
+/* ------------------------------------------------------------ structure ---- */
+/*
+ * Every AKN element that occupies a block must say so. Anything omitted here
+ * silently renders inline and runs the document together.
+ */
+
+bill,
+doc,
+documentCollection,
+preface,
+preamble,
+body,
+mainBody,
+aknBody,
+conclusions,
+container,
+blockContainer,
+citations,
+recitals,
+article,
+paragraph,
+subparagraph,
+point,
+indent,
+content,
+intro,
+wrapUp,
+tblock,
+longTitle,
+formula,
+block,
+signature,
+coverPage {
+  display: block;
+}
+
+p,
+aknP {
+  display: block;
+  margin: 0 0 6pt 0;
+}
+
+/* ------------------------------------------------------------- preface ---- */
+
+preface {
+  margin-bottom: 18pt;
+}
+
+longTitle {
+  display: block;
+  text-align: center;
+  margin-bottom: 12pt;
+}
+
+longTitle p,
+longTitle aknP {
+  text-align: center;
+  margin: 0;
+}
+
+docStage {
+  display: block;
+  font-weight: normal;
+  margin-bottom: 4pt;
+}
+
+docType {
+  display: block;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+docPurpose {
+  display: block;
+  font-weight: bold;
+}
+
+container[name="eeaRelevance"] {
+  display: block;
+  text-align: center;
+  margin-top: 10pt;
+}
+
+container[name="procedureIdentifier"] {
+  display: block;
+  text-align: right;
+  margin-bottom: 10pt;
+}
+
+/* ------------------------------------------------------------ preamble ---- */
+
+preamble {
+  margin-bottom: 14pt;
+}
+
+formula[name="actingEntity"] {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 12pt;
+}
+
+formula[name="enactingFormula"] {
+  display: block;
+  font-weight: bold;
+  margin-top: 12pt;
+  margin-bottom: 12pt;
+}
+
+/* Citations and recitals are each a discrete clause: one unit of argument per
+   block, never run together, and never split across a page in isolation. */
+citation {
+  display: block;
+  margin-bottom: 6pt;
+  break-inside: avoid;
+}
+
+recitals intro {
+  display: block;
+  margin-bottom: 8pt;
+}
+
+/* A recital is a hanging-indented numbered clause: "(1)  text…" with the
+   runover aligned under the text, not under the numeral. */
+recital {
+  display: block;
+  margin-bottom: 6pt;
+  padding-left: 2.2em;
+  position: relative;
+}
+
+recital > num {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.2em;
+}
+
+recital > p,
+recital > aknP {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- body ---- */
+
+article {
+  display: block;
+  margin-top: 14pt;
+  margin-bottom: 10pt;
+}
+
+/* An article number and its heading must never be the last thing on a page.
+   `break-after: avoid` is what keeps a heading with the text it introduces. */
+article > num {
+  display: block;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 2pt;
+  break-after: avoid;
+}
+
+article > heading {
+  display: block;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 8pt;
+  break-after: avoid;
+}
+
+/* Numbered provisions hang the same way recitals do, one level in. */
+paragraph,
+subparagraph,
+point {
+  display: block;
+  margin-bottom: 6pt;
+  padding-left: 2.2em;
+  position: relative;
+}
+
+paragraph > num,
+subparagraph > num,
+point > num {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.2em;
+}
+
+/* A provision with no number needs no hanging well. */
+paragraph:not(:has(> num)) {
+  padding-left: 0;
+}
+
+paragraph > content > p:last-child,
+paragraph > content > aknP:last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------- explanatory memo ---- */
+/*
+ * The memorandum is a numbered outline rather than an enacted instrument:
+ * "1. CONTEXT OF THE PROPOSAL" over bulleted sub-headings.
+ */
+
+tblock {
+  display: block;
+  margin-bottom: 10pt;
+}
+
+tblock > num {
+  display: inline-block;
+  font-weight: bold;
+  min-width: 2.4em;
+  vertical-align: top;
+}
+
+tblock > heading {
+  display: inline;
+  font-weight: bold;
+  text-transform: none;
+}
+
+/* Top-level memorandum sections are set in caps; nested ones are not. */
+mainBody > tblock > heading {
+  text-transform: uppercase;
+}
+
+tblock > blockContainer {
+  display: block;
+  margin-top: 6pt;
+  margin-left: 2.4em;
+}
+
+/* ----------------------------------------------------------- footnotes ---- */
+/*
+ * Real page-bottom footnotes, resolved by the paged-media engine: the note
+ * travels to the foot of whichever page its marker lands on, and the reserve
+ * is taken out of the text block automatically. This is the one place the
+ * output is better than LEOS's own PDF export, which collects notes as
+ * endnotes at the end of the document because iText cannot place them.
+ */
+
+authorialNote {
+  float: footnote;
+  footnote-style-position: inside;
+}
+
+authorialNote p,
+authorialNote aknP {
+  display: inline;
+  margin: 0;
+  font-size: 8.5pt;
+  line-height: 1.2;
+  text-align: left;
+  hyphens: none;
+}
+
+::footnote-call {
+  font-size: 0.7em;
+  vertical-align: super;
+  line-height: 0;
+  font-weight: normal;
+}
+
+::footnote-marker {
+  font-size: 8.5pt;
+  padding-right: 0.4em;
+}
+
+/* --------------------------------------------------------- conclusions ---- */
+
+conclusions {
+  display: block;
+  margin-top: 24pt;
+  break-inside: avoid;
+}
+
+block[name="signatory"] {
+  display: block;
+  margin-top: 18pt;
+  text-align: center;
+}
+
+signature {
+  display: block;
+}
+
+signature organization,
+signature role,
+signature person {
+  display: block;
+  text-align: center;
+}
+
+signature organization {
+  font-weight: bold;
+}
+
+/* -------------------------------------------------------------- inline ---- */
+
+i {
+  font-style: italic;
+}
+b {
+  font-weight: bold;
+}
+u {
+  text-decoration: underline;
+}
+
+/* A cross-reference is live in the on-screen document and plain in print —
+   a blue underline on paper is noise, not information. */
+ref {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Redline decoration, for the comparative print. */
+ins,
+.leos-content-new {
+  text-decoration: underline;
+  text-decoration-skip-ink: none;
+}
+
+del,
+.leos-content-removed {
+  text-decoration: line-through;
+}
+
+/* --------------------------------------------------------------- misc ---- */
+
+img {
+  max-width: 100%;
+}
+
+table {
+  display: table;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8pt 0;
+  font-size: 10.5pt;
+}
+
+th,
+td {
+  border: 0.5pt solid #8d8d8d;
+  padding: 4pt 6pt;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #efece8;
+  font-weight: bold;
+}
+
+/* Metadata is not content. It travels with the document and must never
+   print. */
+meta,
+identification,
+references,
+proprietary,
+preservation {
+  display: none;
+}
