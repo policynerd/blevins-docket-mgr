@@ -11,9 +11,9 @@ State Open Legislation / LBDC information model. Every status below was
 re-derived against this codebase with a file-level audit; none was carried
 over.
 
-**Status meanings.** *Fit* — the capability is operational. *Partial* — it
+**Status meanings.** _Fit_ — the capability is operational. _Partial_ — it
 works but is missing something a benchmark deployment would require.
-*Gap* — it needs to be designed and built.
+_Gap_ — it needs to be designed and built.
 
 ---
 
@@ -41,13 +41,13 @@ fifteen scattered ones, and it is the whole of the P0 work.
 
 ## Benchmark capabilities
 
-| Benchmark | What it proves should exist | Implication |
-| --- | --- | --- |
-| Granicus Agenda LE | Configurable submission forms, workflow routing, granular permissions, template-generated agendas/minutes, public posting, in-meeting roll call and votes | Agenda assembly must be a governed workflow, not a checklist |
-| NYC Council Legistar meeting detail | A final meeting record joining metadata, published agenda, minutes, video, transcript, attachments, and hundreds of items | The meeting is the primary record container; every item needs a stable link to its source matter and evidence |
-| SF Legislative Research Center | Search and calendar views joining agendas, minutes, attachment content, file history, media, sponsors, alerts, exports | Records must stay searchable after the meeting, including inside attachments |
-| NYS Open Legislation | Bills, laws, committee agendas, calendars, transcripts published from LBDC-originated data | The canonical model must preserve version, action, agenda reference, session, and provenance |
-| NYS bill + agenda APIs | Amendment versions, ordered actions, prior-session versions, published/processed change feeds | Releases and amendments need immutable timestamped versions and a change feed |
+| Benchmark                           | What it proves should exist                                                                                                                               | Implication                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Granicus Agenda LE                  | Configurable submission forms, workflow routing, granular permissions, template-generated agendas/minutes, public posting, in-meeting roll call and votes | Agenda assembly must be a governed workflow, not a checklist                                                  |
+| NYC Council Legistar meeting detail | A final meeting record joining metadata, published agenda, minutes, video, transcript, attachments, and hundreds of items                                 | The meeting is the primary record container; every item needs a stable link to its source matter and evidence |
+| SF Legislative Research Center      | Search and calendar views joining agendas, minutes, attachment content, file history, media, sponsors, alerts, exports                                    | Records must stay searchable after the meeting, including inside attachments                                  |
+| NYS Open Legislation                | Bills, laws, committee agendas, calendars, transcripts published from LBDC-originated data                                                                | The canonical model must preserve version, action, agenda reference, session, and provenance                  |
+| NYS bill + agenda APIs              | Amendment versions, ordered actions, prior-session versions, published/processed change feeds                                                             | Releases and amendments need immutable timestamped versions and a change feed                                 |
 
 ---
 
@@ -55,36 +55,36 @@ fifteen scattered ones, and it is the whole of the P0 work.
 
 ### Core legislative workflow
 
-| Workstream | Status | Evidence | Gap to close |
-| --- | --- | --- | --- |
-| Matter / docket intake | **Fit** | `matters` with `insertNumbered()` assigning receipt-ordered YYMMXX file numbers, collision-safe past 99; sponsors, owning body, topics, fiscal note, `matter_relations` (Related / Companion / Amends / Supersedes) | — |
-| Matter versioning | **Partial** | `matter_versions` snapshots outgoing text on edit; `src/diff.js` renders ins/del runs | No actor on a version — `matter_versions` has no `created_by`. "Who changed this text" is unanswerable |
-| Agenda composition | **Partial** | Sections, auto-numbered `1A`/`1B`, drag reorder, templates, ready-for-agenda queue scoped by body and live status | No `AgendaVersion`. `reorderItems()` mutates `sort_order` in place; a substitution or withdrawal leaves no trace and carries no reason |
-| Packet assembly | **Partial** | `repo.meetings.packet()` gathers reports, attachments and item documents in binding order with tab numbers; builder flags items with no material | No document requirements by matter type, no authorized waiver path. `generatePacket()` still lists documents rather than binding them |
-| Approval routing | **Partial** | `workflow_steps` with `seq`, `role`, `assignee_id`, `acted_by`, `acted_at`, `notes`; approvals inbox with badge count | No delegation, and no link from a decision to the artifact it was made against — an approval does not pin the version it approved |
-| Day-of operations | **Fit** | Roll call and attendance, mover/seconder/motion text, `vote_threshold`, per-member votes, speaker queue, live SSE console, recorded results | State is mutated in place rather than appended. A corrected vote overwrites; there is no `MeetingEvent` ledger |
-| Minutes and action record | **Fit** | Generated from roll call, motions and tallies; draft → published; preserved on the meeting | — |
-| Ordinance / amendment versioning | **Fit** | `src/legisdoc.js` parses a provision tree with stable ids; `src/amend.js` produces comparative prints and codifies on enactment only; `code_sections` / `code_amendments` / `code_history` support as-of reconstruction | Comparison method is computed but not persisted against the redline it produced |
+| Workstream                       | Status      | Evidence                                                                                                                                                                                                                | Gap to close                                                                                                                           |
+| -------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Matter / docket intake           | **Fit**     | `matters` with `insertNumbered()` assigning receipt-ordered YYMMXX file numbers, collision-safe past 99; sponsors, owning body, topics, fiscal note, `matter_relations` (Related / Companion / Amends / Supersedes)     | —                                                                                                                                      |
+| Matter versioning                | **Partial** | `matter_versions` snapshots outgoing text on edit; `src/diff.js` renders ins/del runs                                                                                                                                   | No actor on a version — `matter_versions` has no `created_by`. "Who changed this text" is unanswerable                                 |
+| Agenda composition               | **Partial** | Sections, auto-numbered `1A`/`1B`, drag reorder, templates, ready-for-agenda queue scoped by body and live status                                                                                                       | No `AgendaVersion`. `reorderItems()` mutates `sort_order` in place; a substitution or withdrawal leaves no trace and carries no reason |
+| Packet assembly                  | **Partial** | `repo.meetings.packet()` gathers reports, attachments and item documents in binding order with tab numbers; builder flags items with no material                                                                        | No document requirements by matter type, no authorized waiver path. `generatePacket()` still lists documents rather than binding them  |
+| Approval routing                 | **Partial** | `workflow_steps` with `seq`, `role`, `assignee_id`, `acted_by`, `acted_at`, `notes`; approvals inbox with badge count                                                                                                   | No delegation, and no link from a decision to the artifact it was made against — an approval does not pin the version it approved      |
+| Day-of operations                | **Fit**     | Roll call and attendance, mover/seconder/motion text, `vote_threshold`, per-member votes, speaker queue, live SSE console, recorded results                                                                             | State is mutated in place rather than appended. A corrected vote overwrites; there is no `MeetingEvent` ledger                         |
+| Minutes and action record        | **Fit**     | Generated from roll call, motions and tallies; draft → published; preserved on the meeting                                                                                                                              | —                                                                                                                                      |
+| Ordinance / amendment versioning | **Fit**     | `src/legisdoc.js` parses a provision tree with stable ids; `src/amend.js` produces comparative prints and codifies on enactment only; `code_sections` / `code_amendments` / `code_history` support as-of reconstruction | Comparison method is computed but not persisted against the redline it produced                                                        |
 
 ### Evidence and custody
 
-| Workstream | Status | Evidence | Gap to close |
-| --- | --- | --- | --- |
-| Notice and release | **Gap** | — | Nothing freezes. No `Publication` record, no release actor, no posting timestamp, no correction/republish path. The largest gap in the system |
-| Document custody | **Gap** | `attachments` carries `file_path`, `size`, `content_type`; served from `/files/:id` | No content hash, so no file can be shown unaltered. No `DocumentVersion`, no recorded clean↔redline relationship |
-| Audit | **Partial** | `repo.audit.record()` logs user, method, path and IP for every non-GET request | Request-level, not entity-level: it cannot say which field changed, from what, to what. **And it is gated on `user` being truthy, so anonymous state changes — public comments, speaker sign-ups — leave no trace at all** (`server.js:2191`) |
-| Retention and legal hold | **Gap** | — | No disposition schedule, no hold flag, no export shaped for discovery |
+| Workstream               | Status      | Evidence                                                                            | Gap to close                                                                                                                                                                                                                                  |
+| ------------------------ | ----------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notice and release       | **Gap**     | —                                                                                   | Nothing freezes. No `Publication` record, no release actor, no posting timestamp, no correction/republish path. The largest gap in the system                                                                                                 |
+| Document custody         | **Gap**     | `attachments` carries `file_path`, `size`, `content_type`; served from `/files/:id` | No content hash, so no file can be shown unaltered. No `DocumentVersion`, no recorded clean↔redline relationship                                                                                                                              |
+| Audit                    | **Partial** | `repo.audit.record()` logs user, method, path and IP for every non-GET request      | Request-level, not entity-level: it cannot say which field changed, from what, to what. **And it is gated on `user` being truthy, so anonymous state changes — public comments, speaker sign-ups — leave no trace at all** (`server.js:2191`) |
+| Retention and legal hold | **Gap**     | —                                                                                   | No disposition schedule, no hold flag, no export shaped for discovery                                                                                                                                                                         |
 
 ### Publication and access
 
-| Workstream | Status | Evidence | Gap to close |
-| --- | --- | --- | --- |
-| Search and retrieval | **Partial** | FTS5 over `file_number, title, summary, full_text, body_html`, LIKE fallback where FTS5 is absent | Attachment content is not indexed — a phrase inside an uploaded staff report is invisible |
-| Accessible official outputs | **Gap** | `src/pdf.js` draws with pdf-lib | Untagged PDFs: no structure, no reading order, no alternate-format workflow, no output manifest |
-| Video, audio, transcript | **Partial** | `meetings.video_url`, per-item `video_ts` | No captions, transcripts, or transcript-to-item linkage |
-| Public portal, alerts, exports | **Fit** | Public record site, calendar, iCal, RSS (list and per-matter), CSV, saved searches, watches, daily digest | Alerts are inert without SMTP configured — correct, but means the feature is unproven in production until it is |
-| Interoperable API | **Partial** | `/api/v1` with `matters`, `events`, `bodies`, `persons` — Open Civic Data shaped | Read-only and unauthenticated by design (public record), but there is no change feed and no versioned update stream |
-| Security and administration | **Partial** | Local + Entra SSO, five-rank ladder, DB-backed hashed sessions, login throttling, CSRF origin check, per-IP throttles, honeypots, CSP/nosniff/HSTS | No MFA, no tenant isolation, no permission matrix beyond the rank ladder. `/api` sits outside `gate()` — intended, but it means the ladder is not the only access path and that should be deliberate |
+| Workstream                     | Status      | Evidence                                                                                                                                           | Gap to close                                                                                                                                                                                         |
+| ------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Search and retrieval           | **Partial** | FTS5 over `file_number, title, summary, full_text, body_html`, LIKE fallback where FTS5 is absent                                                  | Attachment content is not indexed — a phrase inside an uploaded staff report is invisible                                                                                                            |
+| Accessible official outputs    | **Gap**     | `src/pdf.js` draws with pdf-lib                                                                                                                    | Untagged PDFs: no structure, no reading order, no alternate-format workflow, no output manifest                                                                                                      |
+| Video, audio, transcript       | **Partial** | `meetings.video_url`, per-item `video_ts`                                                                                                          | No captions, transcripts, or transcript-to-item linkage                                                                                                                                              |
+| Public portal, alerts, exports | **Fit**     | Public record site, calendar, iCal, RSS (list and per-matter), CSV, saved searches, watches, daily digest                                          | Alerts are inert without SMTP configured — correct, but means the feature is unproven in production until it is                                                                                      |
+| Interoperable API              | **Partial** | `/api/v1` with `matters`, `events`, `bodies`, `persons` — Open Civic Data shaped                                                                   | Read-only and unauthenticated by design (public record), but there is no change feed and no versioned update stream                                                                                  |
+| Security and administration    | **Partial** | Local + Entra SSO, five-rank ladder, DB-backed hashed sessions, login throttling, CSRF origin check, per-IP throttles, honeypots, CSP/nosniff/HSTS | No MFA, no tenant isolation, no permission matrix beyond the rank ladder. `/api` sits outside `gate()` — intended, but it means the ladder is not the only access path and that should be deliberate |
 
 ### Beyond the benchmark
 

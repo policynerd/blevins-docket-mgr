@@ -83,10 +83,11 @@ test('drafting guidance never reaches the exported instrument', async () => {
 
   const exported = await page(body, ['act.css']);
   try {
-    const shown = await exported.evaluate(() =>
-      [...document.querySelectorAll('guidance')].filter(
-        (el) => getComputedStyle(el).display !== 'none',
-      ).length,
+    const shown = await exported.evaluate(
+      () =>
+        [...document.querySelectorAll('guidance')].filter(
+          (el) => getComputedStyle(el).display !== 'none',
+        ).length,
     );
     const total = await exported.evaluate(() => document.querySelectorAll('guidance').length);
 

@@ -102,10 +102,9 @@ export interface RenderOptions {
  * function knows what an article or a recital is.
  */
 export async function renderPdf(options: RenderOptions): Promise<Uint8Array> {
-  const css = [
-    ...(options.stylesheets ?? ['act.css']).map(readCss),
-    options.extraCss ?? '',
-  ].join('\n');
+  const css = [...(options.stylesheets ?? ['act.css']).map(readCss), options.extraCss ?? ''].join(
+    '\n',
+  );
 
   const html = `<!doctype html>
 <html lang="en">
@@ -151,8 +150,5 @@ export async function renderPdf(options: RenderOptions): Promise<Uint8Array> {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

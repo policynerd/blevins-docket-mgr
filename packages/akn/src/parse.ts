@@ -94,9 +94,7 @@ export function parse(xml: string, docType: DocType): AknDocument {
     (n): n is AknElement => n.kind === 'element' && n.name === expected,
   );
   if (!root) {
-    throw new Error(
-      `Expected <${expected}> beneath <akomaNtoso> for document type ${docType}.`,
-    );
+    throw new Error(`Expected <${expected}> beneath <akomaNtoso> for document type ${docType}.`);
   }
 
   return { docType, root };

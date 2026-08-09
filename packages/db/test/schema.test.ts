@@ -46,7 +46,12 @@ async function seedUser(email = 'clerk@blevinsholdings.com') {
 async function seedProposal(userId: string) {
   const [row] = await db
     .insert(proposals)
-    .values({ ref: 'PROP_ACT-2026-001', title: 'A Delegation of Authority', templateId: 'SJ-019', createdBy: userId })
+    .values({
+      ref: 'PROP_ACT-2026-001',
+      title: 'A Delegation of Authority',
+      templateId: 'SJ-019',
+      createdBy: userId,
+    })
     .returning();
   return row!;
 }

@@ -29,8 +29,8 @@
   margin: 1in 1in 0.9in 1in;
 
   @bottom-center {
-    content: counter(page) " of " counter(pages);
-    font-family: Georgia, "Times New Roman", serif;
+    content: counter(page) ' of ' counter(pages);
+    font-family: Georgia, 'Times New Roman', serif;
     font-size: 8.5pt;
     color: #5a6070;
     padding-top: 6pt;
@@ -59,7 +59,11 @@
 
 akomaNtoso {
   display: block;
-  font-family: "Times New Roman", Times, Liberation Serif, serif;
+  font-family:
+    'Times New Roman',
+    Times,
+    Liberation Serif,
+    serif;
   font-size: 12pt;
   line-height: 1.25;
   text-align: justify;
@@ -165,13 +169,13 @@ docPurpose {
   font-weight: bold;
 }
 
-container[name="eeaRelevance"] {
+container[name='eeaRelevance'] {
   display: block;
   text-align: center;
   margin-top: 10pt;
 }
 
-container[name="procedureIdentifier"] {
+container[name='procedureIdentifier'] {
   display: block;
   text-align: right;
   margin-bottom: 10pt;
@@ -183,13 +187,13 @@ preamble {
   margin-bottom: 14pt;
 }
 
-formula[name="actingEntity"] {
+formula[name='actingEntity'] {
   display: block;
   font-weight: bold;
   margin-bottom: 12pt;
 }
 
-formula[name="enactingFormula"] {
+formula[name='enactingFormula'] {
   display: block;
   font-weight: bold;
   margin-top: 12pt;
@@ -366,7 +370,7 @@ conclusions {
   break-inside: avoid;
 }
 
-block[name="signatory"] {
+block[name='signatory'] {
   display: block;
   margin-top: 18pt;
   text-align: center;

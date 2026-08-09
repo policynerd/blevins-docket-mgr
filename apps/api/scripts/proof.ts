@@ -8,11 +8,13 @@ const id = process.argv.find((a) => a.startsWith('--id='))?.slice(5) ?? 'ORD-STD
 const tpl = TEMPLATES.find((t) => t.id === id)!;
 const parts: Uint8Array[] = [];
 for (const d of tpl.documents) {
-  parts.push(await renderPdf({
-    body: toHtml(parse(d.xml, d.docType)),
-    title: d.title,
-    stylesheets: withGuidance ? ['act.css', 'guidance.css'] : ['act.css'],
-  }));
+  parts.push(
+    await renderPdf({
+      body: toHtml(parse(d.xml, d.docType)),
+      title: d.title,
+      stylesheets: withGuidance ? ['act.css', 'guidance.css'] : ['act.css'],
+    }),
+  );
 }
 const out = `/tmp/tpl/${id}${withGuidance ? '-guidance' : '-export'}.pdf`;
 writeFileSync(out, await mergePdfs(parts));

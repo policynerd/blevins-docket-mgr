@@ -7,10 +7,7 @@ import { AKN_NS, LEOS_NS, isElement, type AknDocument, type AknNode } from './ty
 // into `&amp;lt;` — the classic double-encode, which renders as visible markup
 // in the PDF instead of the character the drafter typed.
 function escapeText(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeAttr(value: string): string {

@@ -71,12 +71,7 @@ async function paginate(xml: string): Promise<{ body: string; notes: string }[]>
       { waitUntil: 'load' },
     );
     await page.addScriptTag({
-      path: join(
-        dirname(require.resolve('pagedjs')),
-        '..',
-        'dist',
-        'paged.polyfill.js',
-      ),
+      path: join(dirname(require.resolve('pagedjs')), '..', 'dist', 'paged.polyfill.js'),
     });
     await page.waitForFunction(
       () => document.querySelectorAll('.pagedjs_page').length > 0,
@@ -124,7 +119,7 @@ test('a footnote prints at the foot of the page its marker falls on', async () =
   // is what LEOS's own PDF export does — fails exactly here.
   assert.ok(
     !pages[callPage]!.notes.includes('SECOND-NOTE-TEXT'),
-    'a later page\'s note printed on an earlier page',
+    "a later page's note printed on an earlier page",
   );
   assert.ok(
     !pages[latePage]!.notes.includes('FIRST-NOTE-TEXT'),

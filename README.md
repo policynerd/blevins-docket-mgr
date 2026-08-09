@@ -15,18 +15,18 @@ searchable public records portal with a JSON Web API.
 Legistar centers on a handful of concepts. This project implements that same
 core so a clerk's office can run its docket without a commercial license:
 
-| Capability | Legistar | This project |
-| --- | --- | --- |
-| Legislative files (Matters) with type, status, sponsors, history, attachments | ✅ | ✅ |
-| Legislative bodies & committees with membership | ✅ | ✅ |
-| People / elected officials directory | ✅ | ✅ |
-| Meeting calendar, agendas & agenda sections | ✅ | ✅ |
-| Roll-call votes & tallies | ✅ | ✅ |
-| Status workflow (Introduced → In Committee → Passed/Enacted …) | ✅ | ✅ |
-| Searchable public portal (InSite-style) | ✅ | ✅ |
-| Read JSON Web API | ✅ | ✅ (`/api/v1`) |
-| Clerk admin workspace (create files, record actions, build agendas, capture votes) | ✅ | ✅ |
-| SaaS hosting, e-signature, video streaming, granular roles/SSO | ✅ | ❌ (out of scope) |
+| Capability                                                                         | Legistar | This project      |
+| ---------------------------------------------------------------------------------- | -------- | ----------------- |
+| Legislative files (Matters) with type, status, sponsors, history, attachments      | ✅       | ✅                |
+| Legislative bodies & committees with membership                                    | ✅       | ✅                |
+| People / elected officials directory                                               | ✅       | ✅                |
+| Meeting calendar, agendas & agenda sections                                        | ✅       | ✅                |
+| Roll-call votes & tallies                                                          | ✅       | ✅                |
+| Status workflow (Introduced → In Committee → Passed/Enacted …)                     | ✅       | ✅                |
+| Searchable public portal (InSite-style)                                            | ✅       | ✅                |
+| Read JSON Web API                                                                  | ✅       | ✅ (`/api/v1`)    |
+| Clerk admin workspace (create files, record actions, build agendas, capture votes) | ✅       | ✅                |
+| SaaS hosting, e-signature, video streaming, granular roles/SSO                     | ✅       | ❌ (out of scope) |
 
 ## Highlights
 
@@ -50,8 +50,8 @@ npm start          # starts the server on http://localhost:3000
 Then open:
 
 - Public portal — http://localhost:3000/
-- Clerk admin    — http://localhost:3000/admin
-- JSON Web API   — http://localhost:3000/api/v1
+- Clerk admin — http://localhost:3000/admin
+- JSON Web API — http://localhost:3000/api/v1
 
 To rebuild the demo data from scratch:
 
@@ -77,16 +77,16 @@ for the full list. The two groups you'll most likely set:
 can rebrand the app to your organization without editing code. Defaults describe
 a Board of Governors:
 
-| Variable | Default | Controls |
-| --- | --- | --- |
-| `ORG_NAME` | Board of Governors | Name in the banner, footer, and `<title>` |
-| `ORG_TAGLINE` | Legislative Information Center | Sub-line / page title suffix |
-| `ORG_PRIMARY_BODY` | Board of Governors | The primary legislative body |
-| `ORG_MEMBERS_LABEL` | Board Members | Nav + members-listing label |
-| `ORG_CHAIR_TITLE` / `ORG_VICE_CHAIR_TITLE` / `ORG_MEMBER_TITLE` | Chair / Vice Chair / Governor | Member titles |
-| `ORG_CLERK_TITLE` / `ORG_CLERK_OFFICE` | Clerk of the Board / Office of the Clerk of the Board | Clerk identity |
-| `ORG_MEETING_LOCATION` | Boardroom | Default meeting location |
-| `ORG_EMAIL_DOMAIN` | board.gov | Domain for seeded account emails |
+| Variable                                                        | Default                                               | Controls                                  |
+| --------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------- |
+| `ORG_NAME`                                                      | Board of Governors                                    | Name in the banner, footer, and `<title>` |
+| `ORG_TAGLINE`                                                   | Legislative Information Center                        | Sub-line / page title suffix              |
+| `ORG_PRIMARY_BODY`                                              | Board of Governors                                    | The primary legislative body              |
+| `ORG_MEMBERS_LABEL`                                             | Board Members                                         | Nav + members-listing label               |
+| `ORG_CHAIR_TITLE` / `ORG_VICE_CHAIR_TITLE` / `ORG_MEMBER_TITLE` | Chair / Vice Chair / Governor                         | Member titles                             |
+| `ORG_CLERK_TITLE` / `ORG_CLERK_OFFICE`                          | Clerk of the Board / Office of the Clerk of the Board | Clerk identity                            |
+| `ORG_MEETING_LOCATION`                                          | Boardroom                                             | Default meeting location                  |
+| `ORG_EMAIL_DOMAIN`                                              | board.gov                                             | Domain for seeded account emails          |
 
 Branding can also be edited live in the app at **`/admin/branding`** (Clerk);
 saved values are stored in the database and override the env defaults, including
@@ -113,7 +113,7 @@ provide:
 - **Bodies & committees** (`/admin/bodies`) — create, edit, deactivate, or delete
   (delete is refused while meetings/files reference a body).
 - **Board membership** (`/govern/members`) — adding or removing a member follows
-  **Nominate → Approve → Seat**: the Clerk nominates, a *different* staff member
+  **Nominate → Approve → Seat**: the Clerk nominates, a _different_ staff member
   (e.g. the Chair) approves, then the Clerk executes the roster change. Every
   step records who acted and when.
 - **Branding** (`/admin/branding`) — live identity/theme editing (see above).
@@ -160,7 +160,7 @@ fly deploy
   automatic restart and alerting.
 - **Single writer:** the database is one file on one volume — run **exactly one
   instance**. Do not scale to multiple machines against the same volume.
-- **Backups:** your data *is* `/data/docket.db`. Use your platform's volume
+- **Backups:** your data _is_ `/data/docket.db`. Use your platform's volume
   snapshots (e.g. Fly takes daily snapshots automatically) or periodically copy
   the file. Restoring = restoring the volume.
 
@@ -172,16 +172,16 @@ fly deploy
 
 ## Data model
 
-| Table | Purpose |
-| --- | --- |
-| `matters` | Legislative files (ordinances, resolutions, motions, …) |
-| `matter_sponsors` | Primary/co-sponsors per file |
-| `matter_history` | Workflow actions (introduced, referred, adopted, …) |
-| `attachments` | Documents linked to a file |
-| `bodies` / `body_members` | Board, committees, commissions & membership |
-| `people` | Elected officials and appointees |
-| `meetings` / `agenda_items` | Calendar, agendas & agenda sections |
-| `votes` | Per-member roll-call votes on agenda items |
+| Table                       | Purpose                                                 |
+| --------------------------- | ------------------------------------------------------- |
+| `matters`                   | Legislative files (ordinances, resolutions, motions, …) |
+| `matter_sponsors`           | Primary/co-sponsors per file                            |
+| `matter_history`            | Workflow actions (introduced, referred, adopted, …)     |
+| `attachments`               | Documents linked to a file                              |
+| `bodies` / `body_members`   | Board, committees, commissions & membership             |
+| `people`                    | Elected officials and appointees                        |
+| `meetings` / `agenda_items` | Calendar, agendas & agenda sections                     |
+| `votes`                     | Per-member roll-call votes on agenda items              |
 
 ## Web API
 
