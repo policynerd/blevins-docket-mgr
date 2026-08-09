@@ -1516,3 +1516,175 @@ test('seal: the legend is escaped, not interpolated', () => {
   assert.ok(!svg.includes('<script>'), 'markup survived into the seal');
   assert.match(svg, /&amp;/);
 });
+
+// --- Typesetting: justification and footnotes ---------------------------------
+// Word positions in drawing order, read straight from each Tm/Tj pair in the
+// content stream. text() now draws one word per operator (needed to place a
+// justified gap or a superscript marker between words), so this is what lets
+// a test tell a stretched line from a natural one without a PDF renderer.
+function pdfWordRuns(bytes) {
+  const zlib = require('node:zlib');
+  const buf = Buffer.from(bytes);
+  const runs = [];
+  let idx = 0;
+  for (;;) {
+    const start = buf.indexOf('stream', idx);
+    if (start === -1) break;
+    let s = start + 6;
+    if (buf[s] === 0x0d) s++;
+    if (buf[s] === 0x0a) s++;
+    const end = buf.indexOf('endstream', s);
+    if (end === -1) break;
+    idx = end + 9;
+    let body;
+    try { body = zlib.inflateSync(buf.subarray(s, end)).toString('latin1'); }
+    catch { continue; }
+    if (!body.includes(' Tm')) continue; // not a page content stream
+    const pageRuns = [];
+    const re = /1 0 0 1 ([-\d.]+) ([-\d.]+) Tm\s*\n(?:<([0-9A-Fa-f\s]+)>|\(((?:\\.|[^()\\])*)\))\s*Tj/g;
+    for (const m of body.matchAll(re)) {
+      let text;
+      if (m[3]) {
+        const hex = m[3].replace(/\s+/g, '');
+        text = '';
+        for (let i = 0; i + 1 < hex.length; i += 2) text += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+      } else {
+        text = m[4].replace(/\\([()\\])/g, '$1');
+      }
+      pageRuns.push({ x: Number(m[1]), y: Number(m[2]), text });
+    }
+    if (pageRuns.length) runs.push(pageRuns);
+  }
+  return runs; // one array per page
+}
+
+test('typesetting: justify stretches every line but the last to reach the full measure', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const words = 'Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november '
+    + 'oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one';
+  const probe = await Doc.create({});
+  const wordWidth = (w) => probe.f.r.widthOfTextAtSize(w, 11);
+
+  const build = async (justify) => {
+    const doc = await Doc.create({});
+    doc.text(words, { size: 11, justify });
+    return doc.save();
+  };
+  const ragged = pdfWordRuns(await build(false))[0];
+  const justified = pdfWordRuns(await build(true))[0];
+
+  const rightEdge = 72 + probe.contentW; // margin.left + contentW
+  const lineEnd = (runs, y) => {
+    const onLine = runs.filter((r) => r.y === y);
+    const last = onLine[onLine.length - 1];
+    return last.x + wordWidth(last.text);
+  };
+  const firstLineY = ragged[0].y;
+
+  // Same text, same wrap points — justification changes spacing, not where a
+  // line breaks — so both must still wrap identically.
+  assert.deepEqual(ragged.map((r) => r.text), justified.map((r) => r.text));
+
+  // Unjustified: natural word-spacing leaves the first line short of the
+  // margin, same as any ordinary word processor set left-aligned.
+  assert.ok(lineEnd(ragged, firstLineY) < rightEdge - 5,
+    `expected the unjustified line to fall short of the margin (ended at ${lineEnd(ragged, firstLineY).toFixed(1)}, margin ${rightEdge})`);
+
+  // Justified: the line's own right edge — start of the last word plus that
+  // word's real width — lands on the margin, not merely somewhere further
+  // right than before.
+  assert.ok(Math.abs(lineEnd(justified, firstLineY) - rightEdge) < 1.5,
+    `justified line did not reach the margin (ended at ${lineEnd(justified, firstLineY).toFixed(1)}, margin ${rightEdge})`);
+
+  // The last line of the block must stay ragged even with justify:true —
+  // stretching a paragraph's final, often short, line is the one thing full
+  // justification is not supposed to do.
+  const lastLineY = Math.min(...ragged.map((r) => r.y));
+  assert.equal(lineEnd(justified, lastLineY), lineEnd(ragged, lastLineY),
+    'the last line of the paragraph was stretched; only interior lines should justify');
+});
+
+test('typesetting: a hanging line justifies to the same right edge as the first', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const probe = await Doc.create({});
+  const wordWidth = (w) => probe.f.r.widthOfTextAtSize(w, 11);
+  const indent = 22;
+  const hanging = 18;
+
+  const doc = await Doc.create({});
+  // A hanging block long enough to wrap to three lines: first line at
+  // `indent`, continuation lines at `indent + hanging` — a narrower measure,
+  // rendered further right. Both must still reach the same right edge once
+  // justified, which only happens if the first line is justified against the
+  // *wider* target (margin.left + indent + width) rather than the narrower
+  // one it was wrapped against.
+  doc.text('(a) A statutory subsection long enough to run past two full lines so that the '
+    + 'hanging indent actually engages more than once and every continuation line has its '
+    + 'own right edge to check against the first',
+  { size: 11, indent, hanging, justify: true });
+  const runs = pdfWordRuns(await doc.save())[0];
+  const byLine = [...new Set(runs.map((r) => r.y))].sort((a, b) => b - a);
+  assert.ok(byLine.length >= 3, `expected at least three lines, wrapped to ${byLine.length}`);
+
+  const lineEnd = (y) => {
+    const onLine = runs.filter((r) => r.y === y);
+    const last = onLine[onLine.length - 1];
+    return last.x + wordWidth(last.text);
+  };
+  // The right edge every interior line should reach: margin + indent + width,
+  // derived independently of how text() computed it internally.
+  const expectedEdge = probe.margin.left + indent + (probe.contentW - indent);
+  for (const y of byLine.slice(0, -1)) {
+    assert.ok(Math.abs(lineEnd(y) - expectedEdge) < 1.5,
+      `interior line at y=${y} ended at ${lineEnd(y).toFixed(1)}, expected ${expectedEdge.toFixed(1)}`);
+  }
+});
+
+test('typesetting: a footnote marker prints where it is registered, and only the last line is exempt from justification', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  doc.text('This clause cites the statute^1 as its basis.',
+    { size: 11, justify: true, notes: { 1: 'The cited statute, in full.' } });
+  const bytes = await doc.save();
+  const text = await pdfText(bytes);
+  assert.match(text, /statute/);
+  assert.match(text, /1\. The cited statute, in full\./, 'the footnote text was not printed');
+  // The marker digit is its own run, drawn immediately after the word it
+  // footnotes and raised — not literally concatenated into "statute1".
+  const runs = pdfWordRuns(bytes)[0];
+  const wordIdx = runs.findIndex((r) => r.text === 'statute');
+  assert.ok(wordIdx >= 0, 'the footnoted word was not found as its own run');
+  const marker = runs[wordIdx + 1];
+  assert.equal(marker.text, '1');
+  assert.ok(marker.y > runs[wordIdx].y, 'the marker was not raised above the baseline');
+});
+
+test('typesetting: need() treats a registered footnote as part of the bottom margin', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: 'A note.' } });
+  assert.ok(doc.footnoteReserve > 0, 'registering a note did not reserve any space');
+
+  const pagesBefore = doc.pages.length;
+  // Placed exactly far enough above the reserved band that ignoring the
+  // reserve would say this fits, and honouring it would not.
+  doc.y = doc.margin.bottom + doc.footnoteReserve + 2;
+  doc.need(10);
+  assert.equal(doc.pages.length, pagesBefore + 1,
+    'need() let body text run into the space reserved for this page\'s footnote');
+});
+
+test('typesetting: a footnote registered on a later page prints on that page, not the first', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  // Fill page 1 to force a break, then register a note — it must not bleed
+  // onto the page it was nowhere near.
+  for (let i = 0; i < 40; i++) doc.text(`Filler line number ${i} to consume the page.`, { size: 11, after: 4 });
+  doc.text('A cited clause^1 on the second page.', { size: 11, notes: { 1: 'Second-page note text.' } });
+  const bytes = await doc.save();
+  const pages = pdfWordRuns(bytes);
+  assert.ok(pages.length >= 2, 'expected the filler to force a second page');
+  const hasNote = (page) => page.some((r) => r.text.includes('Second-page'));
+  assert.ok(!hasNote(pages[0]), 'the footnote leaked onto the first page');
+  assert.ok(pages.slice(1).some(hasNote), 'the footnote never appeared on any later page');
+});

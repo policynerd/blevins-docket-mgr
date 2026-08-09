@@ -20,6 +20,34 @@ const INK = rgb(0.06, 0.07, 0.09);
 const MUTED = rgb(0.42, 0.46, 0.52);
 const RULE = rgb(0.78, 0.76, 0.73);
 
+// A footnote reference is written as a `^n` suffix on the word that carries
+// it — "Government Code Section 25124^1" — rather than as a separate token,
+// so it survives line-wrapping attached to its word the way a citation mark
+// does in print, and needs no change to how paragraphs are split into words.
+// Sentence punctuation may follow the digits ("clause^1.", "matter^2,") the
+// way a citation mark sits before the period in print — that trailing
+// punctuation is captured separately so it draws at the baseline, after the
+// raised marker, rather than being swallowed by the digit-only match.
+function splitMarker(word) {
+  const m = /^(.*\S)\^(\d+)([.,;:)\]]*)$/.exec(word);
+  return m ? { base: m[1], marker: m[2], tail: m[3] } : { base: word, marker: null, tail: '' };
+}
+
+// A word's drawn width, including its superscript marker if it carries one.
+function wordWidth(word, font, size) {
+  const { base, marker, tail } = splitMarker(word);
+  let w = font.widthOfTextAtSize(base, size);
+  if (marker) w += font.widthOfTextAtSize(marker, size * 0.62) + size * 0.04 + font.widthOfTextAtSize(tail, size);
+  return w;
+}
+
+// A line's natural (unjustified) width: its words at their own widths, plus
+// one ordinary space between each.
+function lineWidth(words, font, size) {
+  const spaceW = font.widthOfTextAtSize(' ', size);
+  return words.reduce((s, w) => s + wordWidth(w, font, size), 0) + spaceW * Math.max(0, words.length - 1);
+}
+
 class Doc {
   constructor(pdf, fonts, opts = {}) {
     this.pdf = pdf;
@@ -35,6 +63,13 @@ class Doc {
     this.pages = [];
     this.page = null;
     this.y = 0;
+    // Footnotes, keyed by the physical page they were registered on — a
+    // reference on page 3 prints at the bottom of page 3, not wherever save()
+    // happens to be looking. footnoteReserve is the vertical space already
+    // spoken for by notes on the *current* page, so need() stops body text
+    // from running into a footnote registered earlier on the same page.
+    this.pageNotes = new Map();
+    this.footnoteReserve = 0;
     this.newPage();
   }
 
@@ -55,13 +90,16 @@ class Doc {
     this.page = this.pdf.addPage([this.size.w, this.size.h]);
     this.pages.push(this.page);
     this.y = this.size.h - this.margin.top;
+    this.footnoteReserve = 0;
     if (this.pages.length > 1 && this.runningHeader) this.runningHeader(this, this.pages.length);
     return this.page;
   }
 
   // Reserve vertical space, breaking to a new page when it will not fit.
+  // The footnote band reserved on this page (if any) counts as part of the
+  // bottom margin, so body text stops above it rather than running through it.
   need(h) {
-    if (this.y - h < this.margin.bottom) this.newPage();
+    if (this.y - h < this.margin.bottom + this.footnoteReserve) this.newPage();
   }
 
   font(style) {
@@ -76,6 +114,12 @@ class Doc {
   // Break a string into lines that fit `width` at `size` in `font`. Words
   // longer than the measure (a URL, a long citation) are hard-split rather
   // than allowed to run off the page.
+  //
+  // No hyphenation: at the measure these documents are set to (roughly
+  // 460pt at 10-11pt type), word-spacing-only justification reads cleanly
+  // without it — hyphenation earns its keep in narrow newspaper columns, not
+  // a single-column US Letter page. Left as a deliberate choice, not an
+  // oversight.
   wrap(str, { width, size, font }) {
     const out = [];
     for (const para of String(str == null ? '' : str).split('\n')) {
@@ -96,14 +140,14 @@ class Doc {
 
       let line = '';
       for (const word of para.trim().split(/\s+/)) {
-        const oversized = font.widthOfTextAtSize(word, size) > width;
+        const oversized = wordWidth(word, font, size) > width;
         if (oversized) {
           if (line) { out.push(line); line = ''; }
           line = hardSplit(word);
           continue;
         }
         const trial = line ? line + ' ' + word : word;
-        if (font.widthOfTextAtSize(trial, size) <= width) line = trial;
+        if (lineWidth(trial.split(' '), font, size) <= width) line = trial;
         else { out.push(line); line = word; }
       }
       if (line) out.push(line);
@@ -116,7 +160,16 @@ class Doc {
   //   hanging     extra inset for lines after the first (statutory subsections
   //               read "(a)  text..." with the runover aligned under the text)
   //   align       'left' | 'center' | 'right'
+  //   justify     stretch word-spacing so every line but the last fills the
+  //               measure — off by default, since a short line (a heading, a
+  //               label) justified to full width would space its few words
+  //               out absurdly
   //   underline / strike   redline decoration, drawn per line
+  //   notes       { '1': 'footnote text', ... } — text carrying a `word^1`
+  //               marker prints a raised "1" there and the note is queued
+  //               for the bottom of whichever physical page the marker
+  //               actually lands on, which may not be the page text() was
+  //               called on if the block spans a break
   text(str, opts = {}) {
     const size = opts.size || 11;
     const font = this.font(opts.style);
@@ -126,30 +179,90 @@ class Doc {
     const color = opts.color || INK;
     const width = this.contentW - indent - (opts.rightIndent || 0);
     const lines = this.wrap(str, { width: width - hanging, size, font });
+    const spaceW = font.widthOfTextAtSize(' ', size);
 
     lines.forEach((line, i) => {
       this.need(lead);
+      const isLastLine = i === lines.length - 1;
       const extra = i === 0 ? 0 : hanging;
-      let x = this.margin.left + indent + extra;
-      if (opts.align === 'center') {
-        x = this.margin.left + indent + (width - font.widthOfTextAtSize(line, size)) / 2;
-      } else if (opts.align === 'right') {
-        x = this.margin.left + indent + width - font.widthOfTextAtSize(line, size);
+      // The line was wrapped against `width - hanging` regardless of which
+      // line it is (wrap() has no way to know a line's own indent), but a
+      // first line rendered at `indent` alone reaches `width` before its
+      // right edge meets a continuation line's. Justifying against that
+      // wider target, rather than the narrower one it was broken against,
+      // is what makes every line's right edge land on the same rule.
+      const lineTargetW = i === 0 ? width : width - hanging;
+      const words = line ? line.split(' ') : [];
+      const startX = this.margin.left + indent + extra;
+      let x = startX;
+
+      if (opts.align === 'center' || opts.align === 'right') {
+        const natural = lineWidth(words, font, size);
+        x = opts.align === 'center'
+          ? startX + (lineTargetW - natural) / 2
+          : startX + lineTargetW - natural;
       }
-      if (line) {
-        this.page.drawText(line, { x, y: this.y - size, size, font, color });
-        const w = font.widthOfTextAtSize(line, size);
+
+      let gapW = spaceW;
+      if (opts.justify && words.length > 1 && !isLastLine && opts.align !== 'center' && opts.align !== 'right') {
+        const natural = lineWidth(words, font, size);
+        gapW = spaceW + (lineTargetW - natural) / (words.length - 1);
+      }
+
+      const lineStartX = x;
+      for (const word of words) {
+        const { base, marker, tail } = splitMarker(word);
+        if (base) {
+          this.page.drawText(base, { x, y: this.y - size, size, font, color });
+          x += font.widthOfTextAtSize(base, size);
+        }
+        if (marker) {
+          this.page.drawText(marker, {
+            x, y: this.y - size + size * 0.32, size: size * 0.62, font, color,
+          });
+          x += font.widthOfTextAtSize(marker, size * 0.62) + size * 0.04;
+          if (opts.notes && opts.notes[marker]) this._queueFootnote(marker, opts.notes[marker]);
+          if (tail) {
+            this.page.drawText(tail, { x, y: this.y - size, size, font, color });
+            x += font.widthOfTextAtSize(tail, size);
+          }
+        }
+        x += gapW;
+      }
+      const lineEndX = words.length ? x - gapW : lineStartX;
+
+      if (words.length) {
         if (opts.underline) {
-          this.page.drawLine({ start: { x, y: this.y - size - 1.5 }, end: { x: x + w, y: this.y - size - 1.5 }, thickness: 0.6, color });
+          this.page.drawLine({
+            start: { x: lineStartX, y: this.y - size - 1.5 }, end: { x: lineEndX, y: this.y - size - 1.5 },
+            thickness: 0.6, color,
+          });
         }
         if (opts.strike) {
-          this.page.drawLine({ start: { x, y: this.y - size * 0.62 }, end: { x: x + w, y: this.y - size * 0.62 }, thickness: 0.6, color });
+          this.page.drawLine({
+            start: { x: lineStartX, y: this.y - size * 0.62 }, end: { x: lineEndX, y: this.y - size * 0.62 },
+            thickness: 0.6, color,
+          });
         }
       }
       this.y -= lead;
     });
     if (opts.after) this.y -= opts.after;
     return this;
+  }
+
+  // Register a footnote against the page currently being drawn on. Called
+  // mid-line from text(), so `this.page` is already whichever physical page
+  // the marker landed on.
+  _queueFootnote(num, note) {
+    const list = this.pageNotes.get(this.page) || [];
+    list.push({ num, note });
+    this.pageNotes.set(this.page, list);
+    // Fixed height per note: these are short citations, one line each. A note
+    // long enough to wrap would understate its own reserve — acceptable here
+    // given what these five documents actually cite, but worth knowing if a
+    // future note runs long.
+    this.footnoteReserve += 11;
   }
 
   heading(str, opts = {}) {
@@ -226,8 +339,27 @@ class Doc {
     return this;
   }
 
-  // Footers are drawn last so they can carry the final page count.
+  // Footnotes and footers are drawn last, footnotes first: the footer prints
+  // at a fixed offset from the bottom edge regardless of page content, and
+  // the footnote band sits just above it, so the footer has to already be
+  // conceptually "there" — footnotes are drawn from margin.bottom upward,
+  // which is where need()'s reservation assumed they would go.
   async save() {
+    for (const [page, notes] of this.pageNotes) {
+      const prev = this.page;
+      this.page = page;
+      const bandTop = this.margin.bottom + notes.length * 10.5;
+      this.page.drawLine({
+        start: { x: this.margin.left, y: bandTop },
+        end: { x: this.margin.left + 130, y: bandTop },
+        thickness: 0.5, color: RULE,
+      });
+      notes.forEach((n, idx) => {
+        this.at(this.margin.left, bandTop - 9 - idx * 10.5, `${n.num}. ${n.note}`,
+          { size: 7.5, style: 'sans', color: MUTED });
+      });
+      this.page = prev;
+    }
     if (this.footer) {
       this.pages.forEach((p, i) => {
         const prev = this.page;

@@ -161,7 +161,7 @@ async function boardLetter(matter, opts = {}) {
     else paras = [];
     if (!paras.length) continue;
     doc.heading(sec.label, { size: 11 });
-    for (const para of paras) doc.text(para, { size: 10.5, after: 6 });
+    for (const para of paras) doc.text(para, { size: 10.5, after: 6, justify: true });
     doc.gap(4);
   }
 
@@ -233,7 +233,7 @@ async function ordinance(matter, opts = {}) {
   }
   doc.rule({ after: 16 });
 
-  for (const line of preamble) doc.text(line, { size: 11, after: 6 });
+  for (const line of preamble) doc.text(line, { size: 11, after: 6, justify: true });
   if (preamble.length) doc.gap(6);
   doc.text(enactingClause(), { size: 11, after: 14 });
 
@@ -252,7 +252,7 @@ async function ordinance(matter, opts = {}) {
     if (!text.trim()) continue;
     doc.text(text, {
       size: 11, indent, hanging: isSection ? 0 : 18,
-      style: isSection ? 'b' : 'r', after: isSection ? 6 : 4,
+      style: isSection ? 'b' : 'r', after: isSection ? 6 : 4, justify: true,
     });
   }
 
@@ -294,7 +294,7 @@ async function ordinance(matter, opts = {}) {
       || 'This ordinance shall take effect and be in force thirty (30) days after its '
        + 'passage; and before the expiration of fifteen (15) days after its passage a '
        + 'summary shall be published once, with the names of the members voting for and '
-       + 'against it.', { size: 11, after: 20 });
+       + 'against it.', { size: 11, after: 20, justify: true });
   } else {
     doc.gap(20);
   }
@@ -334,7 +334,7 @@ async function summaryForPublication(matter, meeting, opts = {}) {
     + (sameName ? '' : ` of ${orgName}`)
     + ` will consider for adoption: ${upper(matter.title)}.`, { size: 11, after: 10 });
 
-  if (matter.summary) doc.text(matter.summary, { size: 11, after: 10 });
+  if (matter.summary) doc.text(matter.summary, { size: 11, after: 10, justify: true });
 
   if (when) {
     doc.text(`Said proposed ordinance will be presented to the ${bodyName} for first reading `
@@ -342,14 +342,14 @@ async function summaryForPublication(matter, meeting, opts = {}) {
   }
 
   const place = (meeting && meeting.location) || ORG.meetingLocation;
-  if (place) doc.text(`The ${bodyName} meets at ${place}.`, { size: 11, after: 10 });
+  if (place) doc.text(`The ${bodyName} meets at ${place}.`, { size: 11, after: 10, justify: true });
 
   doc.text('Interested persons are encouraged to review the text of the proposed ordinance in '
     + `detail. A certified copy of the full text is on file in the ${ORG.clerkOffice || 'Office of the Clerk'}`
     + (opts.publicUrl ? `, and is also available online at ${opts.publicUrl}.` : '.'),
   { size: 11, after: 10 });
 
-  if (opts.authority) doc.text(`This summary is published pursuant to ${opts.authority}.`, { size: 11, after: 10 });
+  if (opts.authority) doc.text(`This summary is published pursuant to ${opts.authority}.`, { size: 11, after: 10, justify: true });
 
   doc.gap(24);
   doc.text('APPROVED AS TO FORM AND LEGALITY', { size: 10, style: 'b', after: 16 });
@@ -375,7 +375,7 @@ async function reportDoc(matter, report) {
   if (!paras.length) {
     doc.text('[This report has no text.]', { size: 10.5, style: 'i', color: MUTED });
   }
-  for (const para of paras) doc.text(para, { size: 10.5, after: 7 });
+  for (const para of paras) doc.text(para, { size: 10.5, after: 7, justify: true });
   return doc.save();
 }
 
