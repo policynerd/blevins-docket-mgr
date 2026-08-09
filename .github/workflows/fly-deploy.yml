@@ -19,6 +19,11 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    # Production still runs the application under legacy/. Repoint both jobs
+    # when the rebuild in apps/ and packages/ becomes deployable.
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +37,9 @@ jobs:
   deploy:
     needs: smoke
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master

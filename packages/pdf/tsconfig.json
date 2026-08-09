@@ -2,7 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "."
+    "rootDir": ".",
+    // This package runs in Node but ships code that executes *inside* the
+    // browser: the callbacks handed to `page.evaluate()` are serialised and
+    // run in the page, where `document` and `HTMLElement` are real. Without
+    // the DOM lib those callbacks do not typecheck, and typing them as `any`
+    // to avoid it would give up checking on the one part of the renderer that
+    // touches live layout.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

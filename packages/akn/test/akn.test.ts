@@ -175,6 +175,38 @@ test('toHtml: text content is escaped, so drafted prose cannot inject markup', (
   assert.match(html, /&lt;script&gt;/);
 });
 
+test('ids: characters are drawn uniformly, not folded with a biased modulo', () => {
+  // 256 is not a multiple of 62, so `randomByte % 62` yields the first eight
+  // characters of the alphabet from five source bytes each and the remaining
+  // fifty-four from only four — about 25% more often. Averaging those two
+  // groups separates them decisively; a uniform draw puts the ratio at 1.
+  const ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const OVER_SELECTED = 256 % ALPHABET.length; // the 8 characters modulo favours
+
+  const counts = new Map<string, number>([...ALPHABET].map((c) => [c, 0]));
+  let total = 0;
+  for (let i = 0; i < 30_000; i++) {
+    for (const ch of newId('')) {
+      counts.set(ch, (counts.get(ch) ?? 0) + 1);
+      total++;
+    }
+  }
+
+  const mean = (chars: string) =>
+    [...chars].reduce((sum, c) => sum + (counts.get(c) ?? 0), 0) / chars.length;
+
+  const favoured = mean(ALPHABET.slice(0, OVER_SELECTED));
+  const rest = mean(ALPHABET.slice(OVER_SELECTED));
+
+  assert.ok(total > 400_000, 'not enough samples for the distribution to be meaningful');
+  const ratio = favoured / rest;
+  assert.ok(
+    ratio < 1.05,
+    `the first ${OVER_SELECTED} characters appear ${ratio.toFixed(3)}x as often as the rest — ` +
+      'the identifier alphabet is being sampled with a biased modulo',
+  );
+});
+
 test('ids: freshly minted identifiers are valid XML names and do not collide', () => {
   const seen = new Set<string>();
   for (let i = 0; i < 5000; i++) {

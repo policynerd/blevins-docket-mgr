@@ -9,8 +9,38 @@ permissions:
   contents: read
 
 jobs:
+  # The new stack: pnpm workspace, TypeScript packages, Chromium-backed PDF
+  # rendering.
   test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The PDF tests drive a real browser, so one has to be present. The
+      # version is pinned to the playwright-core in the lockfile: playwright
+      # resolves browsers by the exact revision its own version expects, and a
+      # mismatch leaves the download unused and the tests unable to launch.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  # The application still serving production, kept green until the rebuild
+  # reaches parity and legacy/ is removed.
+  legacy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
