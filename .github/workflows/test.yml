@@ -15,9 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors out if the version is
+      # given in both places, and package.json's `packageManager` field is the
+      # one that also pins local development — keeping it as the single source
+      # means CI and a developer's machine cannot drift apart.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
