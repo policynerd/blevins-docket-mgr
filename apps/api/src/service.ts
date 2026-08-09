@@ -235,7 +235,15 @@ export async function exportProposal(
   opts: { guidance?: boolean } = {},
 ): Promise<Uint8Array> {
   const proposal = await getProposal(db, proposalId);
-  const stylesheets = opts.guidance ? ['act.css', 'guidance.css'] : ['act.css'];
+  // Letterhead belongs on the parts that are read as correspondence from the
+  // Board. The ordinance is the instrument itself and carries its own title
+  // block, not a masthead.
+  const LETTERHEAD: readonly string[] = ['COVER_PAGE', 'EXPL_MEMORANDUM'];
+  const sheetsFor = (docType: string) => [
+    'act.css',
+    ...(LETTERHEAD.includes(docType) ? ['masthead.css'] : []),
+    ...(opts.guidance ? ['guidance.css'] : []),
+  ];
 
   const parts: Uint8Array[] = [];
   for (const doc of proposal.documents) {
@@ -245,7 +253,7 @@ export async function exportProposal(
       await renderPdf({
         body: toHtml(parse(version.xml, doc.docType as DocType)),
         title: `${proposal.ref} — ${doc.title}`,
-        stylesheets,
+        stylesheets: sheetsFor(doc.docType),
       }),
     );
   }

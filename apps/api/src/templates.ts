@@ -8,6 +8,8 @@ import {
   type DocType,
 } from '@blevins/akn';
 
+import { GOVERNORS, ORG, STAFF } from './org.ts';
+
 // What a proposal is made of.
 //
 // A template does not describe one document. It describes the package: which
@@ -79,6 +81,44 @@ function unfilledSection(num: string, title: string, help: string): AknElement {
 }
 
 /**
+ * The letterhead.
+ *
+ * Governors down the left in seat order, the Board's mark in the middle,
+ * officers down the right — the arrangement on the Board's own posted notices.
+ * It is generated from the roster rather than drawn once and pasted in, so a
+ * change of seat cannot leave a stale name on the face of an instrument.
+ */
+function masthead(): AknElement {
+  const column = (name: string, people: readonly { name: string; title: string }[]) =>
+    element('container', {
+      attrs: { name },
+      id: newId(),
+      children: people.flatMap((p) => [
+        element('docProponent', { id: newId(), children: [text(p.name)] }),
+        element('docTitle', { id: newId(), children: [text(p.title)] }),
+      ]),
+    });
+
+  return element('container', {
+    attrs: { name: 'masthead' },
+    id: newId(),
+    children: [
+      column('governors', GOVERNORS),
+      // The mark itself is supplied by the stylesheet, not carried here. It is
+      // letterhead rather than enacted text: identical on every instrument,
+      // and not part of what the Board adopted. Keeping it out of the document
+      // bytes means re-cutting the seal does not change the content hash of
+      // every document ever written under the old one.
+      element('container', {
+        attrs: { name: 'mark', 'aria-label': `${ORG.name} ${ORG.body}` },
+        id: newId(),
+      }),
+      column('officers', STAFF),
+    ],
+  });
+}
+
+/**
  * Serialize a starting document. The AKN root wrapper is chosen by document
  * type — a normative act roots at `bill`, an explanatory one at `doc` — and
  * `serialize` supplies the `akomaNtoso` envelope and namespaces itself.
@@ -99,14 +139,10 @@ function coverPage(title: string): TemplateDocument {
     docType: 'COVER_PAGE',
     title: 'Cover Page',
     xml: build('COVER_PAGE', [
+      masthead(),
       element('coverPage', {
         id: newId(),
         children: [
-          element('container', {
-            attrs: { name: 'actingEntity' },
-            id: newId(),
-            children: [para('BLEVINS HOLDINGS — BOARD OF GOVERNORS')],
-          }),
           element('longTitle', {
             id: newId(),
             children: [
@@ -133,6 +169,7 @@ function boardLetter(): TemplateDocument {
     docType: 'EXPL_MEMORANDUM',
     title: 'Board Letter',
     xml: build('EXPL_MEMORANDUM', [
+      masthead(),
       element('preface', {
         id: newId(),
         children: [
