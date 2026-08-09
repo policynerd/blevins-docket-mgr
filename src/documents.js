@@ -332,13 +332,13 @@ async function summaryForPublication(matter, meeting, opts = {}) {
   const { org: orgName, same: sameName } = bodyOf();
   doc.text(`Notice is hereby given that the ${bodyName}`
     + (sameName ? '' : ` of ${orgName}`)
-    + ` will consider for adoption: ${upper(matter.title)}.`, { size: 11, after: 10 });
+    + ` will consider for adoption: ${upper(matter.title)}.`, { size: 11, after: 10, justify: true });
 
   if (matter.summary) doc.text(matter.summary, { size: 11, after: 10, justify: true });
 
   if (when) {
     doc.text(`Said proposed ordinance will be presented to the ${bodyName} for first reading `
-      + `on ${when}, at which time public testimony will be received.`, { size: 11, after: 10 });
+      + `on ${when}, at which time public testimony will be received.`, { size: 11, after: 10, justify: true });
   }
 
   const place = (meeting && meeting.location) || ORG.meetingLocation;
@@ -347,7 +347,7 @@ async function summaryForPublication(matter, meeting, opts = {}) {
   doc.text('Interested persons are encouraged to review the text of the proposed ordinance in '
     + `detail. A certified copy of the full text is on file in the ${ORG.clerkOffice || 'Office of the Clerk'}`
     + (opts.publicUrl ? `, and is also available online at ${opts.publicUrl}.` : '.'),
-  { size: 11, after: 10 });
+  { size: 11, after: 10, justify: true });
 
   if (opts.authority) doc.text(`This summary is published pursuant to ${opts.authority}.`, { size: 11, after: 10, justify: true });
 

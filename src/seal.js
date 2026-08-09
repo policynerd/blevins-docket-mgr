@@ -80,7 +80,11 @@ function sealSvg({ size = 96, ground = 'dark', legend, counter, center } = {}) {
   const name = String(legend == null ? ORG.name : legend);
   const sub = String(counter == null ? (ORG.primaryBodyType || ORG.tagline || '') : counter);
   const cipher = String(center == null ? initials(ORG.name) : center);
-  const glyph = String(ORG.seal || '★').slice(0, 1);
+  // The first Unicode code point, not the first UTF-16 code unit — ORG.seal
+  // is admin-editable, and a non-BMP glyph (an emoji, say) is two code units;
+  // slicing one of them corrupts it into a lone surrogate that renders as a
+  // replacement character.
+  const glyph = Array.from(String(ORG.seal || '★'))[0] || '★';
 
   // On a dark ground the device is brass and the field is left open, so the
   // rail shows through; on paper it is navy on white.

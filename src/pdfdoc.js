@@ -98,8 +98,11 @@ class Doc {
   // Reserve vertical space, breaking to a new page when it will not fit.
   // The footnote band reserved on this page (if any) counts as part of the
   // bottom margin, so body text stops above it rather than running through it.
-  need(h) {
-    if (this.y - h < this.margin.bottom + this.footnoteReserve) this.newPage();
+  // `extra` is space a caller is about to reserve but has not queued yet —
+  // text() uses it for a line's own footnote, so the page is chosen with that
+  // note's height already accounted for, not after the line is already drawn.
+  need(h, extra = 0) {
+    if (this.y - h < this.margin.bottom + this.footnoteReserve + extra) this.newPage();
   }
 
   font(style) {
@@ -178,12 +181,37 @@ class Doc {
     const hanging = opts.hanging || 0;
     const color = opts.color || INK;
     const width = this.contentW - indent - (opts.rightIndent || 0);
-    const lines = this.wrap(str, { width: width - hanging, size, font });
+    // wrap() treats each `\n`-delimited segment as its own paragraph, but it
+    // returns one flat array of lines with the breaks discarded. Wrapping
+    // each paragraph separately here, instead of the whole string at once,
+    // costs nothing (same lines come back) but lets every paragraph's own
+    // final line — not only the block's last line overall — go unjustified.
+    const lines = [];
+    const paraEnds = new Set();
+    for (const para of String(str == null ? '' : str).split('\n')) {
+      const wrapped = this.wrap(para, { width: width - hanging, size, font });
+      for (const l of wrapped) lines.push(l);
+      if (wrapped.length) paraEnds.add(lines.length - 1);
+    }
     const spaceW = font.widthOfTextAtSize(' ', size);
 
     lines.forEach((line, i) => {
-      this.need(lead);
-      const isLastLine = i === lines.length - 1;
+      const lineWords = line ? line.split(' ') : [];
+      // A note registered by this line has to be counted before need()
+      // decides whether the line itself fits — otherwise a marker landing
+      // near the bottom margin can leave its line on a page with no room
+      // left for the note, and the band save() draws later overlaps it.
+      let noteExtra = 0;
+      if (opts.notes) {
+        for (const word of lineWords) {
+          const { marker } = splitMarker(word);
+          if (marker && opts.notes[marker] != null) {
+            noteExtra += this._footnoteLines(marker, opts.notes[marker]).length * 10.5;
+          }
+        }
+      }
+      this.need(lead, noteExtra);
+      const isLastLine = i === lines.length - 1 || paraEnds.has(i);
       const extra = i === 0 ? 0 : hanging;
       // The line was wrapped against `width - hanging` regardless of which
       // line it is (wrap() has no way to know a line's own indent), but a
@@ -192,7 +220,7 @@ class Doc {
       // wider target, rather than the narrower one it was broken against,
       // is what makes every line's right edge land on the same rule.
       const lineTargetW = i === 0 ? width : width - hanging;
-      const words = line ? line.split(' ') : [];
+      const words = lineWords;
       const startX = this.margin.left + indent + extra;
       let x = startX;
 
@@ -251,6 +279,15 @@ class Doc {
     return this;
   }
 
+  // The lines a footnote will actually draw as, at the band's own size and
+  // width — used both to size the reserve before the note is queued and to
+  // draw the band in save(), so the two never disagree about how tall a note
+  // is. A citation long enough to wrap gets the extra lines it needs rather
+  // than the reserve silently understating it.
+  _footnoteLines(num, note) {
+    return this.wrap(`${num}. ${note}`, { width: this.contentW, size: 7.5, font: this.f.sans });
+  }
+
   // Register a footnote against the page currently being drawn on. Called
   // mid-line from text(), so `this.page` is already whichever physical page
   // the marker landed on.
@@ -258,11 +295,7 @@ class Doc {
     const list = this.pageNotes.get(this.page) || [];
     list.push({ num, note });
     this.pageNotes.set(this.page, list);
-    // Fixed height per note: these are short citations, one line each. A note
-    // long enough to wrap would understate its own reserve — acceptable here
-    // given what these five documents actually cite, but worth knowing if a
-    // future note runs long.
-    this.footnoteReserve += 11;
+    this.footnoteReserve += this._footnoteLines(num, note).length * 10.5;
   }
 
   heading(str, opts = {}) {
@@ -348,15 +381,20 @@ class Doc {
     for (const [page, notes] of this.pageNotes) {
       const prev = this.page;
       this.page = page;
-      const bandTop = this.margin.bottom + notes.length * 10.5;
+      const noteLines = notes.map((n) => this._footnoteLines(n.num, n.note));
+      const totalLines = noteLines.reduce((sum, ls) => sum + ls.length, 0);
+      const bandTop = this.margin.bottom + totalLines * 10.5;
       this.page.drawLine({
         start: { x: this.margin.left, y: bandTop },
         end: { x: this.margin.left + 130, y: bandTop },
         thickness: 0.5, color: RULE,
       });
-      notes.forEach((n, idx) => {
-        this.at(this.margin.left, bandTop - 9 - idx * 10.5, `${n.num}. ${n.note}`,
-          { size: 7.5, style: 'sans', color: MUTED });
+      let row = 0;
+      noteLines.forEach((ls) => {
+        ls.forEach((lineText) => {
+          this.at(this.margin.left, bandTop - 9 - row * 10.5, lineText, { size: 7.5, style: 'sans', color: MUTED });
+          row += 1;
+        });
       });
       this.page = prev;
     }

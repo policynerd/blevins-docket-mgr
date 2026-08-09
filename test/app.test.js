@@ -1509,6 +1509,23 @@ test('seal: the cipher is built from the words that carry the name', () => {
   assert.equal(seal.initials(''), 'BG');
 });
 
+test('seal: the flank ornament takes a full Unicode code point, not one UTF-16 code unit', () => {
+  const seal = require('../src/seal');
+  const { ORG } = require('../src/org');
+  const prev = ORG.seal;
+  try {
+    // An emoji outside the Basic Multilingual Plane is two UTF-16 code
+    // units. Slicing the first unit alone yields a lone surrogate, which
+    // renders as a replacement character rather than the glyph.
+    ORG.seal = '\u{1F3DB}️'; // classical building emoji
+    const svg = seal.sealSvg({ size: 96 });
+    assert.ok(svg.includes('\u{1F3DB}'), 'the ornament glyph was cut to a lone surrogate');
+    assert.ok(!svg.includes('�'), 'a replacement character leaked into the seal');
+  } finally {
+    ORG.seal = prev;
+  }
+});
+
 test('seal: the legend is escaped, not interpolated', () => {
   const seal = require('../src/seal');
   // The legend is the organisation name, which is admin-editable.
@@ -1687,4 +1704,56 @@ test('typesetting: a footnote registered on a later page prints on that page, no
   const hasNote = (page) => page.some((r) => r.text.includes('Second-page'));
   assert.ok(!hasNote(pages[0]), 'the footnote leaked onto the first page');
   assert.ok(pages.slice(1).some(hasNote), 'the footnote never appeared on any later page');
+});
+
+test('typesetting: a marker landing near the bottom margin reserves its note\'s space before choosing the page', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  const lead = 11 * 1.32;
+  // Positioned so the line itself clears the bare bottom margin (fits with no
+  // reserve) but not the margin plus its own note's one-line height. If the
+  // reserve is counted only after the line is admitted — i.e. too late — this
+  // line stays on page one and the note band save() draws later overlaps it.
+  doc.y = doc.margin.bottom + lead + 4;
+  const pagesBefore = doc.pages.length;
+  // At this y the bare line fits (y - lead clears margin.bottom): only
+  // counting its note's height ahead of time pushes it to a new page.
+  assert.ok(doc.y - lead >= doc.margin.bottom, 'test setup: the line should fit by margin alone');
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: 'A note that must not overlap the line above it.' } });
+  assert.equal(doc.pages.length, pagesBefore + 1,
+    'the footnoted line was drawn on a page with no room left for its own note');
+});
+
+test('typesetting: a paragraph break exempts that paragraph\'s own last line from justification, not only the block\'s', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  // A short line ending the first paragraph, followed by a second paragraph —
+  // if only the very last line of the whole block is exempt, this short line
+  // gets stretched across the full measure.
+  doc.text('Short end.\nA second paragraph long enough that it wraps onto more than one line by itself.',
+    { size: 11, justify: true });
+  const bytes = await doc.save();
+  const runs = pdfWordRuns(bytes)[0];
+  const end = runs.find((r) => r.text === 'end.');
+  const shortLineY = end.y;
+  const shortLineWords = runs.filter((r) => Math.abs(r.y - shortLineY) < 0.5);
+  const lastWord = shortLineWords[shortLineWords.length - 1];
+  const rightEdge = lastWord.x + 20; // Times-Roman width of "end." at 11pt is well under 20pt
+  const marginRight = doc.margin.left + doc.contentW;
+  assert.ok(rightEdge < marginRight - 30,
+    'a paragraph-final short line was stretched toward the full measure');
+});
+
+test('typesetting: a footnote long enough to wrap reserves and draws more than one line', async () => {
+  const { Doc } = require('../src/pdfdoc');
+  const doc = await Doc.create({});
+  const longNote = 'A citation long enough that, set at the footnote size across the page\'s '
+    + 'content width, it cannot possibly fit on a single line and must wrap onto at least a second one.';
+  doc.text('A cited clause^1.', { size: 11, notes: { 1: longNote } });
+  const reserveAfterOneLine = 10.5;
+  assert.ok(doc.footnoteReserve > reserveAfterOneLine * 1.5,
+    'a long footnote reserved space for only one line');
+  const bytes = await doc.save();
+  const text = await pdfText(bytes);
+  assert.match(text, /content width/, 'the wrapped tail of the long note was not printed');
 });
