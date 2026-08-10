@@ -223,3 +223,35 @@ export const contributions = pgTable(
   },
   (t) => [index('contributions_milestone_idx').on(t.milestoneId)],
 );
+
+/**
+ * The contributor's working copy.
+ *
+ * A contribution is a copy of a milestone that someone outside the drafting
+ * team edits. Their edits land here, one row per document, and never touch the
+ * live text: the whole point of sending a copy is that an external reviewer
+ * cannot alter the record, only propose against a fixed snapshot of it.
+ *
+ * `xml` starts as the bytes the milestone froze and diverges as they work.
+ * Merging is a separate, deliberate act by someone who holds the pen, and it
+ * goes through the ordinary save path, so a merged change is an ordinary
+ * version with an ordinary author — the person who accepted it.
+ */
+export const contributionDocuments = pgTable(
+  'contribution_documents',
+  {
+    contributionId: uuid('contribution_id')
+      .notNull()
+      .references(() => contributions.id, { onDelete: 'cascade' }),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    /** What the milestone froze, for showing what the contributor started from. */
+    baseVersionId: uuid('base_version_id')
+      .notNull()
+      .references(() => documentVersions.id, { onDelete: 'restrict' }),
+    xml: text('xml').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.contributionId, t.documentId] })],
+);

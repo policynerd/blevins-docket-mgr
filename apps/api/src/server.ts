@@ -21,6 +21,14 @@ import {
   versionLabel,
 } from './service.ts';
 import { documents, proposals } from '@blevins/db';
+import {
+  contributionContents,
+  editContribution,
+  listContributions,
+  mergeContribution,
+  sendForContribution,
+  submitContribution,
+} from './contributions.ts';
 
 /**
  * Identify the caller.
@@ -195,6 +203,55 @@ export function buildServer(db: Db): FastifyInstance {
     const { label } = CreateMilestone.parse(req.body);
     const milestone = await createMilestone(db, { proposalId: id, label, userId: user.id });
     return reply.code(201).send(milestone);
+  });
+
+  app.get('/milestones/:id/contributions', async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return listContributions(db, id);
+  });
+
+  app.post('/milestones/:id/contributions', async (req, reply) => {
+    const user = await requireUser(db, req);
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const { targetEmail } = z.object({ targetEmail: z.string().email() }).parse(req.body);
+    const c = await sendForContribution(db, { milestoneId: id, targetEmail, userId: user.id });
+    return reply.code(201).send(c);
+  });
+
+  app.get('/contributions/:id/documents', async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return contributionContents(db, id);
+  });
+
+  app.patch('/contributions/:id/documents/:documentId/elements/:elementId', async (req) => {
+    const user = await requireUser(db, req);
+    const { id, documentId, elementId } = z
+      .object({
+        id: z.string().uuid(),
+        documentId: z.string().uuid(),
+        elementId: z.string().min(1).max(64),
+      })
+      .parse(req.params);
+    const { value } = z.object({ value: z.string() }).parse(req.body);
+    return editContribution(db, {
+      contributionId: id,
+      documentId,
+      elementId,
+      value,
+      userId: user.id,
+    });
+  });
+
+  app.post('/contributions/:id/submit', async (req) => {
+    const user = await requireUser(db, req);
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return submitContribution(db, id, user.id);
+  });
+
+  app.post('/contributions/:id/merge', async (req) => {
+    const user = await requireUser(db, req);
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return mergeContribution(db, id, user.id);
   });
 
   app.get('/milestones/:id/documents', async (req) => {
