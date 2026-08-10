@@ -43,6 +43,37 @@ test('the display face loads rather than silently falling back', async () => {
   );
 });
 
+test('body copy sets in the document face, borrowing no punctuation from the system', async () => {
+  // Denton Text carries the whole of printable ASCII, so a line dense with
+  // punctuation must draw entirely in embedded faces. The Sterling trial
+  // cannot do this — no parenthesis, semicolon or hyphen — and a document that
+  // borrows those from the system is visibly setting in two typefaces.
+  //
+  // Asserted as "no system font present" rather than "one font used". Chromium
+  // splits a single embedded face into several subsets — the em dash lands in
+  // its own — so counting fonts, or counting the ids pdf.js assigns them,
+  // reports two faces where there is one typeface.
+  const punctuated =
+    '<doc name="EXPL_MEMORANDUM"><mainBody><aknP>' +
+    'Section 4(a); see also thirty (30) days — per Stanton-Blevins, "as adopted".' +
+    '</aknP></mainBody></doc>';
+  const bytes = await renderPdf({
+    body: punctuated,
+    stylesheets: ['act.css', 'tokens.css', 'denton.css'],
+  });
+
+  const raw = Buffer.from(bytes);
+  assert.ok(raw.includes('/Type3'), 'the document face was not embedded at all');
+  // Chromium writes a system face as a named TrueType subset; an embedded one
+  // has no such name. Any of these appearing means a glyph fell through.
+  for (const system of ['Liberation', 'DejaVu', 'Nimbus', 'FreeSerif']) {
+    assert.ok(
+      !raw.includes(system),
+      `${system} appears in the output — a glyph fell back to a system face`,
+    );
+  }
+});
+
 test('a page that asks for no display face embeds none', async () => {
   // Guards the check itself: if every render carried an embedded face, the
   // assertion above would hold whether or not the stylesheet did anything.

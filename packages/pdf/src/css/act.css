@@ -57,7 +57,17 @@
 
 /* ----------------------------------------------------------- typography ---- */
 
-akomaNtoso {
+/* The document root.
+ *
+ * toHtml() emits the document's own root element and no `akomaNtoso`
+ * envelope, so this list names the roots that actually appear. Keeping
+ * `akomaNtoso` in it costs nothing and covers a caller who supplies a whole
+ * serialized document. */
+body,
+akomaNtoso,
+bill,
+doc,
+documentCollection {
   display: block;
   font-family:
     'Times New Roman',
