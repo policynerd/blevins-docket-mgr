@@ -109,8 +109,11 @@ export const documentVersions = pgTable(
     documentId: uuid('document_id')
       .notNull()
       .references(() => documents.id, { onDelete: 'cascade' }),
-    // LEOS labels versions v<major>.<minor>.<patch>; a milestone bumps major,
-    // an ordinary save bumps minor.
+    // Versions are labelled v<major>.<minor>.<patch>. Today every save bumps
+    // `minor` and nothing bumps `major` — LEOS raises major at a milestone,
+    // and we do not yet. The columns exist so that becoming true later is a
+    // behaviour change rather than a migration; until then this comment is
+    // the contract, and it says minor-only.
     major: integer('major').notNull().default(0),
     minor: integer('minor').notNull().default(1),
     patch: integer('patch').notNull().default(0),
@@ -174,12 +177,19 @@ export const milestoneDocuments = pgTable(
     milestoneId: uuid('milestone_id')
       .notNull()
       .references(() => milestones.id, { onDelete: 'cascade' }),
+    // Deliberately no cascade, on either reference.
+    //
+    // Cascading from `documents` would be a back door around the restrict on
+    // `versionId`: deleting a document would erase its milestone_documents
+    // rows first, and the document->versions cascade would then be free to
+    // delete the very bytes a milestone had frozen. The protection has to sit
+    // on both edges or it sits on neither.
     documentId: uuid('document_id')
       .notNull()
-      .references(() => documents.id, { onDelete: 'cascade' }),
+      .references(() => documents.id, { onDelete: 'restrict' }),
     versionId: uuid('version_id')
       .notNull()
-      .references(() => documentVersions.id),
+      .references(() => documentVersions.id, { onDelete: 'restrict' }),
   },
   (t) => [primaryKey({ columns: [t.milestoneId, t.documentId] })],
 );

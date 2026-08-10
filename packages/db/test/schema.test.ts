@@ -185,3 +185,32 @@ test('a version cannot be pinned by a milestone and then deleted out from under 
     'a version referenced by a milestone was deletable',
   );
 });
+
+test('a milestone cannot be voided by deleting the document out from under it', async () => {
+  const user = await seedUser();
+  const proposal = await seedProposal(user.id);
+  const doc = await seedDocument(proposal.id);
+  const [version] = await db
+    .insert(documentVersions)
+    .values({ documentId: doc.id, xml: '<a/>', contentHash: hash('<a/>'), createdBy: user.id })
+    .returning();
+  const [milestone] = await db
+    .insert(milestones)
+    .values({ proposalId: proposal.id, label: 'Circulated', createdBy: user.id })
+    .returning();
+  await db
+    .insert(milestoneDocuments)
+    .values({ milestoneId: milestone!.id, documentId: doc.id, versionId: version!.id });
+
+  // Guarding only the version reference leaves a back door: deleting the
+  // document would clear milestone_documents first, and the document->versions
+  // cascade would then be free to delete the very bytes the milestone froze.
+  await assert.rejects(
+    () => db.delete(documents).where(sql`${documents.id} = ${doc.id}`),
+    /violates foreign key/i,
+    'a document referenced by a milestone was deletable, taking the frozen bytes with it',
+  );
+
+  const survivors = await db.select().from(documentVersions);
+  assert.equal(survivors.length, 1, 'the frozen version was destroyed');
+});

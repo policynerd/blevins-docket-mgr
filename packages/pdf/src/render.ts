@@ -59,8 +59,22 @@ export function findChromium(): string | undefined {
  * the browser is started once and reused. It is deliberately *not* torn down
  * per render — call `shutdown()` when the process is ending.
  */
+let launching: Promise<Browser> | null = null;
+
 async function browser(): Promise<Browser> {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
+  // Two renders starting at once would otherwise both see no browser and both
+  // launch one; the second assignment wins and the first process is orphaned,
+  // unreachable by shutdown(). Sharing the in-flight promise means the losers
+  // wait for the winner instead of starting their own.
+  if (launching) return launching;
+  launching = launchBrowser().finally(() => {
+    launching = null;
+  });
+  return launching;
+}
+
+async function launchBrowser(): Promise<Browser> {
   sharedBrowser = await chromium.launch({
     executablePath: findChromium(),
     args: [
@@ -93,6 +107,16 @@ export interface RenderOptions {
   extraCss?: string;
   /** Document title, written into the PDF metadata. */
   title?: string;
+  /**
+   * HTML for the running header on continuation pages.
+   *
+   * Page one carries its letterhead in the document flow; every page after it
+   * gets this instead. Supplied as markup rather than assembled here because
+   * what belongs in a running head — a roster, a session, a draft marker — is
+   * the caller's business, and this package deliberately knows nothing about
+   * the vocabulary it is typesetting.
+   */
+  runningHead?: string;
 }
 
 /**
@@ -113,27 +137,52 @@ export async function renderPdf(options: RenderOptions): Promise<Uint8Array> {
 <title>${escapeHtml(options.title ?? 'Document')}</title>
 <style>${css}</style>
 </head>
-<body>${options.body}</body>
+<body>${options.runningHead ? `<div class="running-head">${options.runningHead}</div>` : ''}${options.body}</body>
 </html>`;
 
   const page = await (await browser()).newPage();
   try {
     await page.setContent(html, { waitUntil: 'load' });
 
+    // Fonts first. Paged.js decides where every page breaks by measuring laid
+    // out text, so paginating before the faces are ready measures fallback
+    // metrics and then never revisits the decision — the breaks come out
+    // subtly wrong and nothing reports an error.
+    await page.evaluate(() => document.fonts.ready);
+
+    // Register the completion hook *before* the polyfill loads: it auto-runs
+    // on injection, and a hook installed afterwards would be registered
+    // against a run that has already started.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        PagedConfig?: { auto?: boolean; after?: () => void };
+        __pagedDone?: boolean;
+      };
+      w.__pagedDone = false;
+      w.PagedConfig = {
+        auto: true,
+        after: () => {
+          w.__pagedDone = true;
+        },
+      };
+    });
+
     // Paged.js is injected *after* the content is in place: it paginates
     // whatever is in the DOM at the moment it runs, so loading it first would
     // paginate an empty body.
     await page.addScriptTag({ path: PAGEDJS_PATH });
 
-    // `window.PagedPolyfill` resolves when pagination has finished. Without
-    // this wait, `page.pdf()` can capture the document mid-pagination and
-    // emit a single enormous page or a half-laid-out one.
+    // Wait for Paged.js to say it has finished, not for evidence that it has
+    // started. The first `.pagedjs_page` appears while pagination is still
+    // running, so treating it as the signal lets `page.pdf()` capture a
+    // document whose later pages are missing or half laid out — and a
+    // legislative instrument that silently loses its last pages is the worst
+    // failure this renderer could have.
     await page.waitForFunction(
-      () => document.querySelectorAll('.pagedjs_page').length > 0,
+      () => (window as unknown as { __pagedDone?: boolean }).__pagedDone === true,
       undefined,
-      { timeout: 30_000 },
+      { timeout: 60_000 },
     );
-    await page.evaluate(() => document.fonts.ready);
 
     // Paged.js has already drawn the page boxes, margins and running content
     // into the DOM at real physical dimensions. Chromium must therefore add

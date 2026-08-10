@@ -218,3 +218,42 @@ test('a missing proposal is a 404, not a 500', async () => {
   });
   assert.equal(res.statusCode, 404);
 });
+
+test('a malformed request is a 400, not an internal error', async () => {
+  const res = await app.inject({ method: 'GET', url: '/proposals/not-a-uuid' });
+  assert.equal(res.statusCode, 400, res.body);
+  assert.match(res.json().error, /invalid request/i);
+});
+
+test('the guidance proof is not public, though the export itself is', async () => {
+  const proposal = await newProposal();
+
+  // The record is public.
+  const plain = await app.inject({ method: 'GET', url: `/proposals/${proposal.id}/export.pdf` });
+  assert.equal(plain.statusCode, 200);
+
+  // The drafting instructions are not.
+  const anon = await app.inject({
+    method: 'GET',
+    url: `/proposals/${proposal.id}/export.pdf?guidance=true`,
+  });
+  assert.equal(anon.statusCode, 401, 'an anonymous caller was handed the guidance proof');
+
+  const asDrafter = await app.inject({
+    method: 'GET',
+    url: `/proposals/${proposal.id}/export.pdf?guidance=true`,
+    headers: asClerk(),
+  });
+  assert.equal(asDrafter.statusCode, 200, asDrafter.body.slice(0, 120));
+});
+
+test('guidance=false does not turn guidance on', async () => {
+  const proposal = await newProposal();
+  // z.coerce.boolean() follows JS truthiness, so the string "false" would
+  // coerce to true — an opt-out that silently opts in.
+  const res = await app.inject({
+    method: 'GET',
+    url: `/proposals/${proposal.id}/export.pdf?guidance=false`,
+  });
+  assert.equal(res.statusCode, 200, 'guidance=false was treated as a request for guidance');
+});

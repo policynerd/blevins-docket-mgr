@@ -64,3 +64,77 @@ container[name='mark'] {
   background-position: center top;
   background-size: contain;
 }
+
+/* ------------------------------------------------- continuation header ---- */
+
+/*
+ * The Board's agenda template carries two headers, not one: the first page
+ * shows the full letterhead with the officers, and every page after it shows
+ * the governors, the mark, and the session it belongs to — plus a DRAFT marker
+ * while the document is unadopted.
+ *
+ * That second header is the one that matters for a document read out of order.
+ * A page pulled from the middle of a packet has to say which meeting it
+ * belongs to and whether it is final; a page that only repeats the roster
+ * says neither.
+ *
+ * `position: running()` lifts the element out of the flow so it is not printed
+ * where it sits, and `element()` places it in the top margin of each page.
+ * Suppressed on the first page, which already carries the full letterhead in
+ * the flow.
+ */
+
+.running-head {
+  position: running(runhead);
+}
+
+@page {
+  @top-center {
+    content: element(runhead);
+    /* Enough room for two roster columns beside the mark. */
+    height: 76pt;
+    vertical-align: top;
+  }
+}
+
+@page :first {
+  @top-center {
+    content: none;
+  }
+}
+
+.running-head container[name='masthead'] {
+  /* The continuation header runs narrower in the centre: 2341 / 4758 / 2261
+     twips against the first page's 2046 / 5339 / 1975. */
+  grid-template-columns: 25% 50.8% 24.2%;
+  margin-bottom: 0;
+}
+
+.running-head container[name='session'] {
+  display: block;
+  text-align: right;
+  font-size: 7.5pt;
+  line-height: 1.18;
+}
+
+.running-head container[name='session'] docProponent {
+  display: block;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.running-head container[name='session'] docTitle {
+  display: block;
+  font-style: italic;
+  margin-bottom: 5pt;
+}
+
+/* An unadopted instrument says so on every page after the first. A draft that
+   only admits it on page one is a draft that gets filed as final. */
+.running-head container[name='session'] docStage {
+  display: block;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  margin-bottom: 4pt;
+}

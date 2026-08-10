@@ -43,10 +43,16 @@ function toNodes(entries: readonly OrderedNode[]): AknNode[] {
 
       if (name === TEXT_KEY) {
         const raw = String(value);
-        // Whitespace between block elements is layout noise from pretty-printed
-        // source, not content. Whitespace *inside* mixed content is meaningful
-        // (the space before an inline note) — so only wholly-blank runs go.
-        if (raw.trim() !== '') out.push(text(raw));
+        // Every non-empty run is kept, including one that is only whitespace.
+        //
+        // The previous rule dropped blank runs as pretty-printing noise, but
+        // this parser is generic — it has no way to know whether the run sits
+        // between two blocks or between two inline elements. In
+        // `<b>Hello</b> <i>world</i>` the blank run is the only separator
+        // there is, and dropping it renders "Helloworld". Extra whitespace
+        // between blocks collapses in CSS and costs nothing; a missing space
+        // between words is a corrupted document.
+        if (raw !== '') out.push(text(raw));
         continue;
       }
 

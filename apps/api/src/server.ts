@@ -65,6 +65,16 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.setErrorHandler((err: unknown, _req, reply) => {
+    // A malformed uuid or an empty title is the caller's mistake. Left to fall
+    // through, Zod's error carries no statusCode and is reported as an
+    // internal failure — which tells the caller nothing and makes a bad
+    // request look like a broken server.
+    if (err instanceof z.ZodError) {
+      return reply.code(400).send({
+        error: 'Invalid request',
+        details: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
+    }
     if (err instanceof NotFound) return reply.code(404).send({ error: err.message });
     if (err instanceof Conflict) return reply.code(409).send({ error: err.message });
 
@@ -106,8 +116,20 @@ export function buildServer(db: Db): FastifyInstance {
 
   app.get('/proposals/:id/export.pdf', async (req, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    const { guidance } = z.object({ guidance: z.coerce.boolean().default(false) }).parse(req.query);
-    const pdf = await exportProposal(db, id, { guidance });
+    // Not z.coerce.boolean(): it follows JavaScript truthiness, so the string
+    // "false" coerces to true and the opt-out silently opts in.
+    const { guidance } = z
+      .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
+      .parse(req.query);
+    const wantsGuidance = guidance === 'true' || guidance === '1';
+
+    // The export itself is public — it is the record. The guidance proof is
+    // not: it carries instructions written to whoever holds the pen, which the
+    // ordinary export deliberately hides. Handing that to an anonymous caller
+    // would publish exactly what the stylesheet exists to withhold.
+    if (wantsGuidance) await requireUser(db, req);
+
+    const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
     return reply
       .header('content-type', 'application/pdf')
       .header('content-disposition', `inline; filename="${id}.pdf"`)

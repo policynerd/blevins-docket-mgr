@@ -216,3 +216,55 @@ test('ids: freshly minted identifiers are valid XML names and do not collide', (
     seen.add(id);
   }
 });
+
+test('html: elements the browser would act on are rendered inert', () => {
+  // AKN is an open vocabulary and element names are emitted verbatim, so
+  // anything an editor can put in the tree becomes a real tag. The renderer
+  // drives a Chromium launched without a sandbox; a document must not be able
+  // to make it execute or fetch.
+  const xml =
+    '<?xml version="1.0"?><akomaNtoso><bill name="ORDINANCE"><aknBody>' +
+    '<script>alert(1)</script>' +
+    '<iframe src="https://example.com/x"></iframe>' +
+    '<img src="https://example.com/tracker.png" alt="t"/>' +
+    '<aknP>Enacted text</aknP>' +
+    '</aknBody></bill></akomaNtoso>';
+  const html = toHtml(parse(xml, 'LEGAL_ACT'));
+
+  for (const tag of ['<script', '<iframe', '<img']) {
+    assert.ok(!html.includes(tag), `${tag} survived into the rendered HTML`);
+  }
+  // Neutralised, not deleted: silently dropping a provision is worse than
+  // printing an inert one.
+  assert.match(html, /akn-script/);
+  assert.ok(html.includes('Enacted text'), 'sibling content was lost');
+});
+
+test('html: URL attributes that reach the network or execute are dropped', () => {
+  const xml =
+    '<?xml version="1.0"?><akomaNtoso><bill name="ORDINANCE"><aknBody>' +
+    '<ref href="javascript:alert(1)">a</ref>' +
+    '<ref href="https://example.com/x">b</ref>' +
+    '<ref href="//example.com/x">c</ref>' +
+    '<ref href="#ecInternal">d</ref>' +
+    '</aknBody></bill></akomaNtoso>';
+  const html = toHtml(parse(xml, 'LEGAL_ACT'));
+
+  assert.ok(!html.includes('javascript:'), 'a javascript: URL survived');
+  assert.ok(!html.includes('https://example.com'), 'an outbound URL survived');
+  assert.ok(!html.includes('//example.com'), 'a protocol-relative URL survived');
+  // A fragment resolves inside the document and reaches nothing.
+  assert.match(html, /href="#ecInternal"/);
+});
+
+test('parse: the only space between two inline elements survives', () => {
+  // A generic parser cannot tell a blank run between blocks from the single
+  // separator between inline runs. Dropping it renders "Helloworld".
+  const xml =
+    '<?xml version="1.0"?><akomaNtoso><bill name="ORDINANCE"><aknBody>' +
+    '<aknP xml:id="p"><b xml:id="b">Hello</b> <i xml:id="i">world</i></aknP>' +
+    '</aknBody></bill></akomaNtoso>';
+  const html = toHtml(parse(xml, 'LEGAL_ACT'));
+  assert.ok(!/<\/b><i/.test(html), 'the separating space was dropped between inline runs');
+  assert.match(html, /<\/b>\s<i/);
+});

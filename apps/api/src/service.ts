@@ -13,6 +13,7 @@ import { parse, toHtml, type DocType } from '@blevins/akn';
 import { mergePdfs, renderPdf } from '@blevins/pdf';
 
 import { findTemplate } from './templates.ts';
+import { runningHead, type MeetingContext } from './letterhead.ts';
 
 export const contentHash = (xml: string) => createHash('sha256').update(xml).digest('hex');
 
@@ -186,9 +187,12 @@ export async function saveDocument(
  * Freeze the current state of every document as a milestone.
  *
  * Pins version ids rather than copying bytes, so taking a milestone is cheap
- * and still exact, and bumps each document's major version the way LEOS does —
- * a milestone is the visible boundary between one round of drafting and the
- * next.
+ * and still exact.
+ *
+ * It does not bump the major version. LEOS does, and the columns are there for
+ * it, but nothing here raises `major` and the next save only increments
+ * `minor` — so versions stay v0.x.0 across milestones. Said plainly because
+ * the alternative is a comment describing behaviour the code does not have.
  */
 export async function createMilestone(
   db: Db,
@@ -232,7 +236,7 @@ export async function createMilestone(
 export async function exportProposal(
   db: Db,
   proposalId: string,
-  opts: { guidance?: boolean } = {},
+  opts: { guidance?: boolean; meeting?: MeetingContext } = {},
 ): Promise<Uint8Array> {
   const proposal = await getProposal(db, proposalId);
   // Letterhead belongs on the parts that are read as correspondence from the
@@ -254,6 +258,8 @@ export async function exportProposal(
         body: toHtml(parse(version.xml, doc.docType as DocType)),
         title: `${proposal.ref} — ${doc.title}`,
         stylesheets: sheetsFor(doc.docType),
+        // Only the parts that carry letterhead carry its continuation form.
+        ...(LETTERHEAD.includes(doc.docType) ? { runningHead: runningHead(opts.meeting) } : {}),
       }),
     );
   }

@@ -37,14 +37,28 @@ core so a clerk's office can run its docket without a commercial license:
   agendas and recorded votes) so every screen is populated.
 - **Public portal + clerk admin + Web API** in one small codebase.
 
+## Where things are
+
+The application currently serving production lives in **`legacy/`** and runs
+unchanged. The rebuild — an Akoma Ntoso document model, structured
+multi-document proposals, and browser-grade PDF export — lives in `apps/` and
+`packages/` and is not deployable yet: it needs a larger VM (it drives
+Chromium) and a PostgreSQL attachment.
+
 ## Requirements
 
-- Node.js **≥ 22.5** (for the built-in `node:sqlite` module).
+- Node.js **≥ 22.5**
+- pnpm (pinned by `packageManager` in `package.json`)
+- PostgreSQL 16, for the rebuild's tests
+- Chromium, for PDF rendering — `pnpm exec playwright install chromium`
 
-## Run it
+## Run the production application
 
 ```bash
-npm start          # starts the server on http://localhost:3000
+cd legacy
+npm ci
+npm start          # http://localhost:3000
+npm run reset      # rebuild the demo data
 ```
 
 Then open:
@@ -53,19 +67,17 @@ Then open:
 - Clerk admin — http://localhost:3000/admin
 - JSON Web API — http://localhost:3000/api/v1
 
-To rebuild the demo data from scratch:
+Set a custom port with `PORT=8080 npm start`. The database defaults to
+`./data/docket.db`; override with `DOCKET_DB` to point at a mounted volume.
+
+## Work on the rebuild
 
 ```bash
-npm run reset
-```
-
-Set a custom port with `PORT=8080 npm start`.
-
-The database location defaults to `./data/docket.db`. Override it with the
-`DOCKET_DB` environment variable (handy for pointing at a mounted volume):
-
-```bash
-DOCKET_DB=/data/docket.db npm start
+pnpm install
+export DATABASE_URL=postgres://localhost:5432/blevins
+pnpm db:migrate
+pnpm typecheck
+pnpm test
 ```
 
 ## Configuration

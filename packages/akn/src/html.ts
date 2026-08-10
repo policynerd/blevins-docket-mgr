@@ -78,16 +78,93 @@ const RENDERED_ATTRS = new Set([
   'class',
 ]);
 
+/**
+ * Element names that the browser treats as executable or as a network fetch.
+ *
+ * AKN is an open vocabulary and this renderer emits element names verbatim,
+ * which is what lets the stylesheet own the vocabulary. The cost is that
+ * anything an editor can put in the document tree becomes a real HTML tag —
+ * so `<script>`, `<iframe>` or an `<img src>` pointing anywhere would be
+ * executed or fetched by the Chromium that renders the export.
+ *
+ * These names are neutralised rather than dropped: the content stays visible
+ * in the document (silently deleting a provision is worse than showing an
+ * inert one), but it is emitted under a prefixed name the browser has no
+ * behaviour for.
+ */
+const ACTIVE_ELEMENTS = new Set([
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'applet',
+  'link',
+  'meta',
+  'base',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+  'option',
+  'style',
+  'svg',
+  'math',
+  'audio',
+  'video',
+  'source',
+  'track',
+  'portal',
+  'frame',
+  'frameset',
+  'noscript',
+  'template',
+  'slot',
+  'img',
+  'picture',
+  'canvas',
+  'marquee',
+  'dialog',
+]);
+
+/**
+ * A URL safe to leave in a rendered attribute.
+ *
+ * Anything that can execute (`javascript:`), carry a payload (`data:`), or
+ * reach the network from inside the renderer is refused. The renderer runs
+ * Chromium without a sandbox; a document should not be able to make it fetch.
+ */
+function safeUrl(value: string): string | null {
+  const trimmed = value.trim();
+  // Fragment references resolve inside the document and reach nothing.
+  if (trimmed.startsWith('#')) return trimmed;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  // Protocol-relative (`//host`) is a network fetch wearing a relative face.
+  if (trimmed.startsWith('//')) return null;
+  return null;
+}
+
 function renderNode(node: AknNode): string {
   if (!isElement(node)) return escapeText(node.text);
   if (IGNORED_ELEMENTS.has(node.name)) return '';
 
-  const tag = ELEMENT_RENAMES[node.name] ?? node.name;
+  const renamed = ELEMENT_RENAMES[node.name] ?? node.name;
+  // An element the browser would act on is emitted under a name it has no
+  // behaviour for. Prefixed rather than dropped so the text still prints.
+  const active = ACTIVE_ELEMENTS.has(renamed.toLowerCase());
+  const tag = active ? `akn-${renamed.toLowerCase()}` : renamed;
 
   const attrs: string[] = [];
   if (node.id) attrs.push(`id="${escapeAttr(node.id)}"`);
   for (const [key, value] of Object.entries(node.attrs)) {
-    if (RENDERED_ATTRS.has(key)) attrs.push(`${key}="${escapeAttr(value)}"`);
+    if (!RENDERED_ATTRS.has(key)) continue;
+    if (key === 'href' || key === 'src') {
+      const url = safeUrl(value);
+      if (url === null) continue;
+      attrs.push(`${key}="${escapeAttr(url)}"`);
+      continue;
+    }
+    attrs.push(`${key}="${escapeAttr(value)}"`);
   }
 
   const open = attrs.length ? `${tag} ${attrs.join(' ')}` : tag;
