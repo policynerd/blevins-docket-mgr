@@ -42,10 +42,21 @@
   --color-amber: #c9743a;
   --color-amber-dim: #faf0e8;
 
-  /* Type. Denton for documents, Sterling for interface. */
-  --font-display: 'Denton', Georgia, serif;
-  --font-text: 'Denton Text', Georgia, 'Times New Roman', serif;
-  --font-ui: 'FT Sterling', Calibri, Arial, system-ui, sans-serif;
+  /* Type.
+   *
+   * System faces, deliberately. The Board's own filed documents are set in
+   * them — the board letter in Times New Roman with Arial and Calibri, the
+   * ordinance entirely in Arial, the meeting notice in Georgia — and a
+   * document that will be filed, quoted and photocopied is better served by a
+   * face every reader and every printer already has than by a distinctive
+   * one. It also drops about 640KB of embedded fonts from every PDF and
+   * removes a licensing question from the critical path.
+   *
+   * The brand still shows where brand belongs: the seal and the lockup on the
+   * letterhead, which are artwork and unaffected by this. */
+  --font-display: 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-text: 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-ui: Arial, Helvetica, 'Liberation Sans', sans-serif;
 
   --text-xs: 11px;
   --text-sm: 13px;

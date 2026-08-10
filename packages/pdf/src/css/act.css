@@ -69,11 +69,7 @@ bill,
 doc,
 documentCollection {
   display: block;
-  font-family:
-    'Times New Roman',
-    Times,
-    Liberation Serif,
-    serif;
+  font-family: var(--font-text);
   font-size: 12pt;
   line-height: 1.25;
   text-align: justify;
@@ -313,6 +309,7 @@ tblock {
 }
 
 tblock > num {
+  font-family: var(--font-ui);
   display: inline-block;
   font-weight: bold;
   min-width: 2.4em;
@@ -320,6 +317,7 @@ tblock > num {
 }
 
 tblock > heading {
+  font-family: var(--font-ui);
   display: inline;
   font-weight: bold;
   text-transform: none;

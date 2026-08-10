@@ -13,10 +13,8 @@ for (const d of tpl.documents) {
       body: toHtml(parse(d.xml, d.docType)),
       title: d.title,
       stylesheets: [
-        'act.css',
         'tokens.css',
-        'denton.css',
-        'sterling.css',
+        'act.css',
         ...(['COVER_PAGE', 'EXPL_MEMORANDUM'].includes(d.docType) ? ['masthead.css'] : []),
         ...(withGuidance ? ['guidance.css'] : []),
       ],
