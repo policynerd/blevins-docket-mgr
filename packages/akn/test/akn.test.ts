@@ -240,21 +240,34 @@ test('html: elements the browser would act on are rendered inert', () => {
   assert.ok(html.includes('Enacted text'), 'sibling content was lost');
 });
 
-test('html: URL attributes that reach the network or execute are dropped', () => {
+test('html: the only URLs kept are document fragments', async () => {
+  const hostile = [
+    'javascript:alert(1)',
+    'https://example.com/x',
+    '//example.com/x',
+    'HtTpS://example.com/x',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'https://trusted.example#https://example.com',
+    '/absolute/path',
+    'relative/path',
+  ];
   const xml =
     '<?xml version="1.0"?><akomaNtoso><bill name="ORDINANCE"><aknBody>' +
-    '<ref href="javascript:alert(1)">a</ref>' +
-    '<ref href="https://example.com/x">b</ref>' +
-    '<ref href="//example.com/x">c</ref>' +
-    '<ref href="#ecInternal">d</ref>' +
+    hostile.map((h, i) => `<ref xml:id="h${i}" href="${h}">x</ref>`).join('') +
+    '<ref xml:id="ok" href="#ecInternal">d</ref>' +
     '</aknBody></bill></akomaNtoso>';
-  const html = toHtml(parse(xml, 'LEGAL_ACT'));
 
-  assert.ok(!html.includes('javascript:'), 'a javascript: URL survived');
-  assert.ok(!html.includes('https://example.com'), 'an outbound URL survived');
-  assert.ok(!html.includes('//example.com'), 'a protocol-relative URL survived');
-  // A fragment resolves inside the document and reaches nothing.
-  assert.match(html, /href="#ecInternal"/);
+  // Asserted against the parsed attributes rather than substrings of the
+  // serialised HTML: a substring check answers "does this text appear", which
+  // is not the same question as "what will the browser fetch", and gets the
+  // answer wrong for a host that merely contains an allowed one.
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM(`<!doctype html><body>${toHtml(parse(xml, 'LEGAL_ACT'))}</body>`);
+  const hrefs = [...dom.window.document.querySelectorAll('[href]')].map((el) =>
+    el.getAttribute('href'),
+  );
+
+  assert.deepEqual(hrefs, ['#ecInternal'], `a non-fragment URL survived: ${hrefs.join(', ')}`);
 });
 
 test('parse: the only space between two inline elements survives', () => {

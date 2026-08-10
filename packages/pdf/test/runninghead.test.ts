@@ -1,7 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderPdf, shutdown } from '../src/render.ts';
+import { launchCount, renderPdf, shutdown } from '../src/render.ts';
 
 after(async () => {
   await shutdown();
@@ -79,49 +79,29 @@ test('a document with no running head prints none', async () => {
 test('concurrent first renders share one browser rather than orphaning one', async () => {
   await shutdown();
 
-  // Two renders starting together both find no browser. Without a shared
-  // in-flight launch they each start Chromium; the second assignment wins and
-  // the first process is left running with nothing able to close it.
-  const before = await chromiumProcessCount();
-  await Promise.all([
-    renderPdf({ body: '<doc name="EXPL_MEMORANDUM"><aknP>One</aknP></doc>' }),
-    renderPdf({ body: '<doc name="EXPL_MEMORANDUM"><aknP>Two</aknP></doc>' }),
-    renderPdf({ body: '<doc name="EXPL_MEMORANDUM"><aknP>Three</aknP></doc>' }),
-  ]);
-  const during = await chromiumProcessCount();
-  assert.equal(
-    during - before,
-    1,
-    `three concurrent first renders started ${during - before} browsers, not 1`,
+  // Three renders starting together all find no browser. Without a shared
+  // in-flight launch they each start Chromium; the last assignment wins and
+  // the earlier processes are left running with nothing able to close them.
+  const before = launchCount();
+  await Promise.all(
+    ['One', 'Two', 'Three'].map((n) =>
+      renderPdf({ body: `<doc name="EXPL_MEMORANDUM"><aknP>${n}</aknP></doc>` }),
+    ),
   );
 
-  await shutdown();
-  const after = await chromiumProcessCount();
-  assert.equal(after, before, 'shutdown() left a browser process behind');
+  assert.equal(
+    launchCount() - before,
+    1,
+    `three concurrent first renders started ${launchCount() - before} browsers, not 1`,
+  );
 });
 
-/**
- * Top-level Chromium processes.
- *
- * One browser is a whole tree of processes — zygote, GPU, one renderer per
- * page — so a plain name match counts six where there is one browser. Only
- * the top-level process lacks a `--type=` argument.
- */
-async function chromiumProcessCount(): Promise<number> {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  try {
-    const { stdout } = await promisify(execFile)('ps', ['-eo', 'args']);
-    return stdout.split('\n').filter((line) => {
-      // `chrome_crashpad_handler` lives beside the binary and contains the
-      // same path, so a substring match counts two crash handlers as two
-      // browsers. Require the executable to be exactly `chrome`.
-      if (!/chrome-linux\/chrome(\s|$)/.test(line)) return false;
-      // Renderer, GPU and zygote children all carry --type=; only the
-      // top-level browser process does not.
-      return !line.includes('--type=');
-    }).length;
-  } catch {
-    return 0;
-  }
-}
+test('a render after shutdown starts a browser again', async () => {
+  // The counter would also read 1 if the second and third renders had simply
+  // reused a browser started before this file ran, so the guarantee above only
+  // means something if a launch is still possible when none is connected.
+  await shutdown();
+  const before = launchCount();
+  await renderPdf({ body: '<doc name="EXPL_MEMORANDUM"><aknP>After</aknP></doc>' });
+  assert.equal(launchCount() - before, 1, 'no browser was started after shutdown');
+});

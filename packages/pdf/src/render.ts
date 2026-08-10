@@ -60,6 +60,20 @@ export function findChromium(): string | undefined {
  * per render — call `shutdown()` when the process is ending.
  */
 let launching: Promise<Browser> | null = null;
+let launches = 0;
+
+/**
+ * How many times a browser has actually been started.
+ *
+ * Exposed so the single-launch guarantee can be asserted directly. The
+ * alternative — counting Chromium processes in the process table — depends on
+ * how the platform names the binary (`chrome`, `chrome-headless-shell`) and
+ * on filtering out its renderer and crash-handler children, and it silently
+ * reports zero when any of that is wrong.
+ */
+export function launchCount(): number {
+  return launches;
+}
 
 async function browser(): Promise<Browser> {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
@@ -75,6 +89,7 @@ async function browser(): Promise<Browser> {
 }
 
 async function launchBrowser(): Promise<Browser> {
+  launches++;
   sharedBrowser = await chromium.launch({
     executablePath: findChromium(),
     args: [

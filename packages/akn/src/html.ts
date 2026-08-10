@@ -136,12 +136,14 @@ const ACTIVE_ELEMENTS = new Set([
  */
 function safeUrl(value: string): string | null {
   const trimmed = value.trim();
-  // Fragment references resolve inside the document and reach nothing.
-  if (trimmed.startsWith('#')) return trimmed;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
-  // Protocol-relative (`//host`) is a network fetch wearing a relative face.
-  if (trimmed.startsWith('//')) return null;
-  return null;
+  // An allowlist of exactly one shape, rather than a list of things to block.
+  //
+  // A document fragment resolves inside the page and reaches nothing, which
+  // is the only linking an exported PDF needs — a cross-reference to another
+  // provision. Everything else is refused without inspection: no scheme to
+  // classify, no host to compare, nothing to get subtly wrong. Blocklists of
+  // `javascript:` and `//host` invite exactly that kind of near-miss.
+  return /^#[\w.:-]+$/.test(trimmed) ? trimmed : null;
 }
 
 function renderNode(node: AknNode): string {
