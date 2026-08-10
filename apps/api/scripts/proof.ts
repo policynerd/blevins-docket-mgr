@@ -14,6 +14,7 @@ for (const d of tpl.documents) {
       title: d.title,
       stylesheets: [
         'act.css',
+        'sterling.css',
         ...(['COVER_PAGE', 'EXPL_MEMORANDUM'].includes(d.docType) ? ['masthead.css'] : []),
         ...(withGuidance ? ['guidance.css'] : []),
       ],

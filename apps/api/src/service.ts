@@ -245,6 +245,7 @@ export async function exportProposal(
   const LETTERHEAD: readonly string[] = ['COVER_PAGE', 'EXPL_MEMORANDUM'];
   const sheetsFor = (docType: string) => [
     'act.css',
+    'sterling.css',
     ...(LETTERHEAD.includes(docType) ? ['masthead.css'] : []),
     ...(opts.guidance ? ['guidance.css'] : []),
   ];
