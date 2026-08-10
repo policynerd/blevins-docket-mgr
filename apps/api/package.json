@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts"
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
+    "dev": "node --experimental-strip-types --no-warnings --watch src/main.ts",
+    "start": "node --experimental-strip-types --no-warnings src/main.ts"
   },
   "dependencies": {
     "@blevins/akn": "workspace:*",

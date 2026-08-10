@@ -23,3 +23,7 @@ dist/
 # Logs & OS cruft
 *.log
 .DS_Store
+
+# Next.js
+.next/
+apps/web/.env.local

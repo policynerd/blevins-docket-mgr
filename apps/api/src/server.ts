@@ -15,6 +15,8 @@ import {
   latestVersion,
   listMilestones,
   milestoneContents,
+  documentHtml,
+  editElement,
   saveDocument,
   versionLabel,
 } from './service.ts';
@@ -59,7 +61,7 @@ const CreateMilestone = z.object({ label: z.string().min(1) });
 
 export function buildServer(db: Db): FastifyInstance {
   const app = Fastify({
-    logger: false,
+    logger: process.env['API_LOG'] === '1' ? { level: 'info' } : false,
     // A legislative instrument can legitimately be large.
     bodyLimit: 20 * 1024 * 1024,
   });
@@ -159,6 +161,21 @@ export function buildServer(db: Db): FastifyInstance {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = SaveDocument.parse(req.body);
     const saved = await saveDocument(db, { documentId: id, ...body, userId: user.id });
+    return { id: saved.id, label: versionLabel(saved), contentHash: saved.contentHash };
+  });
+
+  app.get('/documents/:id/html', async (req) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    return documentHtml(db, id);
+  });
+
+  app.patch('/documents/:id/elements/:elementId', async (req) => {
+    const user = await requireUser(db, req);
+    const { id, elementId } = z
+      .object({ id: z.string().uuid(), elementId: z.string().min(1).max(64) })
+      .parse(req.params);
+    const { value } = z.object({ value: z.string() }).parse(req.body);
+    const saved = await editElement(db, { documentId: id, elementId, value, userId: user.id });
     return { id: saved.id, label: versionLabel(saved), contentHash: saved.contentHash };
   });
 

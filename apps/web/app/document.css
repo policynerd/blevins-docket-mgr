@@ -1,0 +1,167 @@
+/*
+ * The document, on screen.
+ *
+ * A screen counterpart to the export stylesheet: the same vocabulary-in-CSS
+ * approach, sized for a display rather than a page. What the drafter edits
+ * should look like what will print, so the measure, the hanging indents and
+ * the centred article headings are all kept.
+ */
+
+.paper {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-12) var(--space-16);
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.paper .akn {
+  font-family: var(--font-text);
+  font-size: 16px;
+  line-height: 1.5;
+  color: #000;
+  text-align: justify;
+  hyphens: none;
+}
+
+.akn bill,
+.akn doc,
+.akn documentCollection,
+.akn preface,
+.akn preamble,
+.akn mainBody,
+.akn aknBody,
+.akn container,
+.akn recitals,
+.akn recital,
+.akn article,
+.akn paragraph,
+.akn content,
+.akn tblock,
+.akn longTitle,
+.akn formula,
+.akn coverPage,
+.akn guidance {
+  display: block;
+}
+
+.akn aknP {
+  display: block;
+  margin: 0 0 0.6em;
+}
+
+.akn longTitle {
+  text-align: center;
+  margin-bottom: 1em;
+}
+.akn docStage {
+  display: block;
+}
+.akn docType {
+  display: block;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.akn docPurpose {
+  display: block;
+  font-weight: 700;
+}
+
+.akn formula[name='enactingFormula'] {
+  font-weight: 700;
+  margin: 1em 0;
+}
+
+.akn recital {
+  padding-left: 2.2em;
+  position: relative;
+  margin-bottom: 0.5em;
+}
+.akn recital > num {
+  position: absolute;
+  left: 0;
+  width: 2.2em;
+}
+
+.akn article {
+  margin: 1.2em 0;
+}
+.akn article > num,
+.akn article > heading {
+  display: block;
+  text-align: center;
+  font-weight: 700;
+}
+
+.akn paragraph {
+  padding-left: 2.2em;
+  position: relative;
+  margin-bottom: 0.5em;
+}
+.akn paragraph > num {
+  position: absolute;
+  left: 0;
+  width: 2.2em;
+}
+
+/* The board letter's numbered sections. */
+.akn tblock {
+  margin-top: 1.1em;
+}
+.akn tblock > num {
+  display: inline-block;
+  min-width: 2.2em;
+  font-weight: 700;
+  font-family: var(--font-ui);
+}
+.akn tblock > heading {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-family: var(--font-ui);
+}
+
+/* The masthead is letterhead; it belongs to the printed page, not the editor.
+   Showing it here would invite someone to try to edit it. */
+.akn container[name='masthead'] {
+  display: none;
+}
+
+/* ------------------------------------------------------------- editing ---- */
+
+.akn [data-editable] {
+  outline: none;
+  border-radius: var(--radius-xs);
+  transition: background 120ms;
+}
+.akn [data-editable]:hover {
+  background: var(--color-gold-dim);
+}
+.akn [data-editable]:focus {
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px var(--color-cobalt);
+}
+
+/* Drafting guidance, shown only when asked for — the same rule the export
+   stylesheet applies, inverted by a class rather than a separate sheet. */
+.akn guidance {
+  display: none;
+}
+.paper.show-guidance .akn guidance {
+  display: block;
+  color: var(--color-forest);
+  font-size: 0.82em;
+  font-family: var(--font-ui);
+  text-align: left;
+  margin: 0.3em 0 0.9em;
+}
+.paper.show-guidance .akn guidance::before {
+  content: '[';
+}
+.paper.show-guidance .akn guidance::after {
+  content: ']';
+}

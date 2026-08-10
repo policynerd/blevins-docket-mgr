@@ -9,7 +9,7 @@ import {
   proposals,
   type Db,
 } from '@blevins/db';
-import { parse, toHtml, type DocType } from '@blevins/akn';
+import { parse, serialize, setElementText, toHtml, type DocType } from '@blevins/akn';
 import { mergePdfs, renderPdf } from '@blevins/pdf';
 
 import { findTemplate } from './templates.ts';
@@ -315,4 +315,50 @@ export async function documentHistory(db: Db, documentId: string) {
     .from(documentVersions)
     .where(and(eq(documentVersions.documentId, documentId)))
     .orderBy(desc(documentVersions.createdAt));
+}
+
+/**
+ * Edit one element and save the result as a new version.
+ *
+ * The browser sends the provision's identifier and its new text, never a
+ * document. Round-tripping XML through the client would make every save a
+ * chance to lose a provision to a parser disagreement, and would let a bug in
+ * the editor rewrite parts of an instrument nobody was editing.
+ */
+export async function editElement(
+  db: Db,
+  input: { documentId: string; elementId: string; value: string; userId: string },
+) {
+  const [doc] = await db.select().from(documents).where(eq(documents.id, input.documentId));
+  if (!doc) throw new NotFound(`No document ${input.documentId}`);
+  const current = await latestVersion(db, doc.id);
+  if (!current) throw new NotFound(`Document ${input.documentId} has no content`);
+
+  let updated: string;
+  try {
+    const tree = parse(current.xml, doc.docType as DocType);
+    updated = serialize(setElementText(tree, input.elementId, input.value));
+  } catch (err) {
+    throw new Conflict((err as Error).message);
+  }
+
+  return saveDocument(db, {
+    documentId: doc.id,
+    xml: updated,
+    note: `Edited ${input.elementId}`,
+    userId: input.userId,
+  });
+}
+
+/** A document's current content, rendered for the editor. */
+export async function documentHtml(db: Db, documentId: string) {
+  const [doc] = await db.select().from(documents).where(eq(documents.id, documentId));
+  if (!doc) throw new NotFound(`No document ${documentId}`);
+  const version = await latestVersion(db, documentId);
+  if (!version) throw new NotFound(`Document ${documentId} has no content`);
+  return {
+    document: doc,
+    version: { id: version.id, label: versionLabel(version), contentHash: version.contentHash },
+    html: toHtml(parse(version.xml, doc.docType as DocType)),
+  };
 }
