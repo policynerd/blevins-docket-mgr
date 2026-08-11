@@ -16,6 +16,7 @@
 
 const { escapeHtml } = require('../util');
 const { sealSvg, dataUri } = require('../seal');
+const { ORG } = require('../org');
 
 const STYLE = `
   *, *::before, *::after { box-sizing: border-box; }
@@ -111,10 +112,19 @@ const STYLE = `
 `;
 
 function displayBoard(meeting) {
-  // Inlined as a data URI so the board has no second request to make. A wall
-  // display that renders its identity only after a follow-up fetch shows a
-  // blank rectangle to the room for as long as that takes.
-  const seal = dataUri(sealSvg({ size: 512, ground: 'dark' }));
+  // The Board's own seal when one has been supplied, otherwise the drawn one.
+  //
+  // The reversed artwork, not the black: this board is white on black, and a
+  // dark seal on a dark ground is a smudge. `logoLightUrl` is exactly the
+  // setting that exists for that, already used by the navy sidebar.
+  //
+  // The generated seal is inlined as a data URI so the board makes no second
+  // request; a supplied file is referenced by URL, because inlining a PNG of
+  // any real size into every render would cost more than the request saves.
+  const supplied = ORG.logoLightUrl || '';
+  const seal = supplied && !supplied.includes('"')
+    ? supplied
+    : dataUri(sealSvg({ size: 512, ground: 'dark' }));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

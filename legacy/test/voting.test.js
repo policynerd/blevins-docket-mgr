@@ -750,3 +750,36 @@ test('an open roll takes the board back from a closed result', () => {
   assert.equal(a.id, second, 'the board stayed on the finished item after the chair moved on');
   assert.equal(a.closed, false);
 });
+
+test('the board uses the Board own seal when one is supplied', () => {
+  const { meetingId } = newItem();
+  const meeting = repo.meetings.get(meetingId);
+
+  // Falls back to the drawn seal when no artwork is configured.
+  assert.match(displayViews.displayBoard(meeting), /--seal: url\("data:image\/svg/);
+
+  const org = require('../src/org');
+  const before = org.ORG.logoLightUrl;
+  try {
+    org.ORG.logoLightUrl = '/brand/seal-light.png';
+    const html = displayViews.displayBoard(meeting);
+    assert.match(html, /--seal: url\("\/brand\/seal-light\.png"\)/,
+      'the supplied seal was ignored');
+  } finally {
+    org.ORG.logoLightUrl = before;
+  }
+});
+
+test('a seal URL cannot break out of the CSS it sits in', () => {
+  const org = require('../src/org');
+  const before = org.ORG.logoLightUrl;
+  try {
+    // logoLightUrl is admin-editable, so it is attacker-adjacent: a quote would
+    // otherwise close the url() and let arbitrary CSS follow it.
+    org.ORG.logoLightUrl = '/x.png"); } body { display: none } :root { --x: url("';
+    const html = displayViews.displayBoard(repo.meetings.get(newItem().meetingId));
+    assert.ok(!html.includes('body { display: none }'), 'a seal URL injected CSS');
+  } finally {
+    org.ORG.logoLightUrl = before;
+  }
+});
