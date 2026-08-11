@@ -53,6 +53,32 @@ a:hover {
   flex: 1;
 }
 
+/* Who is signed in. Reserves its height while the answer is in flight so the
+   masthead does not jump once it arrives. */
+.session {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 1.6em;
+}
+.session-name {
+  font-size: var(--text-sm);
+  opacity: 0.85;
+}
+.session-action {
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 0.15em 0.75em;
+}
+.session-action:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
 main {
   max-width: 1180px;
   margin: 0 auto;

@@ -14,6 +14,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 
 import { buildServer } from '../src/server.ts';
+import { signedIn } from './helpers.ts';
 import { shutdown } from '@blevins/pdf';
 
 let db: Db;
@@ -44,7 +45,7 @@ beforeEach(async () => {
   userId = user!.id;
 });
 
-const asClerk = () => ({ 'x-user-id': userId });
+const asClerk = () => signedIn(userId);
 
 async function newProposal(title = 'An Ordinance Amending the Administrative Code') {
   const res = await app.inject({
@@ -181,13 +182,24 @@ test('writes require an identified user; reads of public record do not', async (
   });
   assert.equal(anonymous.statusCode, 401, 'an unidentified caller created a proposal');
 
+  // The build this replaced authenticated on this header alone. It must now
+  // carry no weight whatsoever: if it still did, everything below it in the
+  // stack would be reachable by anyone who can open a socket.
+  const header = await app.inject({
+    method: 'POST',
+    url: `/proposals/${proposal.id}/milestones`,
+    headers: { 'x-user-id': userId },
+    payload: { label: 'Header' },
+  });
+  assert.equal(header.statusCode, 401, 'the x-user-id header still authenticates');
+
   const forged = await app.inject({
     method: 'POST',
     url: `/proposals/${proposal.id}/milestones`,
-    headers: { 'x-user-id': '00000000-0000-0000-0000-000000000000' },
+    headers: signedIn('00000000-0000-0000-0000-000000000000'),
     payload: { label: 'Forged' },
   });
-  assert.equal(forged.statusCode, 401, 'an unknown user id was accepted');
+  assert.equal(forged.statusCode, 401, 'a session naming an unknown user was accepted');
 
   const read = await app.inject({ method: 'GET', url: `/proposals/${proposal.id}` });
   assert.equal(read.statusCode, 200, 'reading the record required credentials');

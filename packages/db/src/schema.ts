@@ -50,9 +50,26 @@ export const users = pgTable(
     email: text('email').notNull(),
     name: text('name').notNull(),
     organization: text('organization'),
+    /**
+     * The Entra object id, recorded the first time someone signs in.
+     *
+     * Sign-in matches on this before it matches on address, because an address
+     * is not an identity: people marry, change names, and get their mailbox
+     * renamed, and when that happens the authorship on every version they ever
+     * wrote must not silently detach and reattach to whoever inherits the old
+     * address. The oid never changes for the life of the account.
+     *
+     * Null until first sign-in, so a roster can be seeded ahead of anyone
+     * having logged in.
+     */
+    entraOid: text('entra_oid'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('users_email_key').on(sql`lower(${t.email})`)],
+  (t) => [
+    uniqueIndex('users_email_key').on(sql`lower(${t.email})`),
+    uniqueIndex('users_entra_oid_key').on(t.entraOid),
+  ],
 );
 
 export const proposals = pgTable(

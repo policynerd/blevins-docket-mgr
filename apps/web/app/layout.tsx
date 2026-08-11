@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { SessionBadge } from './session';
+
 import './globals.css';
 import './document.css';
 
@@ -19,6 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </a>
           <span className="spacer" />
           <a href="/">Proposals</a>
+          <SessionBadge />
         </header>
         <main>{children}</main>
       </body>

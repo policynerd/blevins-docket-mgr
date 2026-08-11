@@ -1,7 +1,18 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import cookie from '@fastify/cookie';
 import { eq } from 'drizzle-orm';
-import { users, type Db } from '@blevins/db';
+import { type Db } from '@blevins/db';
 import { z } from 'zod';
+
+import { entraConfig } from './entra.ts';
+import { sessionSecret } from './session.ts';
+import {
+  authOptions,
+  devLoginGuard,
+  registerAuth,
+  requireUser as requireSessionUser,
+  type OidcSeams,
+} from './auth.ts';
 
 import { TEMPLATES } from './templates.ts';
 import {
@@ -30,30 +41,6 @@ import {
   submitContribution,
 } from './contributions.ts';
 
-/**
- * Identify the caller.
- *
- * This is a placeholder, and deliberately a thin one: it maps an `x-user-id`
- * header to an existing row and rejects anything else. It is NOT a security
- * boundary — anyone who can reach the port can claim any id. Real
- * authentication (session or OIDC, with the identity signed) has to land
- * before this is exposed beyond a trusted network.
- *
- * It refuses to create users on the fly on purpose. Auto-provisioning from an
- * unauthenticated header would let a typo mint an account that then appears in
- * collaborator lists and authorship of versions, which is a mess to unpick
- * from a legislative record.
- */
-async function requireUser(db: Db, req: FastifyRequest) {
-  const id = req.headers['x-user-id'];
-  if (typeof id !== 'string' || id.length === 0) {
-    throw Object.assign(new Error('Missing x-user-id'), { statusCode: 401 });
-  }
-  const [user] = await db.select().from(users).where(eq(users.id, id));
-  if (!user) throw Object.assign(new Error('Unknown user'), { statusCode: 401 });
-  return user;
-}
-
 const CreateProposal = z.object({
   templateId: z.string().min(1),
   title: z.string().min(1),
@@ -67,12 +54,26 @@ const SaveDocument = z.object({
 
 const CreateMilestone = z.object({ label: z.string().min(1) });
 
-export function buildServer(db: Db): FastifyInstance {
+export function buildServer(
+  db: Db,
+  env: NodeJS.ProcessEnv = process.env,
+  seams: OidcSeams = {},
+): FastifyInstance {
   const app = Fastify({
-    logger: process.env['API_LOG'] === '1' ? { level: 'info' } : false,
+    logger: env['API_LOG'] === '1' ? { level: 'info' } : false,
     // A legislative instrument can legitimately be large.
     bodyLimit: 20 * 1024 * 1024,
   });
+
+  // Read before anything is served, so a deployment missing its signing key
+  // fails at startup rather than on the first sign-in attempt.
+  const secret = sessionSecret(env);
+  const auth = { ...authOptions(env, entraConfig(env)), secret };
+  devLoginGuard(auth, env);
+
+  const requireUser = (req: FastifyRequest) => requireSessionUser(db, secret, req);
+
+  app.register(cookie);
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     // A malformed uuid or an empty title is the caller's mistake. Left to fall
@@ -100,6 +101,8 @@ export function buildServer(db: Db): FastifyInstance {
 
   app.get('/health', async () => ({ ok: true }));
 
+  registerAuth(app, db, auth, seams);
+
   /** The template picker's tree. */
   app.get('/templates', async () =>
     TEMPLATES.map((t) => ({
@@ -113,7 +116,7 @@ export function buildServer(db: Db): FastifyInstance {
   app.get('/proposals', async () => db.select().from(proposals).orderBy(proposals.createdAt));
 
   app.post('/proposals', async (req, reply) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const body = CreateProposal.parse(req.body);
     const proposal = await createProposal(db, { ...body, userId: user.id });
     return reply.code(201).send(await getProposal(db, proposal.id));
@@ -137,7 +140,7 @@ export function buildServer(db: Db): FastifyInstance {
     // not: it carries instructions written to whoever holds the pen, which the
     // ordinary export deliberately hides. Handing that to an anonymous caller
     // would publish exactly what the stylesheet exists to withhold.
-    if (wantsGuidance) await requireUser(db, req);
+    if (wantsGuidance) await requireUser(req);
 
     const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
     return reply
@@ -165,7 +168,7 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.put('/documents/:id', async (req) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = SaveDocument.parse(req.body);
     const saved = await saveDocument(db, { documentId: id, ...body, userId: user.id });
@@ -178,7 +181,7 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.patch('/documents/:id/elements/:elementId', async (req) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id, elementId } = z
       .object({ id: z.string().uuid(), elementId: z.string().min(1).max(64) })
       .parse(req.params);
@@ -198,7 +201,7 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.post('/proposals/:id/milestones', async (req, reply) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const { label } = CreateMilestone.parse(req.body);
     const milestone = await createMilestone(db, { proposalId: id, label, userId: user.id });
@@ -211,7 +214,7 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.post('/milestones/:id/contributions', async (req, reply) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const { targetEmail } = z.object({ targetEmail: z.string().email() }).parse(req.body);
     const c = await sendForContribution(db, { milestoneId: id, targetEmail, userId: user.id });
@@ -224,7 +227,7 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.patch('/contributions/:id/documents/:documentId/elements/:elementId', async (req) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id, documentId, elementId } = z
       .object({
         id: z.string().uuid(),
@@ -243,13 +246,13 @@ export function buildServer(db: Db): FastifyInstance {
   });
 
   app.post('/contributions/:id/submit', async (req) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return submitContribution(db, id, user.id);
   });
 
   app.post('/contributions/:id/merge', async (req) => {
-    const user = await requireUser(db, req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return mergeContribution(db, id, user.id);
   });

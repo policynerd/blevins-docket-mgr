@@ -17,6 +17,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 
 import { buildServer } from '../src/server.ts';
+import { signedIn } from './helpers.ts';
 import { shutdown } from '@blevins/pdf';
 
 let db: Db;
@@ -52,7 +53,7 @@ beforeEach(async () => {
   outsider = rows[1]!.id;
 });
 
-const as = (id: string) => ({ 'x-user-id': id });
+const as = (id: string) => signedIn(id);
 
 /** A proposal with a milestone taken, ready to circulate. */
 async function circulated() {
