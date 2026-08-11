@@ -1,19 +1,16 @@
 name: Fly Deploy
 
-# Deploys the rebuild to beg-docket-manager, replacing the legacy application.
+# Deploys the drafting application to its own Fly app, alongside the existing
+# legislative management system rather than over it.
 #
-# Manual on purpose. This workflow used to run on every push to main, which was
-# safe while it shipped `legacy/` — a build that had been serving traffic for
-# months. It now replaces production with a stack that has never handled a real
-# request, and "merged a pull request" is not the same intent as "cut production
-# over". Restore the `push:` trigger once it has proven itself:
+# Manual on purpose: this has never handled a real request. Restore the `push:`
+# trigger once it has proven itself:
 #
 #   on:
 #     push:
 #       branches: [main]
 #     workflow_dispatch:
-#
-# To go back to the legacy application, run the "Fly Deploy (legacy)" workflow.
+
 on:
   workflow_dispatch:
 
@@ -40,11 +37,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          names=$(flyctl secrets list --app beg-docket-manager --json | jq -r '.[].Name')
+          names=$(flyctl secrets list --app blevins-drafting --json | jq -r '.[].Name')
           missing=0
           for required in SESSION_SECRET ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET APP_BASE_URL DATABASE_URL; do
             if ! grep -qx "$required" <<< "$names"; then
-              echo "::error::$required is not set on beg-docket-manager"
+              echo "::error::$required is not set on blevins-drafting"
               missing=1
             fi
           done
