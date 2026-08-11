@@ -590,3 +590,67 @@ test('the rule that governed a roll is recorded with it', () => {
   assert.equal(repo.eligibility.outcome(itemId).threshold, 'two_thirds',
     'an old vote was re-judged under a rule adopted afterwards');
 });
+
+/* --------------------------------------- the room and the record agree ---- */
+
+const live = require('../src/live');
+
+test('the live board projects the same outcome the close will record', () => {
+  // These were two separate implementations of the threshold, and they
+  // disagreed about recusal: the board divided the full seat count while the
+  // close divided the eligible members. A board reading "Passes" while the
+  // minutes record "Fail" is the worst possible failure for this system, and
+  // it is invisible until someone compares them.
+  const { itemId, meetingId } = newItem({ threshold: 'majority_full' });
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Yea');
+  appendAt(itemId, people[2], 'Recused');
+  appendAt(itemId, people[3], 'Recused');
+
+  const projected = live.snapshot(meetingId).active.projectedOutcome;
+  const recorded = repo.voteAdmin.closeRoll(itemId).result;
+
+  assert.equal(projected, 'Passes');
+  assert.equal(recorded, 'Pass', 'the board and the record disagreed');
+});
+
+test('the board reports eligibility, not just raw counts', () => {
+  const { itemId, meetingId } = newItem({ threshold: 'majority_full' });
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Recused');
+
+  const a = live.snapshot(meetingId).active;
+  assert.equal(a.present, 5);
+  assert.equal(a.recused, 1);
+  assert.equal(a.eligible, 4, 'the board still counts a recused member as eligible');
+  assert.equal(a.required, 3);
+  assert.equal(a.notVoted, 3);
+  assert.match(a.basis, /eligible/);
+});
+
+test('the board shows a clerk-entered vote as clerk-entered', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  repo.voteLedger.append(itemId, people[0], 'Yea', { source: 'MEMBER_TERMINAL' });
+  repo.voteLedger.append(itemId, people[1], 'Nay', { source: 'CLERK_ENTRY' });
+
+  const roster = live.snapshot(meetingId).active.roster;
+  assert.equal(roster.find((r) => r.person_id === people[0]).source, 'MEMBER_TERMINAL');
+  assert.equal(roster.find((r) => r.person_id === people[1]).source, 'CLERK_ENTRY');
+});
+
+test('the board counts the ledger, not the mutable projection', () => {
+  // The projection can be edited; the ledger cannot. What the room sees should
+  // come from the account of record.
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+
+  db.prepare('INSERT INTO votes (agenda_item_id, person_id, vote) VALUES (?,?,?)')
+    .run(itemId, people[1], 'Yea');
+
+  assert.equal(live.snapshot(meetingId).active.tally.Yea, 1,
+    'a row inserted straight into the projection appeared on the board');
+});

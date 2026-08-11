@@ -26,32 +26,15 @@ function snapshot(meetingId) {
 
   let active = null;
   if (open) {
-    const cast = repo.votes.forItem(open.id);
-    const castBy = {};
-    for (const v of cast) castBy[v.person_id] = v.vote;
-    const tally = repo.votes.tally(open.id);
-    const absentCount = tally.Absent || 0;
-    const presentCount = seatCount - absentCount;
-    const quorumMet = presentCount >= quorumNeeded;
-    const threshold = open.vote_threshold || 'majority';
-
-    let projectedOutcome;
-    if (!quorumMet) {
-      projectedOutcome = 'No quorum';
-    } else {
-      const yea = tally.Yea || 0;
-      const nay = tally.Nay || 0;
-      let passes;
-      if (threshold === 'two_thirds') {
-        const castVotes = yea + nay;
-        passes = castVotes > 0 && yea / castVotes >= 2 / 3;
-      } else if (threshold === 'majority_full') {
-        passes = yea > Math.floor(seatCount / 2);
-      } else {
-        passes = yea > nay;
-      }
-      projectedOutcome = passes ? 'Passes' : 'Fails';
-    }
+    // One arithmetic, shared with the close.
+    //
+    // This used to compute its own tally and threshold, which meant the board
+    // could project "Passes" while closing the roll recorded Fail — the two
+    // disagreeing about recusal, since only one of them removed a recused
+    // member from the denominator. The live view now asks the same function
+    // that decides the outcome, so the room and the record cannot diverge.
+    const o = repo.eligibility.outcome(open.id, { throughSeq: null });
+    const quorumMet = o.present >= quorumNeeded;
 
     active = {
       id: open.id,
@@ -63,15 +46,37 @@ function snapshot(meetingId) {
       seconder_id: open.seconder_id || null,
       mover: nameOf(open.mover_id),
       seconder: nameOf(open.seconder_id),
-      tally,
-      roster: members.map((m) => ({
-        person_id: m.person_id, name: m.full_name, vote: castBy[m.person_id] || null,
+      // Kept in the old shape so the existing client keeps rendering, with the
+      // counts now derived from the ledger rather than the mutable projection.
+      tally: {
+        Yea: o.yea,
+        Nay: o.nay,
+        Abstain: o.roll.filter((r) => r.choice === 'Abstain').length,
+        Present: o.roll.filter((r) => r.choice === 'Present').length,
+        Recused: o.recused,
+        Absent: o.seated - o.present,
+      },
+      roster: o.roll.map((r) => ({
+        person_id: r.person_id,
+        name: r.full_name,
+        vote: r.choice,
+        present: r.present,
+        changed: r.changed,
+        source: r.source || null,
       })),
       seatCount,
       quorumNeeded,
       quorumMet,
-      threshold,
-      projectedOutcome,
+      // What the room needs to see: who may vote, what it takes, and where the
+      // count stands against that.
+      present: o.present,
+      eligible: o.eligible,
+      recused: o.recused,
+      notVoted: o.notVoted,
+      required: o.required,
+      basis: o.basis,
+      threshold: o.threshold,
+      projectedOutcome: !quorumMet ? 'No quorum' : (o.passes ? 'Passes' : 'Fails'),
     };
   }
 

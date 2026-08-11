@@ -2553,6 +2553,10 @@ const eligibility = {
         person_id: p.id, full_name: p.full_name, district: p.district,
         attendance: att, present, recused, choice,
         changed: !!(ev && ev.supersedes_event_id),
+        // Shown, not hidden: a vote the clerk entered from the spoken roll is
+        // a different fact from one the member pressed, and the board should
+        // say which it is rather than presenting them identically.
+        source: ev ? ev.source : null,
       };
     });
 
