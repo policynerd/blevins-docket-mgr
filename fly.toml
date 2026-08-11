@@ -1,0 +1,55 @@
+# The rebuild, replacing the legacy application on this app.
+#
+# Non-secret configuration lives here rather than being set by hand, so a
+# machine that is rebuilt or a region that is added comes up configured. The two
+# real secrets — SESSION_SECRET and AZURE_CLIENT_SECRET — are set out of band
+# and deliberately absent from this file.
+#
+# The tenant and client ids are identifiers, not secrets: they travel in the
+# sign-in URL in plain sight on every request.
+
+app = 'beg-docket-manager'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  NODE_ENV = 'production'
+  APP_BASE_URL = 'https://app.blevinsholdings.com'
+  AZURE_TENANT_ID = '83ff87c7-db98-4775-939b-a58a5eb0f051'
+  AZURE_CLIENT_ID = 'fdf8499c-7535-4112-aa06-149d5be2c722'
+  # Next serves the public port; the API listens on loopback behind its rewrite.
+  PORT = '3100'
+  API_PORT = '3200'
+
+# Runs on a temporary machine before the new version takes traffic. A failure
+# here aborts the release, which is the point: a schema behind the code it
+# serves is worse than a deploy that did not happen.
+[deploy]
+  release_command = './scripts/release.sh'
+
+[http_service]
+  internal_port = 3100
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  # Kept warm. A cold start here is not just Node booting — the first export
+  # after a wake also pays for Chromium's first launch, and the Board opening
+  # the docket mid-meeting should not wait for that. Set to 0 to trade that
+  # latency for a lower bill.
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    # Through the rewrite, so a pass means Next is up *and* reaching the API.
+    # Checking Next alone would report healthy with a dead API behind it.
+    path = '/api/health'
+
+# Chromium is the reason for the size. A 256mb machine renders nothing.
+[[vm]]
+  size = 'shared-cpu-2x'
+  memory = '3072mb'

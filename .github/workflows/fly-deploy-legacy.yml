@@ -1,0 +1,50 @@
+name: Fly Deploy (legacy)
+
+# The way back.
+#
+# The rebuild now deploys to beg-docket-manager. If it misbehaves in production,
+# this puts the previous application back on the same app in one run, without
+# needing a revert commit or anyone's laptop.
+#
+# `legacy/` is otherwise untouched and still builds. Its SQLite volume
+# (docket_data) is not deleted by the rebuild's deploy — the rebuild simply does
+# not mount it — so the data it holds is still there when this runs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Module load smoke test
+        run: >
+          node --experimental-sqlite --no-warnings -e
+          "require('./src/repo');require('./src/views/pages');require('./src/views/admin');require('./src/views/org');require('./src/views/minutes');console.log('modules OK')"
+
+  deploy:
+    needs: smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy legacy to Fly
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
