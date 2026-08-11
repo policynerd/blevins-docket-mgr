@@ -356,3 +356,109 @@ test('a vote survives being recorded twice with the same value', () => {
   assert.equal(repo.voteLedger.current(itemId).size, 1);
   assert.equal(repo.voteLedger.verify(itemId).ok, true);
 });
+
+/* ------------------------------------------- the tally is as of the close ---- */
+
+/** Append an event with a chosen received_at, to stand in for a late arrival. */
+function appendAt(itemId, personId, choice, receivedAt) {
+  const r = repo.voteLedger.append(itemId, personId, choice);
+  db.prepare('UPDATE vote_events SET received_at = ? WHERE event_id = ?')
+    .run(receivedAt, r.eventId);
+  return r;
+}
+
+test('a vote received after the roll closed does not join the tally', () => {
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  appendAt(itemId, people[1], 'Yea', '2026-08-10T10:00:01.000Z');
+  repo.voteAdmin.closeRoll(itemId);
+  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
+    .run('2026-08-10T10:00:02.000Z', itemId);
+
+  const before = repo.eligibility.outcome(itemId);
+  assert.equal(before.yea, 2);
+
+  // A station retrying after the gavel. It happened, so it is recorded — but a
+  // settled vote cannot be moved by it.
+  appendAt(itemId, people[2], 'Nay', '2026-08-10T10:05:00.000Z');
+
+  const after = repo.eligibility.outcome(itemId);
+  assert.equal(after.yea, 2, 'a late arrival changed a closed tally');
+  assert.equal(after.nay, 0, 'a late Nay was counted');
+  assert.equal(after.result, before.result);
+});
+
+test('late arrivals are surfaced, not silently dropped', () => {
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  repo.voteAdmin.closeRoll(itemId);
+  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
+    .run('2026-08-10T10:00:02.000Z', itemId);
+  appendAt(itemId, people[1], 'Nay', '2026-08-10T11:00:00.000Z');
+
+  assert.equal(repo.eligibility.outcome(itemId).late, 1, 'the late event was hidden');
+  assert.equal(repo.voteLedger.late(itemId).length, 1);
+  // And it is still in the ledger, because it did happen.
+  assert.equal(repo.voteLedger.forItem(itemId).length, 2);
+});
+
+test('a closed tally recomputes to the same number however long after', () => {
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  appendAt(itemId, people[1], 'Nay', '2026-08-10T10:00:01.000Z');
+  appendAt(itemId, people[2], 'Yea', '2026-08-10T10:00:02.000Z');
+  repo.voteAdmin.closeRoll(itemId);
+  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
+    .run('2026-08-10T10:00:03.000Z', itemId);
+  const onTheDay = repo.eligibility.outcome(itemId);
+
+  // Months of later traffic against the same item.
+  appendAt(itemId, people[3], 'Nay', '2026-11-01T09:00:00.000Z');
+  appendAt(itemId, people[4], 'Nay', '2027-02-01T09:00:00.000Z');
+
+  const later = repo.eligibility.outcome(itemId);
+  assert.equal(later.yea, onTheDay.yea);
+  assert.equal(later.nay, onTheDay.nay);
+  assert.equal(later.result, onTheDay.result, 'the minutes and the system now disagree');
+});
+
+test('a change that arrives late cannot retract the vote that counted', () => {
+  // The subtle one: if a late event were allowed to supersede, it would erase
+  // the ballot it claims to replace while being ineligible to replace it —
+  // costing the member their vote entirely rather than leaving it standing.
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  repo.voteAdmin.closeRoll(itemId);
+  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
+    .run('2026-08-10T10:00:02.000Z', itemId);
+  appendAt(itemId, people[0], 'Nay', '2026-08-10T10:09:00.000Z');
+
+  const o = repo.eligibility.outcome(itemId);
+  assert.equal(o.yea, 1, 'the vote that counted was withdrawn by a late change');
+  assert.equal(o.nay, 0);
+});
+
+test('while the roll is open there is no bound', () => {
+  const { itemId } = newItem();
+  repo.voteLedger.append(itemId, people[0], 'Yea');
+  repo.voteLedger.append(itemId, people[1], 'Yea');
+  const o = repo.eligibility.outcome(itemId);
+  assert.equal(o.asOf, null, 'an open roll was computed against a closing instant');
+  assert.equal(o.yea, 2);
+});
+
+test('reopening lifts the bound so new votes count again', () => {
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  repo.voteAdmin.closeRoll(itemId);
+  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
+    .run('2026-08-10T10:00:02.000Z', itemId);
+  assert.equal(repo.eligibility.outcome(itemId).yea, 1);
+
+  repo.voteAdmin.reopen(itemId);
+  assert.equal(repo.meetings.getItem(itemId).vote_closed_at, null,
+    'the old close still bounds a reopened roll');
+
+  repo.voteLedger.append(itemId, people[1], 'Yea');
+  assert.equal(repo.eligibility.outcome(itemId).yea, 2, 'a vote after reopening did not count');
+});

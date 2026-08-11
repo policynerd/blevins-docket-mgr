@@ -136,20 +136,32 @@ function verifyChain(entries, key) {
 }
 
 /**
- * Reduce a chain to who currently stands where.
+ * Reduce a chain to who stands where, as of a moment.
  *
- * A member may vote more than once while the roll is open; the last event for
- * that member wins and the superseded ones stay in the ledger. This is the
- * only place that decision is made, so the live tally, the closing tally and
- * the minutes cannot disagree about it.
+ * `asOf` is what makes a closed vote reproducible. Events received after the
+ * roll closed are kept — they happened, and the ledger records what happened —
+ * but they do not count, so re-deriving a tally next year yields exactly the
+ * number that was read out on the day. Without the bound, a station retrying a
+ * request after the gavel silently joins a settled vote.
+ *
+ * Superseding is resolved within the window too. A member who changed their
+ * vote before the close has the later one counted; a "change" that arrived
+ * after it does not retroactively withdraw the vote that did count.
  */
-function currentChoices(entries) {
+function currentChoices(entries, { asOf = null } = {}) {
+  const inWindow = asOf
+    ? entries.filter((e) => String(e.received_at) <= String(asOf))
+    : entries;
+
+  // Only supersessions that themselves landed in the window may retract
+  // anything. Otherwise a late event would erase the vote it claims to
+  // replace while being ineligible to replace it — losing a valid ballot.
   const superseded = new Set();
-  for (const e of entries) {
+  for (const e of inWindow) {
     if (e.supersedes_event_id) superseded.add(e.supersedes_event_id);
   }
   const byPerson = new Map();
-  for (const e of entries) {
+  for (const e of inWindow) {
     if (superseded.has(e.event_id)) continue;
     const prior = byPerson.get(e.person_id);
     if (!prior || e.event_sequence > prior.event_sequence) byPerson.set(e.person_id, e);
@@ -157,7 +169,13 @@ function currentChoices(entries) {
   return byPerson;
 }
 
+/** Events the window excluded — shown, never silently dropped. */
+function lateEvents(entries, asOf) {
+  if (!asOf) return [];
+  return entries.filter((e) => String(e.received_at) > String(asOf));
+}
+
 module.exports = {
   GENESIS, CHOICES,
-  canonical, payloadHash, entryHash, sign, buildEntry, verifyChain, currentChoices,
+  canonical, payloadHash, entryHash, sign, buildEntry, verifyChain, currentChoices, lateEvents,
 };

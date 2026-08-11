@@ -2197,9 +2197,25 @@ const voteLedger = {
       .all(agendaItemId);
   },
 
-  /** The event a member's current position rests on, for each member. */
-  current(agendaItemId) {
-    return ledger.currentChoices(this.forItem(agendaItemId));
+  /**
+   * The event each member's position rests on, as of a moment.
+   *
+   * Defaults to the item's close when it has one, so a settled vote reports
+   * the number that was read out on the day however long afterwards it is
+   * asked for. While the roll is open there is no bound and the live tally
+   * simply reflects everything received so far.
+   */
+  current(agendaItemId, { asOf } = {}) {
+    const item = meetings.getItem(agendaItemId);
+    const bound = asOf !== undefined ? asOf : (item ? item.vote_closed_at : null);
+    return ledger.currentChoices(this.forItem(agendaItemId), { asOf: bound });
+  },
+
+  /** Events that arrived after the roll closed: recorded, counted by nothing. */
+  late(agendaItemId) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item || !item.vote_closed_at) return [];
+    return ledger.lateEvents(this.forItem(agendaItemId), item.vote_closed_at);
   },
 
   /**
@@ -2291,6 +2307,13 @@ const voteLedger = {
  * means the record asserts an outcome the Board has withdrawn.
  */
 const voteAdmin = {
+  /** Close the roll, stamping the instant the tally is defined against. */
+  closeRoll(itemId) {
+    db.prepare("UPDATE agenda_items SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?")
+      .run(itemId);
+    return meetings.getItem(itemId);
+  },
+
   /** Retract the outcome a close recorded, without touching the ballots. */
   retractOutcome(item, { reason, userId = null }) {
     meetings.setItemResult(item.id, item.action, null);
@@ -2323,6 +2346,11 @@ const voteAdmin = {
       if (it.vote_status === 'open') meetings.setVoteStatus(it.id, 'pending');
     }
     meetings.setVoteStatus(item.id, 'open');
+    // Reopening clears the close: the previous instant no longer bounds
+    // anything, and leaving it would make the live roll compute against a
+    // window that has already ended.
+    db.prepare("UPDATE agenda_items SET vote_opened_at = datetime('now'), vote_closed_at = NULL WHERE id = ?")
+      .run(item.id);
     return { reopened: wasClosed };
   },
 
@@ -2347,6 +2375,7 @@ const voteAdmin = {
     this.retractOutcome(item, { reason: clean, userId });
     votes.clearForItem(item.id);
     meetings.setVoteStatus(item.id, 'pending');
+    db.prepare('UPDATE agenda_items SET vote_closed_at = NULL WHERE id = ?').run(item.id);
     if (item.matter_id) {
       // The voiding is itself an act the record should show. A history that
       // simply loses the entry would read as though the vote never happened.
@@ -2379,7 +2408,7 @@ const eligibility = {
    * @returns {{seated:number, present:number, recused:number, eligible:number,
    *            notVoted:number, roll:Array}}
    */
-  forItem(agendaItemId) {
+  forItem(agendaItemId, opts = {}) {
     // getItem, not a bare SELECT: body_id is the meeting's, reaching the item
     // only through that join. Reading the row directly yields undefined and a
     // silently empty roll.
@@ -2396,7 +2425,10 @@ const eligibility = {
       db.prepare('SELECT person_id, status FROM attendance WHERE meeting_id = ?')
         .all(item.meeting_id).map((a) => [a.person_id, a.status]));
 
-    const standing = voteLedger.current(agendaItemId);
+    // No bound here on purpose: the roll shown to the clerk is what has been
+    // received. Whether a given event counts is decided by outcome(), against
+    // the close.
+    const standing = voteLedger.current(agendaItemId, { asOf: opts.asOf ?? null });
     const roll = seated.map((p) => {
       const att = attendance.get(p.id) || 'Present';
       const ev = standing.get(p.id);
@@ -2429,10 +2461,15 @@ const eligibility = {
    * only "Fail" cannot check the ruling, and the chair has to be able to state
    * the basis aloud.
    */
-  outcome(agendaItemId) {
-    const e = this.forItem(agendaItemId);
+  outcome(agendaItemId, { asOf } = {}) {
+    const item0 = meetings.getItem(agendaItemId);
+    if (!item0) return null;
+    // A closed vote is computed as of its close. Anything received later is
+    // kept in the ledger and excluded here, so the result cannot drift.
+    const bound = asOf !== undefined ? asOf : item0.vote_closed_at || null;
+    const e = this.forItem(agendaItemId, { asOf: bound });
     if (!e) return null;
-    const item = meetings.getItem(agendaItemId);
+    const item = item0;
     const threshold = item.vote_threshold || 'majority';
     const yea = e.roll.filter((r) => r.choice === 'Yea').length;
     const nay = e.roll.filter((r) => r.choice === 'Nay').length;
@@ -2452,6 +2489,8 @@ const eligibility = {
     }
     return {
       ...e, yea, nay, threshold, required, passes,
+      asOf: bound,
+      late: bound ? voteLedger.late(agendaItemId).length : 0,
       result: passes ? 'Pass' : 'Fail',
       basis: threshold === 'majority_full'
         ? `majority of ${e.eligible} eligible`

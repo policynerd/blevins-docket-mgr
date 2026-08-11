@@ -2102,10 +2102,12 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   // Eligibility-aware: a recused member is present but out of the denominator.
   // The previous arithmetic divided the full seat count for `majority_full`, so
   // recusing counted against the motion exactly as a No vote would.
+  // Stamp the close first: the tally is defined as of that instant, so it has
+  // to exist before the outcome is computed against it.
+  repo.voteAdmin.closeRoll(item.id);
   const outcome = repo.eligibility.outcome(item.id);
   const result = outcome.result;
   repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
-  repo.meetings.setVoteStatus(item.id, 'closed');
   // Reflect the outcome on the matter's legislative history.
   if (item.matter_id) {
     repo.matters.addHistory({

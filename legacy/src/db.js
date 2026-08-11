@@ -736,6 +736,14 @@ const COLUMN_MIGRATIONS = {
     // Defaults on: the packet is the record of what members were given, so an
     // item is included unless the clerk deliberately holds it back.
     in_packet: 'INTEGER NOT NULL DEFAULT 1',
+    // When the roll opened and closed, as timestamps rather than just a status.
+    //
+    // The tally is defined as of the close: events received after it are kept
+    // but do not count. Without a recorded instant there is nothing to compare
+    // them against, so a late arrival silently joins a settled vote and the
+    // same meeting re-rendered next year reports a different outcome.
+    vote_opened_at: 'TEXT',
+    vote_closed_at: 'TEXT',
   },
   matters: {
     body_html: 'TEXT',
