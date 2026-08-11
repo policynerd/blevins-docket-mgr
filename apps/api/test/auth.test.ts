@@ -7,11 +7,13 @@ import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyG
 import type { FastifyInstance } from 'fastify';
 
 import { buildServer, rateLimits } from '../src/server.ts';
-import { devLoginGuard, resolveUser } from '../src/auth.ts';
+import { authOptions, devLoginGuard, resolveUser } from '../src/auth.ts';
 import {
   EntraError,
   authorizeUrl,
   exchangeCode,
+  entraConfig,
+  logoutUrl,
   pkcePair,
   verifyIdToken,
   type EntraConfig,
@@ -265,6 +267,48 @@ describe('the authorization request', () => {
       () => exchangeCode(config, { code: 'c', verifier: 'v' }, fake),
       (e: Error) => e instanceof EntraError && !/AADSTS|correlation|onmicrosoft/.test(e.message),
     );
+  });
+});
+
+describe('the post-logout redirect', () => {
+  const base = (v: string) => authOptions({ APP_BASE_URL: v }, null).appBaseUrl;
+
+  test('a bare origin is sent in the form the Azure portal registers it', () => {
+    // The portal stores `https://host` as `https://host/`. Entra compares
+    // post_logout_redirect_uri against that list as a string, so sending the
+    // unslashed form fails to match — and fails *only* on sign-out, while
+    // sign-in keeps working and points suspicion everywhere but here.
+    assert.equal(base('https://app.blevinsholdings.com'), 'https://app.blevinsholdings.com/');
+    assert.equal(base('https://app.blevinsholdings.com/'), 'https://app.blevinsholdings.com/');
+  });
+
+  test('it reaches the logout URL in that same form', () => {
+    const config = entraConfig({
+      AZURE_TENANT_ID: 'tenant',
+      AZURE_CLIENT_ID: 'client',
+      AZURE_CLIENT_SECRET: 'secret',
+      APP_BASE_URL: 'https://app.blevinsholdings.com',
+    })!;
+    const sent = new URL(
+      logoutUrl(config, base('https://app.blevinsholdings.com')),
+    ).searchParams.get('post_logout_redirect_uri');
+    assert.equal(sent, 'https://app.blevinsholdings.com/');
+  });
+
+  test('the callback URI is unaffected by the slash either way', () => {
+    for (const v of ['https://app.blevinsholdings.com', 'https://app.blevinsholdings.com/']) {
+      const c = entraConfig({
+        AZURE_TENANT_ID: 't',
+        AZURE_CLIENT_ID: 'c',
+        AZURE_CLIENT_SECRET: 's',
+        APP_BASE_URL: v,
+      })!;
+      assert.equal(c.redirectUri, 'https://app.blevinsholdings.com/api/auth/callback');
+    }
+  });
+
+  test('a malformed base URL is refused at startup, not at sign-out', () => {
+    assert.throws(() => base('app.blevinsholdings.com'));
   });
 });
 

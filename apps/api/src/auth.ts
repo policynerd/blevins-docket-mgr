@@ -50,7 +50,19 @@ export function authOptions(
   const production = env['NODE_ENV'] === 'production';
   return {
     entra,
-    appBaseUrl: env['APP_BASE_URL'] ?? 'http://127.0.0.1:3100',
+    // Canonicalised, and this is load-bearing rather than tidiness.
+    //
+    // It ends up as `post_logout_redirect_uri`, which Entra matches against the
+    // registered redirect URIs *as a string*. The Azure portal stores a bare
+    // origin with a trailing slash — `https://host/` — and WHATWG URL
+    // serialisation produces exactly that form whether or not the configured
+    // value has one. Without this, whether sign-out works comes down to
+    // whether whoever set APP_BASE_URL happened to type a final slash, and the
+    // failure is nasty: sign-in works perfectly and only sign-out breaks, so
+    // nothing points at this variable.
+    //
+    // Throws on a malformed value, at startup, like the signing key does.
+    appBaseUrl: new URL(env['APP_BASE_URL'] ?? 'http://127.0.0.1:3100').toString(),
     secureCookies: env['INSECURE_COOKIES'] !== '1' && production,
     allowDevLogin: env['ALLOW_DEV_LOGIN'] === '1',
   };
