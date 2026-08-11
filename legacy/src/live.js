@@ -19,7 +19,16 @@ function snapshot(meetingId) {
   if (!meeting) return { meeting: null };
   const items = repo.meetings.items(meetingId);
   const members = repo.bodies.members(meeting.body_id);
-  const open = items.find((i) => i.vote_status === 'open') || null;
+  // The item before the body: the open roll if there is one, otherwise the
+  // most recently closed one that has a result.
+  //
+  // A board that empties the instant the gavel falls is a board that never
+  // shows the outcome, which is the moment the room is actually waiting for.
+  // A real chamber board holds the result up until the chair calls the next
+  // item, and so does this.
+  const open = items.find((i) => i.vote_status === 'open')
+    || [...items].reverse().find((i) => i.vote_status === 'closed' && i.result_computed_at)
+    || null;
 
   const seatCount = members.length;
   const quorumNeeded = seatCount ? Math.floor(seatCount / 2) + 1 : 0;
@@ -33,7 +42,14 @@ function snapshot(meetingId) {
     // disagreeing about recusal, since only one of them removed a recused
     // member from the denominator. The live view now asks the same function
     // that decides the outcome, so the room and the record cannot diverge.
-    const o = repo.eligibility.outcome(open.id, { throughSeq: null });
+    // Unbounded only while the roll is open — that is the live count. Once it
+    // is closed the board must show the official tally, bounded by the close,
+    // or the wall would report a different number from the minutes the moment
+    // a late ballot arrived.
+    const isOpen = open.vote_status === 'open';
+    const o = isOpen
+      ? repo.eligibility.outcome(open.id, { throughSeq: null })
+      : repo.eligibility.outcome(open.id);
     const quorumMet = o.present >= quorumNeeded;
 
     active = {
@@ -77,6 +93,13 @@ function snapshot(meetingId) {
       basis: o.basis,
       threshold: o.threshold,
       projectedOutcome: !quorumMet ? 'No quorum' : (o.passes ? 'Passes' : 'Fails'),
+      // Lifecycle, so the board can say "closed" and "certified" rather than
+      // inferring either from the presence of a number.
+      closed: o.closed,
+      result: open.result || null,
+      certified: !!open.result_certified_at,
+      published: !!open.result_published_at,
+      late: o.late,
     };
   }
 

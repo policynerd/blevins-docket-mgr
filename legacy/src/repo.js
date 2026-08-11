@@ -2370,6 +2370,12 @@ const voteAdmin = {
       SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?`).run(itemId);
 
     const outcome = eligibility.outcome(itemId);
+    // Persist the result here, where it is computed. It used to be set by the
+    // route instead, so closing the roll through the repo left the item with
+    // a computed timestamp and no outcome on it — and the board, which reads
+    // the item, showed a finished vote with no result.
+    meetings.setItemResult(itemId,
+      item.action || (item.motion_text ? 'Motion' : 'Vote taken'), outcome.result);
     db.prepare("UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?").run(itemId);
     voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
       agendaItemId: itemId, yea: outcome.yea, nay: outcome.nay,

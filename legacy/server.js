@@ -13,6 +13,7 @@ const feeds = require('./src/exports');
 const auth = require('./src/auth');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
+const displayViews = require('./src/views/display');
 const member = require('./src/views/member');
 const orgView = require('./src/views/org');
 const reportsView = require('./src/views/reports');
@@ -2056,6 +2057,20 @@ route('GET', /^\/live\/(\d+)$/, (req, res, ctx) => {
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, liveViews.publicLive(mt, ctx.user));
 });
+/**
+ * The chamber display.
+ *
+ * Public and unauthenticated, like the live view it shares a stream with: it
+ * shows the roll of a public body voting in a public meeting. It is served on
+ * its own route rather than as a mode of /live because it is a different
+ * medium — no navigation, no controls, nothing clickable, type sized for the
+ * back of the room.
+ */
+route('GET', /^\/display\/(\d+)$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, displayViews.displayBoard(mt));
+});
 route('GET', /^\/live\/(\d+)\/stream$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   if (!repo.meetings.get(id)) return sendJson(res, { error: 'Not found' }, 404);
@@ -2106,7 +2121,6 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   // to exist before the outcome is computed against it.
   const outcome = repo.voteAdmin.closeRoll(item.id, { userId: ctx.user ? ctx.user.id : null });
   const result = outcome.result;
-  repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
   // Reflect the outcome on the matter's legislative history.
   if (item.matter_id) {
     repo.matters.addHistory({

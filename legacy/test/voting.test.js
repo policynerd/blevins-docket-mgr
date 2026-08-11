@@ -654,3 +654,99 @@ test('the board counts the ledger, not the mutable projection', () => {
   assert.equal(live.snapshot(meetingId).active.tally.Yea, 1,
     'a row inserted straight into the projection appeared on the board');
 });
+
+/* --------------------------------------------------- the chamber display ---- */
+
+const displayViews = require('../src/views/display');
+
+test('the board carries the lifecycle, not just a number', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+
+  let a = live.snapshot(meetingId).active;
+  assert.equal(a.closed, false);
+  assert.equal(a.certified, false);
+
+  repo.voteAdmin.closeRoll(itemId);
+  // Closing ends the open roll, so the item is no longer "before the body".
+  // The board reads the item directly once it is closed.
+  const item = repo.meetings.getItem(itemId);
+  assert.ok(item.result_computed_at);
+  assert.equal(item.result_certified_at, null);
+
+  repo.voteAdmin.certify(itemId, { userId: null });
+  assert.ok(repo.meetings.getItem(itemId).result_certified_at);
+});
+
+test('the board renders without a stylesheet or a session', () => {
+  // It hangs on a wall in a public room. It must not depend on the app's
+  // navigation, on being signed in, or on /styles.css resolving.
+  const { meetingId } = newItem();
+  const meeting = repo.meetings.get(meetingId);
+  const html = displayViews.displayBoard(meeting);
+
+  assert.match(html, /<style>/, 'the board depends on an external stylesheet');
+  assert.ok(!/styles\.css/.test(html), 'the board pulls in the application stylesheet');
+  assert.ok(!/Sign-In|sidebar|sidenav/.test(html), 'the board carries application chrome');
+  assert.match(html, /data-meeting="\d+"/);
+});
+
+test('the board markup escapes the body name', () => {
+  const evilBody = repo.bodies.insert({ name: '<script>alert(1)</script>', type: 'Committee', seats: 1 });
+  const mid = repo.meetings.insert({ body_id: evilBody, meeting_date: '2026-08-10' });
+  const html = displayViews.displayBoard(repo.meetings.get(mid));
+  assert.ok(!html.includes('<script>alert(1)</script>'), 'the board interpolated markup unescaped');
+});
+
+test('the display client cannot send anything to the server', () => {
+  // Structural, not stylistic: a screen in a public room that can act is a
+  // screen a passer-by can act through.
+  const fs = require('node:fs');
+  const src = fs.readFileSync(require('node:path').join(__dirname, '../public/assets/display.js'), 'utf8');
+  for (const forbidden of ['fetch(', 'XMLHttpRequest', 'navigator.sendBeacon', '<form', 'method="post"']) {
+    assert.ok(!src.includes(forbidden), `the display client contains ${forbidden}`);
+  }
+});
+
+test('the board holds the result up after the roll closes', () => {
+  // A board that empties when the gavel falls never shows the outcome — the
+  // moment the room is actually waiting for.
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+
+  const a = live.snapshot(meetingId).active;
+  assert.ok(a, 'the board went blank the instant the vote closed');
+  assert.equal(a.closed, true);
+  assert.equal(a.result, 'Pass');
+});
+
+test('a closed board shows the official tally, not a running one', () => {
+  // Once closed, the wall and the minutes must report the same number even if
+  // a late ballot lands.
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+  appendAt(itemId, people[1], 'Nay');
+
+  const a = live.snapshot(meetingId).active;
+  assert.equal(a.tally.Nay, 0, 'a late ballot appeared on the board after the close');
+  assert.equal(a.late, 1, 'the late ballot was not surfaced');
+});
+
+test('an open roll takes the board back from a closed result', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  repo.voteAdmin.closeRoll(itemId);
+
+  const second = repo.meetings.addItem({ meeting_id: meetingId, title: 'Next item' });
+  repo.voteAdmin.openRoll(second);
+
+  const a = live.snapshot(meetingId).active;
+  assert.equal(a.id, second, 'the board stayed on the finished item after the chair moved on');
+  assert.equal(a.closed, false);
+});
