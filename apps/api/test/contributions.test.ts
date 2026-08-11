@@ -28,7 +28,7 @@ let outsider: string;
 
 before(async () => {
   ({ db, close } = connect());
-  app = buildServer(db);
+  app = await buildServer(db);
   await app.ready();
 });
 

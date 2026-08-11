@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
 import { eq } from 'drizzle-orm';
 import { type Db } from '@blevins/db';
 import { z } from 'zod';
@@ -54,11 +55,40 @@ const SaveDocument = z.object({
 
 const CreateMilestone = z.object({ label: z.string().min(1) });
 
-export function buildServer(
+/**
+ * Per-IP request ceilings.
+ *
+ * Three tiers, because the routes cost wildly different amounts:
+ *
+ *   - Sign-in is the credential surface. Guessing a session cookie or a state
+ *     value is hopeless at 20 tries a minute and merely tedious at 20,000, and
+ *     each callback also spends a request against Microsoft — so an open
+ *     callback is a way to have us hammer our own identity provider.
+ *   - Export starts a browser and lays out a document. A handful of concurrent
+ *     requests is real work; a hundred is the machine falling over. This is the
+ *     expensive one and the reason a global ceiling alone is not enough.
+ *   - Everything else is a database read.
+ *
+ * Deliberately generous rather than clever: the Board sits behind one office
+ * address, so a tight per-IP limit throttles the whole room at once.
+ */
+export function rateLimits(env: NodeJS.ProcessEnv) {
+  const read = (name: string, fallback: number) => {
+    const parsed = Number(env[name]);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  };
+  return {
+    global: read('RATE_LIMIT_MAX', 300),
+    auth: read('RATE_LIMIT_AUTH_MAX', 20),
+    export: read('RATE_LIMIT_EXPORT_MAX', 10),
+  };
+}
+
+export async function buildServer(
   db: Db,
   env: NodeJS.ProcessEnv = process.env,
   seams: OidcSeams = {},
-): FastifyInstance {
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: env['API_LOG'] === '1' ? { level: 'info' } : false,
     // A legislative instrument can legitimately be large.
@@ -72,8 +102,29 @@ export function buildServer(
   devLoginGuard(auth, env);
 
   const requireUser = (req: FastifyRequest) => requireSessionUser(db, secret, req);
+  const limits = rateLimits(env);
 
-  app.register(cookie);
+  await app.register(cookie);
+  // Awaited, and before any route is declared. The plugin attaches an onRoute
+  // hook to read each route's own ceiling, and a hook only sees routes
+  // registered after it — register this later and the per-route limits below
+  // are silently ignored while still looking present in the source.
+  await app.register(rateLimit, {
+    max: limits.global,
+    timeWindow: '1 minute',
+    // The platform's own health probe must not be able to exhaust the budget
+    // that real callers share.
+    allowList: (req) => req.url === '/health',
+    // `statusCode` is not decoration. The rejection travels through the error
+    // handler below, which reads that property to decide the response — leave
+    // it off and a throttled request is reported as an internal server error,
+    // which reads as "we are broken" rather than "you are going too fast" and
+    // sends the caller's retry logic down entirely the wrong path.
+    errorResponseBuilder: () => ({
+      statusCode: 429,
+      error: 'Too many requests. Try again shortly.',
+    }),
+  });
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     // A malformed uuid or an empty title is the caller's mistake. Left to fall
@@ -101,7 +152,7 @@ export function buildServer(
 
   app.get('/health', async () => ({ ok: true }));
 
-  registerAuth(app, db, auth, seams);
+  registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
 
   /** The template picker's tree. */
   app.get('/templates', async () =>
@@ -127,27 +178,31 @@ export function buildServer(
     return getProposal(db, id);
   });
 
-  app.get('/proposals/:id/export.pdf', async (req, reply) => {
-    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    // Not z.coerce.boolean(): it follows JavaScript truthiness, so the string
-    // "false" coerces to true and the opt-out silently opts in.
-    const { guidance } = z
-      .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
-      .parse(req.query);
-    const wantsGuidance = guidance === 'true' || guidance === '1';
+  app.get(
+    '/proposals/:id/export.pdf',
+    { config: { rateLimit: { max: limits.export, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      // Not z.coerce.boolean(): it follows JavaScript truthiness, so the string
+      // "false" coerces to true and the opt-out silently opts in.
+      const { guidance } = z
+        .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
+        .parse(req.query);
+      const wantsGuidance = guidance === 'true' || guidance === '1';
 
-    // The export itself is public — it is the record. The guidance proof is
-    // not: it carries instructions written to whoever holds the pen, which the
-    // ordinary export deliberately hides. Handing that to an anonymous caller
-    // would publish exactly what the stylesheet exists to withhold.
-    if (wantsGuidance) await requireUser(req);
+      // The export itself is public — it is the record. The guidance proof is
+      // not: it carries instructions written to whoever holds the pen, which the
+      // ordinary export deliberately hides. Handing that to an anonymous caller
+      // would publish exactly what the stylesheet exists to withhold.
+      if (wantsGuidance) await requireUser(req);
 
-    const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
-    return reply
-      .header('content-type', 'application/pdf')
-      .header('content-disposition', `inline; filename="${id}.pdf"`)
-      .send(Buffer.from(pdf));
-  });
+      const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
+      return reply
+        .header('content-type', 'application/pdf')
+        .header('content-disposition', `inline; filename="${id}.pdf"`)
+        .send(Buffer.from(pdf));
+    },
+  );
 
   app.get('/documents/:id', async (req) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);

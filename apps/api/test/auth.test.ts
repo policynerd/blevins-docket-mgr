@@ -6,7 +6,7 @@ import { connect, users, type Db } from '@blevins/db';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose';
 import type { FastifyInstance } from 'fastify';
 
-import { buildServer } from '../src/server.ts';
+import { buildServer, rateLimits } from '../src/server.ts';
 import { devLoginGuard, resolveUser } from '../src/auth.ts';
 import {
   EntraError,
@@ -290,7 +290,7 @@ let app: FastifyInstance;
 
 before(async () => {
   ({ db, close } = connect());
-  app = buildServer(db);
+  app = await buildServer(db);
   await app.ready();
 });
 
@@ -472,7 +472,7 @@ describe('the sign-in round trip', () => {
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch;
 
-    entraApp = buildServer(
+    entraApp = await buildServer(
       db,
       {
         ...process.env,
@@ -639,5 +639,74 @@ describe('the sign-in round trip', () => {
       !redirect.search.includes('stubbed-for-tests'),
       'the client secret was put in a URL the browser follows',
     );
+  });
+});
+
+/* ----------------------------------------------------------- rate limits ---- */
+
+describe('request ceilings', () => {
+  test('the configured limit is what actually applies', () => {
+    assert.equal(rateLimits({}).auth, 20, 'the default changed without the test noticing');
+    assert.equal(rateLimits({ RATE_LIMIT_AUTH_MAX: '5' }).auth, 5);
+    // Junk must not silently disable the ceiling.
+    for (const bad of ['', 'lots', '0', '-1', 'NaN']) {
+      assert.equal(rateLimits({ RATE_LIMIT_AUTH_MAX: bad }).auth, 20, `accepted ${bad}`);
+    }
+  });
+
+  test('sign-in stops answering once the ceiling is reached', async () => {
+    // A server of its own with a tiny ceiling: proving this on the shared one
+    // would mean firing hundreds of requests and would couple every other test
+    // to a budget they all draw down.
+    const throttled = await buildServer(db, { ...process.env, RATE_LIMIT_AUTH_MAX: '3' });
+    await throttled.ready();
+    try {
+      const codes: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        codes.push((await throttled.inject({ method: 'GET', url: '/auth/me' })).statusCode);
+      }
+      // The first three are answered on their merits (401 — no session), and
+      // the rest are refused outright.
+      assert.deepEqual(codes, [401, 401, 401, 429, 429], `got ${codes.join(',')}`);
+    } finally {
+      await throttled.close();
+    }
+  });
+
+  test('export has its own, tighter ceiling than the rest of the API', async () => {
+    // The route that starts a browser per request. A missing proposal is
+    // rejected before any rendering happens, so this measures the ceiling
+    // rather than the renderer.
+    const throttled = await buildServer(db, { ...process.env, RATE_LIMIT_EXPORT_MAX: '2' });
+    await throttled.ready();
+    try {
+      const url = '/proposals/00000000-0000-0000-0000-0000000000ff/export.pdf';
+      const codes: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        codes.push((await throttled.inject({ method: 'GET', url })).statusCode);
+      }
+      assert.deepEqual(codes, [404, 404, 429, 429], `got ${codes.join(',')}`);
+    } finally {
+      await throttled.close();
+    }
+  });
+
+  test('the health probe is never throttled', async () => {
+    const throttled = await buildServer(db, {
+      ...process.env,
+      RATE_LIMIT_MAX: '2',
+      RATE_LIMIT_AUTH_MAX: '2',
+    });
+    await throttled.ready();
+    try {
+      // Well past the ceiling. A platform health check that can be rate-limited
+      // gets the machine restarted under exactly the load that tripped it.
+      for (let i = 0; i < 6; i++) {
+        const res = await throttled.inject({ method: 'GET', url: '/health' });
+        assert.equal(res.statusCode, 200, `health throttled on request ${i + 1}`);
+      }
+    } finally {
+      await throttled.close();
+    }
   });
 });

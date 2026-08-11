@@ -39,6 +39,8 @@ export interface AuthOptions {
   secureCookies: boolean;
   /** See devLoginGuard. */
   allowDevLogin: boolean;
+  /** Requests per minute per IP across the sign-in routes. */
+  rateLimitMax?: number;
 }
 
 export function authOptions(
@@ -181,13 +183,21 @@ export function registerAuth(
     path: '/',
   };
 
+  /**
+   * The sign-in routes are the credential surface, so they get a tighter
+   * ceiling than the rest of the API rather than sharing its budget.
+   */
+  const limited = opts.rateLimitMax
+    ? { config: { rateLimit: { max: opts.rateLimitMax, timeWindow: '1 minute' } } }
+    : {};
+
   const setSession = (reply: FastifyReply, uid: string) =>
     reply.setCookie(SESSION_COOKIE, mintSession(opts.secret, uid), {
       ...cookieBase,
       maxAge: Math.floor(SESSION_TTL_MS / 1000),
     });
 
-  app.get('/auth/login', async (req, reply) => {
+  app.get('/auth/login', limited, async (req, reply) => {
     if (!opts.entra) {
       return reply.code(503).send({ error: 'Sign-in is not configured on this deployment.' });
     }
@@ -210,7 +220,7 @@ export function registerAuth(
     return reply.redirect(authorizeUrl(opts.entra, { state, nonce, challenge }), 302);
   });
 
-  app.get('/auth/callback', async (req, reply) => {
+  app.get('/auth/callback', limited, async (req, reply) => {
     if (!opts.entra) {
       return reply.code(503).send({ error: 'Sign-in is not configured on this deployment.' });
     }
@@ -266,7 +276,7 @@ export function registerAuth(
    * Gated by ALLOW_DEV_LOGIN, which devLoginGuard refuses to let run in
    * production. It still will not create a user: the roster is the roster.
    */
-  app.post('/auth/dev-login', async (req, reply) => {
+  app.post('/auth/dev-login', limited, async (req, reply) => {
     if (!opts.allowDevLogin) return reply.code(404).send({ error: 'Not found' });
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const [user] = await db
@@ -278,12 +288,12 @@ export function registerAuth(
     return { id: user.id, email: user.email, name: user.name };
   });
 
-  app.get('/auth/me', async (req) => {
+  app.get('/auth/me', limited, async (req) => {
     const user = await requireUser(db, opts.secret, req);
     return { id: user.id, email: user.email, name: user.name, organization: user.organization };
   });
 
-  app.post('/auth/logout', async (req, reply) => {
+  app.post('/auth/logout', limited, async (req, reply) => {
     reply.clearCookie(SESSION_COOKIE, cookieBase);
     // Clearing our cookie ends our session but leaves the browser signed in to
     // Entra, so the next visit signs straight back in without a prompt. On a
