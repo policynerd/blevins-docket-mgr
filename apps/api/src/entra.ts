@@ -20,11 +20,22 @@ export interface EntraConfig {
   redirectUri: string;
 }
 
-/** Read the configuration, or null if this deployment has no Entra wired up. */
+/**
+ * Read the configuration, or null if this deployment has no Entra wired up.
+ *
+ * The names are ENTRA_*, matching the application this replaces. Both run on
+ * the same Fly app against the same app registration, so reusing the names
+ * means one set of secrets rather than two copies of the same three values
+ * drifting apart — and it means a rollback to the old application still has
+ * working sign-in, which a renamed secret would quietly have broken.
+ *
+ * AZURE_* is accepted as an alias because that is what most Microsoft
+ * documentation calls these.
+ */
 export function entraConfig(env: NodeJS.ProcessEnv = process.env): EntraConfig | null {
-  const tenantId = env['AZURE_TENANT_ID'];
-  const clientId = env['AZURE_CLIENT_ID'];
-  const clientSecret = env['AZURE_CLIENT_SECRET'];
+  const tenantId = env['ENTRA_TENANT_ID'] ?? env['AZURE_TENANT_ID'];
+  const clientId = env['ENTRA_CLIENT_ID'] ?? env['AZURE_CLIENT_ID'];
+  const clientSecret = env['ENTRA_CLIENT_SECRET'] ?? env['AZURE_CLIENT_SECRET'];
   const base = env['APP_BASE_URL'];
   if (!tenantId || !clientId || !clientSecret || !base) return null;
   return {

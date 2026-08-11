@@ -2,7 +2,7 @@
 #
 # Non-secret configuration lives here rather than being set by hand, so a
 # machine that is rebuilt or a region that is added comes up configured. The two
-# real secrets — SESSION_SECRET and AZURE_CLIENT_SECRET — are set out of band
+# real secrets — SESSION_SECRET and ENTRA_CLIENT_SECRET — are set out of band
 # and deliberately absent from this file.
 #
 # The tenant and client ids are identifiers, not secrets: they travel in the
@@ -16,12 +16,18 @@ primary_region = 'iad'
 
 [env]
   NODE_ENV = 'production'
-  APP_BASE_URL = 'https://app.blevinsholdings.com'
-  AZURE_TENANT_ID = '83ff87c7-db98-4775-939b-a58a5eb0f051'
-  AZURE_CLIENT_ID = 'fdf8499c-7535-4112-aa06-149d5be2c722'
   # Next serves the public port; the API listens on loopback behind its rewrite.
   PORT = '3100'
   API_PORT = '3200'
+
+# ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET and APP_BASE_URL are
+# already set as secrets on this app by the application being replaced, and are
+# deliberately not repeated here. A Fly secret overrides an [env] value of the
+# same name, so listing them in both places would mean the file says one thing
+# and the app runs on another — the worst kind of configuration to debug.
+#
+# The tenant and client ids are not secret in themselves; they simply already
+# live there, and one copy is better than two that can drift.
 
 # Runs on a temporary machine before the new version takes traffic. A failure
 # here aborts the release, which is the point: a schema behind the code it

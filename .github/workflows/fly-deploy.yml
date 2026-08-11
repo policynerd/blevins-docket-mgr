@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           names=$(flyctl secrets list --app beg-docket-manager --json | jq -r '.[].Name')
           missing=0
-          for required in SESSION_SECRET AZURE_CLIENT_SECRET DATABASE_URL; do
+          for required in SESSION_SECRET ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET APP_BASE_URL DATABASE_URL; do
             if ! grep -qx "$required" <<< "$names"; then
               echo "::error::$required is not set on beg-docket-manager"
               missing=1

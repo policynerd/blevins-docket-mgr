@@ -284,9 +284,9 @@ describe('the post-logout redirect', () => {
 
   test('it reaches the logout URL in that same form', () => {
     const config = entraConfig({
-      AZURE_TENANT_ID: 'tenant',
-      AZURE_CLIENT_ID: 'client',
-      AZURE_CLIENT_SECRET: 'secret',
+      ENTRA_TENANT_ID: 'tenant',
+      ENTRA_CLIENT_ID: 'client',
+      ENTRA_CLIENT_SECRET: 'secret',
       APP_BASE_URL: 'https://app.blevinsholdings.com',
     })!;
     const sent = new URL(
@@ -298,9 +298,9 @@ describe('the post-logout redirect', () => {
   test('the callback URI is unaffected by the slash either way', () => {
     for (const v of ['https://app.blevinsholdings.com', 'https://app.blevinsholdings.com/']) {
       const c = entraConfig({
-        AZURE_TENANT_ID: 't',
-        AZURE_CLIENT_ID: 'c',
-        AZURE_CLIENT_SECRET: 's',
+        ENTRA_TENANT_ID: 't',
+        ENTRA_CLIENT_ID: 'c',
+        ENTRA_CLIENT_SECRET: 's',
         APP_BASE_URL: v,
       })!;
       assert.equal(c.redirectUri, 'https://app.blevinsholdings.com/api/auth/callback');
@@ -309,6 +309,60 @@ describe('the post-logout redirect', () => {
 
   test('a malformed base URL is refused at startup, not at sign-out', () => {
     assert.throws(() => base('app.blevinsholdings.com'));
+  });
+});
+
+describe("reading the deployment's configuration", () => {
+  const ids = { APP_BASE_URL: 'https://app.blevinsholdings.com' };
+
+  test('the ENTRA_* names the app already carries are what is read', () => {
+    // These are the names the replaced application set on the same Fly app.
+    // Reading anything else would mean sign-in is unconfigured on the very
+    // deployment this ships to, and the failure is a 503 rather than a crash.
+    const c = entraConfig({
+      ...ids,
+      ENTRA_TENANT_ID: 'tenant-from-entra',
+      ENTRA_CLIENT_ID: 'client-from-entra',
+      ENTRA_CLIENT_SECRET: 'secret',
+    });
+    assert.equal(c?.tenantId, 'tenant-from-entra');
+    assert.equal(c?.clientId, 'client-from-entra');
+  });
+
+  test('AZURE_* still works, and ENTRA_* wins when both are present', () => {
+    assert.equal(
+      entraConfig({ ...ids, AZURE_TENANT_ID: 't', AZURE_CLIENT_ID: 'c', AZURE_CLIENT_SECRET: 's' })
+        ?.tenantId,
+      't',
+    );
+    assert.equal(
+      entraConfig({
+        ...ids,
+        ENTRA_TENANT_ID: 'entra',
+        AZURE_TENANT_ID: 'azure',
+        ENTRA_CLIENT_ID: 'c',
+        ENTRA_CLIENT_SECRET: 's',
+      })?.tenantId,
+      'entra',
+    );
+  });
+
+  test('a half-configured deployment reports unconfigured rather than guessing', () => {
+    for (const missing of [
+      'ENTRA_TENANT_ID',
+      'ENTRA_CLIENT_ID',
+      'ENTRA_CLIENT_SECRET',
+      'APP_BASE_URL',
+    ]) {
+      const env: Record<string, string> = {
+        ...ids,
+        ENTRA_TENANT_ID: 't',
+        ENTRA_CLIENT_ID: 'c',
+        ENTRA_CLIENT_SECRET: 's',
+      };
+      delete env[missing];
+      assert.equal(entraConfig(env), null, `built a config without ${missing}`);
+    }
   });
 });
 
@@ -520,9 +574,9 @@ describe('the sign-in round trip', () => {
       db,
       {
         ...process.env,
-        AZURE_TENANT_ID: TENANT,
-        AZURE_CLIENT_ID: CLIENT,
-        AZURE_CLIENT_SECRET: 'stubbed-for-tests',
+        ENTRA_TENANT_ID: TENANT,
+        ENTRA_CLIENT_ID: CLIENT,
+        ENTRA_CLIENT_SECRET: 'stubbed-for-tests',
         APP_BASE_URL: 'https://board.example.test',
       },
       { fetchImpl, keys: createLocalJWKSet({ keys: [jwk] }) },
