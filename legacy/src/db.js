@@ -528,6 +528,45 @@ CREATE TABLE IF NOT EXISTS public_comments (
 );
 
 -- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
+CREATE TABLE IF NOT EXISTS motion_versions (
+  id INTEGER PRIMARY KEY,
+  agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  motion_text TEXT,
+  mover_id INTEGER REFERENCES people(id),
+  seconder_id INTEGER REFERENCES people(id),
+  threshold TEXT NOT NULL DEFAULT 'majority',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by INTEGER REFERENCES users(id),
+  UNIQUE (agenda_item_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS vote_events (
+  id INTEGER PRIMARY KEY,
+  event_id TEXT UNIQUE NOT NULL,
+  agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+  meeting_id INTEGER REFERENCES meetings(id),
+  motion_version_id INTEGER REFERENCES motion_versions(id),
+  person_id INTEGER NOT NULL REFERENCES people(id),
+  choice TEXT NOT NULL,
+  station_id TEXT,
+  credential_id TEXT,
+  event_sequence INTEGER NOT NULL,
+  submitted_at TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  previous_event_hash TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  entry_hash TEXT NOT NULL,
+  member_signature TEXT,
+  server_signature TEXT NOT NULL,
+  supersedes_event_id TEXT REFERENCES vote_events(event_id),
+  cast_by_user_id INTEGER REFERENCES users(id),
+  UNIQUE (agenda_item_id, event_sequence)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vote_events_item ON vote_events(agenda_item_id, event_sequence);
+CREATE INDEX IF NOT EXISTS idx_motion_versions_item ON motion_versions(agenda_item_id, seq);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT,
@@ -672,6 +711,18 @@ CREATE INDEX IF NOT EXISTS idx_office_staff_person ON office_staff(person_id);
 // Additive column migrations for databases created before a column existed
 // (the Fly volume persists the DB across deploys).
 const COLUMN_MIGRATIONS = {
+  matter_history: {
+    // Which agenda item produced this entry. Without it a vote that is later
+    // reopened cannot find the record it wrote, so the wrong outcome stays in
+    // the legislative history with no way to identify it.
+    agenda_item_id: 'INTEGER REFERENCES agenda_items(id)',
+    // A retracted entry is struck through, never deleted. What the Board did
+    // and later undid is itself part of the record; a history that quietly
+    // loses its mistakes cannot be relied on to show what happened.
+    voided_at: 'TEXT',
+    void_reason: 'TEXT',
+    voided_by: 'INTEGER REFERENCES users(id)',
+  },
   agenda_items: {
     mover_id: 'INTEGER REFERENCES people(id)',
     seconder_id: 'INTEGER REFERENCES people(id)',

@@ -1937,10 +1937,26 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
     motion_text: b.motion_text || null,
     vote_threshold: b.vote_threshold || 'majority',
   });
-  repo.votes.clearForItem(itemId);
+  // Through the ledger, not straight into the projection. The clerk entering a
+  // roll from the minutes is recording the same fact as a member pressing a
+  // button at the table, and a vote that reaches the record without an event
+  // is a vote the chain cannot vouch for.
+  const motionVersion = repo.motionVersions.ensure(itemId, {
+    motionText: b.motion_text || null,
+    moverId: b.mover_id ? Number(b.mover_id) : null,
+    seconderId: b.seconder_id ? Number(b.seconder_id) : null,
+    threshold: b.vote_threshold || 'majority',
+    userId: ctx.user ? ctx.user.id : null,
+  });
   for (const key of Object.keys(b)) {
     const m = key.match(/^vote_(\d+)$/);
-    if (m && b[key]) repo.votes.record(itemId, Number(m[1]), b[key]);
+    if (m && b[key]) {
+      recordSingleVote(itemId, Number(m[1]), b[key], {
+        motionVersionId: motionVersion ? motionVersion.id : null,
+        userId: ctx.user ? ctx.user.id : null,
+        stationId: 'clerk-entry',
+      });
+    }
   }
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
@@ -2054,34 +2070,40 @@ route('GET', /^\/admin\/meetings\/(\d+)\/live$/, (req, res, ctx) => {
   sendHtml(res, liveViews.clerkConsole(mt, ctx.user));
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
+  const r = repo.voteAdmin.reopen(Number(ctx.params[0]), { userId: ctx.user ? ctx.user.id : null });
+  if (!r) return sendJson(res, { error: 'Not found' }, 404);
   const item = repo.meetings.getItem(Number(ctx.params[0]));
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true, reopened: r.reopened });
+});
+
+/**
+ * Void a vote. Distinct from reopening — see repo.voteAdmin.
+ */
+route('POST', /^\/admin\/agenda-items\/(\d+)\/void$/, (req, res, ctx) => {
+  const itemId = Number(ctx.params[0]);
+  const item = repo.meetings.getItem(itemId);
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
-  // Only one item open at a time per meeting.
-  for (const it of repo.meetings.items(item.meeting_id)) {
-    if (it.vote_status === 'open') repo.meetings.setVoteStatus(it.id, 'pending');
+  try {
+    repo.voteAdmin.void(itemId, {
+      reason: ctx.body && ctx.body.reason,
+      userId: ctx.user ? ctx.user.id : null,
+    });
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 400);
   }
-  repo.meetings.setVoteStatus(item.id, 'open');
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true });
 });
+
 route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
-  const t = repo.votes.tally(item.id);
-  const threshold = item.vote_threshold || 'majority';
-  const yea = t.Yea || 0;
-  const nay = t.Nay || 0;
-  let passes;
-  if (threshold === 'two_thirds') {
-    const cast = yea + nay;
-    passes = cast > 0 && yea / cast >= 2 / 3;
-  } else if (threshold === 'majority_full') {
-    const seatCount = repo.bodies.members(item.body_id).length;
-    passes = yea > Math.floor(seatCount / 2);
-  } else {
-    passes = yea > nay;
-  }
-  const result = passes ? 'Pass' : 'Fail';
+  // Eligibility-aware: a recused member is present but out of the denominator.
+  // The previous arithmetic divided the full seat count for `majority_full`, so
+  // recusing counted against the motion exactly as a No vote would.
+  const outcome = repo.eligibility.outcome(item.id);
+  const result = outcome.result;
   repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
   repo.meetings.setVoteStatus(item.id, 'closed');
   // Reflect the outcome on the matter's legislative history.
@@ -2089,11 +2111,13 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
     repo.matters.addHistory({
       matter_id: item.matter_id, action_date: require('./src/util').todayISO(),
       body_id: item.body_id, action: 'Vote taken in live session', result,
-      meeting_id: item.meeting_id,
+      notes: `${outcome.yea}-${outcome.nay}, ${outcome.basis}`
+        + (outcome.recused ? `, ${outcome.recused} recused` : ''),
+      meeting_id: item.meeting_id, agenda_item_id: item.id,
     });
   }
   live.pushUpdate(item.meeting_id);
-  sendJson(res, { ok: true, result });
+  sendJson(res, { ok: true, result, tally: outcome });
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/motion$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
@@ -2189,8 +2213,18 @@ function parseTopics(str) {
   return String(str || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 25);
 }
 
-function recordSingleVote(itemId, personId, vote) {
+/**
+ * Record a vote.
+ *
+ * The append to the ledger is the record; the row in `votes` is a projection
+ * of it kept so the existing tally, minutes and export readers work unchanged.
+ * Order matters — the ledger is written first, so a crash between the two
+ * leaves the authoritative account complete and only the derived view stale,
+ * rather than the other way round.
+ */
+function recordSingleVote(itemId, personId, vote, opts = {}) {
   if (!personId) return;
+  repo.voteLedger.append(itemId, personId, vote, opts);
   repo.votes.clearPersonForItem(itemId, personId);
   repo.votes.record(itemId, personId, vote);
 }
