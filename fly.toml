@@ -1,9 +1,8 @@
-# Fly.io config — runs the Docker image with a persistent volume for SQLite.
-# First-time setup:
-#   fly volumes create docket_data --size 1 --region iad
-#   fly deploy
-# If a region reports "insufficient CPUs available", switch to another
-# (e.g. ord, ewr, den, sjc, lax) in both the volume and primary_region.
+# fly.toml app configuration file generated for beg-docket-manager on 2026-08-11T03:23:48Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'beg-docket-manager'
 primary_region = 'iad'
 
@@ -21,10 +20,18 @@ primary_region = 'iad'
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
 
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '256mb'
+
+[[vm]]
+  size = 'shared-cpu-2x'
+  memory = '3gb'
+  cpu_kind = 'shared'
+  cpus = 2
+  memory_mb = 3072
+  processes = ['app']
