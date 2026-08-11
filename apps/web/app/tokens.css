@@ -1,0 +1,105 @@
+/*
+ * Design tokens, taken from the Board's own design system.
+ *
+ * Reproduced here rather than invented so the documents, the editor and
+ * anything else built later resolve the same names to the same values. The
+ * navy is the same #353D4F the previous application already used as its
+ * accent, which is the strongest evidence these are the house colours and not
+ * a passing draft.
+ */
+
+:root {
+  /* Ink — the text scale, darkest to lightest. */
+  --color-ink: #1a1e28;
+  --color-ink-2: #353d4f;
+  --color-ink-3: #6b7585;
+  --color-ink-4: #9aa3b0;
+
+  /* Navy — the institutional colour. */
+  --color-navy: #353d4f;
+  --color-navy-deep: #1a1e28;
+  --color-navy-mid: #4a5568;
+  --color-navy-light: #7282a0;
+
+  /* Surfaces, warm rather than clinical white. */
+  --color-surface: #ffffff;
+  --color-surface-warm: #f8f6f2;
+  --color-surface-marble: #f5f2ee;
+  --color-surface-stone: #eee9e2;
+
+  --color-border: #ddd9d2;
+  --color-border-subtle: #eee9e2;
+
+  /* Accents. Each carries a dim tint for backgrounds and a light for hover. */
+  --color-cobalt: #1e3a5f;
+  --color-cobalt-dim: #e1ebf5;
+  --color-crimson: #8b2030;
+  --color-crimson-dim: #f5e6e8;
+  --color-forest: #2a5c3e;
+  --color-forest-dim: #e4f0ea;
+  --color-gold: #b8870b;
+  --color-gold-dim: #f7f0dc;
+  --color-amber: #c9743a;
+  --color-amber-dim: #faf0e8;
+
+  /* Type.
+   *
+   * System faces, deliberately. The Board's own filed documents are set in
+   * them — the board letter in Times New Roman with Arial and Calibri, the
+   * ordinance entirely in Arial, the meeting notice in Georgia — and a
+   * document that will be filed, quoted and photocopied is better served by a
+   * face every reader and every printer already has than by a distinctive
+   * one. It also drops about 640KB of embedded fonts from every PDF and
+   * removes a licensing question from the critical path.
+   *
+   * The brand still shows where brand belongs: the seal and the lockup on the
+   * letterhead, which are artwork and unaffected by this. */
+  --font-display: 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-text: 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-ui: Arial, Helvetica, 'Liberation Sans', sans-serif;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 30px;
+  --text-3xl: 38px;
+  --text-4xl: 48px;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-loose: 1.7;
+
+  --tracking-tighter: -0.02em;
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.08em;
+  --tracking-widest: 0.14em;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-xs: 0 1px 2px rgba(26, 30, 40, 0.07);
+  --shadow-sm: 0 2px 6px rgba(26, 30, 40, 0.09);
+  --shadow-md: 0 4px 16px rgba(26, 30, 40, 0.11);
+  --shadow-lg: 0 8px 32px rgba(26, 30, 40, 0.13);
+  --shadow-xl: 0 16px 48px rgba(26, 30, 40, 0.16);
+}

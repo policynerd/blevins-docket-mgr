@@ -1,4 +1,4 @@
-# Generated SQLite database (auto-seeded on first run)
+# Generated SQLite database (legacy app; auto-seeded on first run)
 /data/*.db
 /data/*.db-shm
 /data/*.db-wal
@@ -11,9 +11,19 @@
 .env.*
 !.env.example
 
-# Dependencies (this project has none, but just in case)
-/node_modules
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
 
 # Logs & OS cruft
 *.log
 .DS_Store
+
+# Next.js
+.next/
+apps/web/.env.local

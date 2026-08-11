@@ -1,5 +1,23 @@
-.git
+# Keep the build context small and the image free of host-specific state.
 node_modules
+**/node_modules
+.git
+.next
+**/.next
+**/dist
+.turbo
+**/.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# The legacy application ships from its own image and its own config.
+legacy
+
+# Never let a local .env reach an image.
+.env
+.env.*
+!.env.example
+
 data
-*.log
-.DS_Store
+**/*.log
+.github

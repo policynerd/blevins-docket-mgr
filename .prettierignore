@@ -1,0 +1,4 @@
+legacy/
+**/dist/
+**/migrations/
+pnpm-lock.yaml
