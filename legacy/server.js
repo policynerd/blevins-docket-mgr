@@ -2104,8 +2104,7 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   // recusing counted against the motion exactly as a No vote would.
   // Stamp the close first: the tally is defined as of that instant, so it has
   // to exist before the outcome is computed against it.
-  repo.voteAdmin.closeRoll(item.id);
-  const outcome = repo.eligibility.outcome(item.id);
+  const outcome = repo.voteAdmin.closeRoll(item.id, { userId: ctx.user ? ctx.user.id : null });
   const result = outcome.result;
   repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
   // Reflect the outcome on the matter's legislative history.

@@ -44,7 +44,7 @@ test('a vote is appended, never overwritten — the earlier one survives', () =>
   repo.voteLedger.append(itemId, people[0], 'Yea');
   repo.voteLedger.append(itemId, people[0], 'Nay');
 
-  const events = repo.voteLedger.forItem(itemId);
+  const events = ballots(itemId);
   assert.equal(events.length, 2, 'changing a vote destroyed the first one');
   assert.deepEqual(events.map((e) => e.choice), ['Yea', 'Nay']);
 
@@ -61,17 +61,18 @@ test('the chain verifies, and says where it breaks when a row is altered', () =>
   repo.voteLedger.append(itemId, people[0], 'Yea');
   repo.voteLedger.append(itemId, people[1], 'Nay');
   repo.voteLedger.append(itemId, people[2], 'Yea');
-  assert.deepEqual(repo.voteLedger.verify(itemId), { ok: true, length: 3 });
+  assert.equal(repo.voteLedger.verifyItem(itemId).ok, true);
 
   // Someone with database access flips a recorded vote — the exact attack a
   // mutable `votes` table has no answer to.
-  const second = repo.voteLedger.forItem(itemId)[1];
-  db.prepare("UPDATE vote_events SET choice = 'Yea' WHERE id = ?").run(second.id);
+  const second = ballots(itemId)[1];
+  db.prepare("UPDATE session_events SET choice = 'Yea' WHERE seq = ?").run(second.seq);
 
-  const v = repo.voteLedger.verify(itemId);
+  const v = repo.voteLedger.verifyItem(itemId);
   assert.equal(v.ok, false, 'an edited vote passed verification');
-  assert.equal(v.brokenAt, 1, 'the wrong entry was blamed');
-  assert.match(v.reason, /do not match/);
+  // Caught by the mirror check before the hash even runs: the indexed column
+  // used for querying no longer agrees with the sealed payload.
+  assert.match(v.reason, /disagree with the sealed payload|do not match/);
 });
 
 test('deleting an entry from the middle is detected too', () => {
@@ -80,11 +81,11 @@ test('deleting an entry from the middle is detected too', () => {
   repo.voteLedger.append(itemId, people[1], 'Nay');
   repo.voteLedger.append(itemId, people[2], 'Yea');
 
-  db.prepare('DELETE FROM vote_events WHERE id = ?').run(repo.voteLedger.forItem(itemId)[1].id);
+  db.prepare('DELETE FROM session_events WHERE seq = ?').run(ballots(itemId)[1].seq);
 
   // Removing a Nay is the quietest way to change an outcome; the chain no
   // longer continues, so it cannot be done without leaving a mark.
-  const v = repo.voteLedger.verify(itemId);
+  const v = repo.voteLedger.verifyItem(itemId);
   assert.equal(v.ok, false, 'a deleted vote went unnoticed');
   assert.equal(v.brokenAt, 1);
 });
@@ -291,8 +292,8 @@ test('the ledger keeps the ballots a void removed', () => {
   repo.voteAdmin.void(itemId, { reason: 'Wrong item called' });
 
   // Clearing the projection must not touch the account of what happened.
-  assert.equal(repo.voteLedger.forItem(itemId).length, 1);
-  assert.equal(repo.voteLedger.verify(itemId).ok, true);
+  assert.equal(ballots(itemId).length, 1);
+  assert.equal(repo.voteLedger.verifyItem(itemId).ok, true);
 });
 
 /* --------------------------------------------------- motion versions ---- */
@@ -313,16 +314,16 @@ test('the event records which motion version was voted on', () => {
   const v = repo.motionVersions.ensure(itemId, { motionText: 'Approve staff recommendation' });
   repo.voteLedger.append(itemId, people[0], 'Yea', { motionVersionId: v.id });
 
-  const [e] = repo.voteLedger.forItem(itemId);
-  assert.equal(e.motion_version_id, v.id);
+  const [e] = ballots(itemId);
+  assert.equal(JSON.parse(e.payload_json).motionVersionId, v.id);
 
   // Repoint the vote at a different, entirely legitimate motion version — the
   // realistic version of this attack, since a dangling id is refused by the
   // foreign key anyway. What must catch it is the hash: the motion voted on is
   // part of the payload, so it cannot be swapped after the fact.
   const v2 = repo.motionVersions.ensure(itemId, { motionText: 'Approve as amended' });
-  db.prepare('UPDATE vote_events SET motion_version_id = ? WHERE id = ?').run(v2.id, e.id);
-  assert.equal(repo.voteLedger.verify(itemId).ok, false,
+  db.prepare("UPDATE session_events SET payload_json = json_set(payload_json, '$.motionVersionId', ?) WHERE seq = ?").run(v2.id, e.seq);
+  assert.equal(repo.voteLedger.verifyItem(itemId).ok, false,
     'the motion a vote was cast on could be swapped without detection');
 });
 
@@ -352,35 +353,39 @@ test('a vote survives being recorded twice with the same value', () => {
   const { itemId } = newItem();
   repo.voteLedger.append(itemId, people[0], 'Yea');
   repo.voteLedger.append(itemId, people[0], 'Yea');
-  assert.equal(repo.voteLedger.forItem(itemId).length, 2);
+  assert.equal(ballots(itemId).length, 2);
   assert.equal(repo.voteLedger.current(itemId).size, 1);
-  assert.equal(repo.voteLedger.verify(itemId).ok, true);
+  assert.equal(repo.voteLedger.verifyItem(itemId).ok, true);
 });
 
 /* ------------------------------------------- the tally is as of the close ---- */
 
-/** Append an event with a chosen received_at, to stand in for a late arrival. */
-function appendAt(itemId, personId, choice, receivedAt) {
-  const r = repo.voteLedger.append(itemId, personId, choice);
-  db.prepare('UPDATE vote_events SET received_at = ? WHERE event_id = ?')
-    .run(receivedAt, r.eventId);
-  return r;
-}
+/**
+ * Lateness is a matter of position now, not of a clock.
+ *
+ * A ballot appended after ROLL_CLOSED occupies a later slot in the chain, and
+ * nothing has to trust a timestamp for that to hold — which is the reason the
+ * chain covers the whole session rather than one item at a time.
+ */
+const appendAt = (itemId, personId, choice) =>
+  repo.voteLedger.append(itemId, personId, choice, { source: 'MEMBER_TERMINAL' });
+
+/** Just the ballots: the chain also carries ROLL_* and RESULT_* events. */
+const ballots = (itemId) => repo.voteLedger.forItem(itemId)
+  .filter((e) => e.event_type === 'VOTE_CAST' || e.event_type === 'VOTE_CHANGED');
 
 test('a vote received after the roll closed does not join the tally', () => {
   const { itemId } = newItem();
-  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
-  appendAt(itemId, people[1], 'Yea', '2026-08-10T10:00:01.000Z');
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Yea');
   repo.voteAdmin.closeRoll(itemId);
-  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
-    .run('2026-08-10T10:00:02.000Z', itemId);
 
   const before = repo.eligibility.outcome(itemId);
   assert.equal(before.yea, 2);
 
   // A station retrying after the gavel. It happened, so it is recorded — but a
   // settled vote cannot be moved by it.
-  appendAt(itemId, people[2], 'Nay', '2026-08-10T10:05:00.000Z');
+  appendAt(itemId, people[2], 'Nay');
 
   const after = repo.eligibility.outcome(itemId);
   assert.equal(after.yea, 2, 'a late arrival changed a closed tally');
@@ -390,31 +395,27 @@ test('a vote received after the roll closed does not join the tally', () => {
 
 test('late arrivals are surfaced, not silently dropped', () => {
   const { itemId } = newItem();
-  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  appendAt(itemId, people[0], 'Yea');
   repo.voteAdmin.closeRoll(itemId);
-  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
-    .run('2026-08-10T10:00:02.000Z', itemId);
-  appendAt(itemId, people[1], 'Nay', '2026-08-10T11:00:00.000Z');
+  appendAt(itemId, people[1], 'Nay');
 
   assert.equal(repo.eligibility.outcome(itemId).late, 1, 'the late event was hidden');
   assert.equal(repo.voteLedger.late(itemId).length, 1);
   // And it is still in the ledger, because it did happen.
-  assert.equal(repo.voteLedger.forItem(itemId).length, 2);
+  assert.equal(ballots(itemId).length, 2);
 });
 
 test('a closed tally recomputes to the same number however long after', () => {
   const { itemId } = newItem();
-  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
-  appendAt(itemId, people[1], 'Nay', '2026-08-10T10:00:01.000Z');
-  appendAt(itemId, people[2], 'Yea', '2026-08-10T10:00:02.000Z');
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Nay');
+  appendAt(itemId, people[2], 'Yea');
   repo.voteAdmin.closeRoll(itemId);
-  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
-    .run('2026-08-10T10:00:03.000Z', itemId);
   const onTheDay = repo.eligibility.outcome(itemId);
 
   // Months of later traffic against the same item.
-  appendAt(itemId, people[3], 'Nay', '2026-11-01T09:00:00.000Z');
-  appendAt(itemId, people[4], 'Nay', '2027-02-01T09:00:00.000Z');
+  appendAt(itemId, people[3], 'Nay');
+  appendAt(itemId, people[4], 'Nay');
 
   const later = repo.eligibility.outcome(itemId);
   assert.equal(later.yea, onTheDay.yea);
@@ -427,11 +428,9 @@ test('a change that arrives late cannot retract the vote that counted', () => {
   // the ballot it claims to replace while being ineligible to replace it —
   // costing the member their vote entirely rather than leaving it standing.
   const { itemId } = newItem();
-  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  appendAt(itemId, people[0], 'Yea');
   repo.voteAdmin.closeRoll(itemId);
-  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
-    .run('2026-08-10T10:00:02.000Z', itemId);
-  appendAt(itemId, people[0], 'Nay', '2026-08-10T10:09:00.000Z');
+  appendAt(itemId, people[0], 'Nay');
 
   const o = repo.eligibility.outcome(itemId);
   assert.equal(o.yea, 1, 'the vote that counted was withdrawn by a late change');
@@ -443,22 +442,151 @@ test('while the roll is open there is no bound', () => {
   repo.voteLedger.append(itemId, people[0], 'Yea');
   repo.voteLedger.append(itemId, people[1], 'Yea');
   const o = repo.eligibility.outcome(itemId);
-  assert.equal(o.asOf, null, 'an open roll was computed against a closing instant');
+  assert.equal(o.closed, false, 'an open roll was computed against a close');
   assert.equal(o.yea, 2);
 });
 
 test('reopening lifts the bound so new votes count again', () => {
   const { itemId } = newItem();
-  appendAt(itemId, people[0], 'Yea', '2026-08-10T10:00:00.000Z');
+  appendAt(itemId, people[0], 'Yea');
   repo.voteAdmin.closeRoll(itemId);
-  db.prepare("UPDATE agenda_items SET vote_closed_at = ? WHERE id = ?")
-    .run('2026-08-10T10:00:02.000Z', itemId);
   assert.equal(repo.eligibility.outcome(itemId).yea, 1);
 
   repo.voteAdmin.reopen(itemId);
-  assert.equal(repo.meetings.getItem(itemId).vote_closed_at, null,
+  assert.equal(repo.voteLedger.closedSeq(itemId), null,
     'the old close still bounds a reopened roll');
 
   repo.voteLedger.append(itemId, people[1], 'Yea');
   assert.equal(repo.eligibility.outcome(itemId).yea, 2, 'a vote after reopening did not count');
+});
+
+/* --------------------------------------------- the chain covers the session ---- */
+
+test('the close occupies a slot, so lateness needs no trusted clock', () => {
+  // The reason the chain spans the meeting rather than one item. ROLL_CLOSED
+  // is *in* the sequence, so a ballot after it is provably after it by
+  // position — even if every timestamp in the table were rewritten.
+  const { itemId } = newItem();
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+  appendAt(itemId, people[1], 'Nay');
+
+  const closedSeq = repo.voteLedger.closedSeq(itemId);
+  assert.ok(closedSeq > 0);
+
+  // Backdate the late ballot to before the meeting began.
+  db.prepare("UPDATE session_events SET received_at = '2000-01-01T00:00:00.000Z' WHERE choice = 'Nay'")
+    .run();
+
+  const o = repo.eligibility.outcome(itemId);
+  assert.equal(o.nay, 0, 'a backdated ballot was counted into a closed vote');
+  assert.equal(o.yea, 1);
+});
+
+test('events from the whole meeting share one chain', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+
+  const types = repo.voteLedger.forMeeting(meetingId).map((e) => e.event_type);
+  assert.deepEqual(types, ['ROLL_OPENED', 'VOTE_CAST', 'ROLL_CLOSED', 'RESULT_COMPUTED']);
+  assert.equal(repo.voteLedger.verify(meetingId).ok, true);
+});
+
+test('a second item cannot be spliced into another item history unnoticed', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+  assert.equal(repo.voteLedger.verify(meetingId).ok, true);
+
+  // Re-point a recorded ballot at a real second item on the same meeting —
+  // a dangling id is refused by the foreign key, so this is the version that
+  // could actually happen. The indexed column is what queries read, and it no
+  // longer agrees with what was sealed.
+  const other = repo.meetings.addItem({ meeting_id: meetingId, title: 'Another item' });
+  const ballot = ballots(itemId)[0];
+  db.prepare('UPDATE session_events SET agenda_item_id = ? WHERE seq = ?').run(other, ballot.seq);
+  assert.equal(repo.voteLedger.verify(meetingId).ok, false);
+});
+
+/* ------------------------------------------------------------ provenance ---- */
+
+test('a clerk-entered vote is not disguised as one the member cast', () => {
+  const { itemId } = newItem();
+  repo.voteLedger.append(itemId, people[0], 'Yea', { source: 'MEMBER_TERMINAL' });
+  repo.voteLedger.append(itemId, people[1], 'Nay', { source: 'CLERK_ENTRY', userId: null });
+
+  const rows = ballots(itemId);
+  assert.equal(rows[0].source, 'MEMBER_TERMINAL');
+  assert.equal(rows[1].source, 'CLERK_ENTRY');
+  // And the provenance is sealed, not merely stored beside the vote.
+  db.prepare("UPDATE session_events SET source = 'MEMBER_TERMINAL' WHERE seq = ?").run(rows[1].seq);
+  assert.equal(repo.voteLedger.verifyItem(itemId).ok, false,
+    'a clerk entry could be relabelled as the member own vote');
+});
+
+test('an unknown source is refused', () => {
+  const { itemId } = newItem();
+  assert.throws(() => repo.voteLedger.append(itemId, people[0], 'Yea', { source: 'SOMEWHERE' }),
+    /Not a vote source/);
+});
+
+/* ------------------------------------------------- the result lifecycle ---- */
+
+test('computing, announcing, certifying and publishing are four acts', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+
+  let item = repo.meetings.getItem(itemId);
+  assert.ok(item.result_computed_at, 'closing did not compute a result');
+  assert.equal(item.result_announced_at, null);
+
+  repo.voteAdmin.announce(itemId);
+  repo.voteAdmin.certify(itemId, { userId: null });
+  repo.voteAdmin.publish(itemId);
+
+  item = repo.meetings.getItem(itemId);
+  assert.ok(item.result_announced_at && item.result_certified_at && item.result_published_at);
+
+  const types = repo.voteLedger.forMeeting(meetingId).map((e) => e.event_type);
+  assert.deepEqual(types.slice(-4),
+    ['RESULT_COMPUTED', 'RESULT_ANNOUNCED', 'RESULT_CERTIFIED', 'RESULT_PUBLISHED']);
+});
+
+test('a result cannot be published before it is certified', () => {
+  const { itemId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+  assert.throws(() => repo.voteAdmin.publish(itemId), /certified/);
+});
+
+test('certification pins what the record consisted of at that moment', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+
+  const headBefore = repo.voteLedger.forMeeting(meetingId).at(-1).event_hash;
+  repo.voteAdmin.certify(itemId, { userId: null });
+
+  // "What did the Clerk attest to" resolves by hash rather than by inference.
+  assert.equal(repo.meetings.getItem(itemId).certification_checkpoint, headBefore);
+});
+
+test('the rule that governed a roll is recorded with it', () => {
+  const { itemId } = newItem({ threshold: 'two_thirds' });
+  repo.voteAdmin.openRoll(itemId);
+  assert.equal(repo.meetings.getItem(itemId).threshold_rule, 'two_thirds');
+
+  // Standing orders change; a vote already taken must still evaluate under the
+  // rule in force when it was taken.
+  db.prepare("UPDATE agenda_items SET vote_threshold = 'majority' WHERE id = ?").run(itemId);
+  assert.equal(repo.eligibility.outcome(itemId).threshold, 'two_thirds',
+    'an old vote was re-judged under a rule adopted afterwards');
 });

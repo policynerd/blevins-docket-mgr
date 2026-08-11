@@ -2171,13 +2171,9 @@ const letters = {
  */
 const voteLedger = {
   /**
-   * The signing key.
-   *
-   * From VOTE_LEDGER_KEY when set. Otherwise one is generated on first use and
-   * kept in `settings`, so the ledger signs without configuration — but be
-   * clear about what that is worth: a key stored beside the data it protects
-   * does not defend against someone who can write to the database. The hash
-   * chain is what does that, and it needs no key at all.
+   * The signing key. See the note on tamper evidence in ledger.js: the chain
+   * is what defends the record, and it needs no key. This only adds "this
+   * server wrote it".
    */
   key() {
     if (process.env.VOTE_LEDGER_KEY) return process.env.VOTE_LEDGER_KEY;
@@ -2190,109 +2186,143 @@ const voteLedger = {
     return (this._key = generated);
   },
 
-  /** Every event for an item, oldest first — the chain in order. */
+  /** The whole chain for a meeting, in order. */
+  forMeeting(meetingId) {
+    return db.prepare('SELECT * FROM session_events WHERE meeting_id = ? ORDER BY seq')
+      .all(meetingId);
+  },
+
+  /** The chain filtered to one item — still ordered by the session sequence. */
   forItem(agendaItemId) {
-    return db.prepare(
-      'SELECT * FROM vote_events WHERE agenda_item_id = ? ORDER BY event_sequence')
+    return db.prepare('SELECT * FROM session_events WHERE agenda_item_id = ? ORDER BY seq')
       .all(agendaItemId);
   },
 
   /**
-   * The event each member's position rests on, as of a moment.
+   * Append any session event.
    *
-   * Defaults to the item's close when it has one, so a settled vote reports
-   * the number that was read out on the day however long afterwards it is
-   * asked for. While the roll is open there is no bound and the live tally
-   * simply reflects everything received so far.
+   * One chain per meeting. Everything consequential goes through here, so the
+   * order of the session is itself part of the evidence.
    */
-  current(agendaItemId, { asOf } = {}) {
-    const item = meetings.getItem(agendaItemId);
-    const bound = asOf !== undefined ? asOf : (item ? item.vote_closed_at : null);
-    return ledger.currentChoices(this.forItem(agendaItemId), { asOf: bound });
-  },
+  appendEvent(meetingId, eventType, payload = {}, cols = {}) {
+    const last = db.prepare(
+      'SELECT event_hash FROM session_events WHERE meeting_id = ? ORDER BY seq DESC LIMIT 1')
+      .get(meetingId);
+    const eventId = require('node:crypto').randomUUID();
+    const now = new Date().toISOString();
+    const full = { ...payload, eventId, eventType, meetingId, receivedAt: now };
 
-  /** Events that arrived after the roll closed: recorded, counted by nothing. */
-  late(agendaItemId) {
-    const item = meetings.getItem(agendaItemId);
-    if (!item || !item.vote_closed_at) return [];
-    return ledger.lateEvents(this.forItem(agendaItemId), item.vote_closed_at);
+    const built = ledger.buildEntry({
+      previousEntryHash: last ? last.event_hash : ledger.GENESIS,
+      payload: full,
+      key: this.key(),
+      eventType,
+    });
+
+    db.prepare(`INSERT INTO session_events
+      (event_id, meeting_id, event_type, payload_json, previous_hash, event_hash, received_at,
+       agenda_item_id, person_id, choice, source, entered_by, supersedes_event_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      eventId, meetingId, eventType, JSON.stringify(full),
+      built.previousEventHash, built.entryHash, now,
+      cols.agendaItemId || null, cols.personId || null, cols.choice || null,
+      cols.source || null, cols.enteredBy || null, cols.supersedesEventId || null);
+
+    return { eventId, eventHash: built.entryHash, receivedAt: now };
   },
 
   /**
-   * Append a vote.
+   * Record a vote.
    *
-   * A member voting again supersedes their previous event rather than
-   * replacing it; both remain, and `current()` resolves which one stands.
+   * `source` is required and not defaulted. A vote the clerk typed from the
+   * spoken roll and a vote a governor pressed are different facts, and the
+   * difference has to survive into the record rather than being decided by
+   * whichever caller forgot to say.
    */
   append(agendaItemId, personId, choice, opts = {}) {
-    const item = db.prepare('SELECT * FROM agenda_items WHERE id = ?').get(agendaItemId);
+    const item = meetings.getItem(agendaItemId);
     if (!item) throw new Error(`No agenda item ${agendaItemId}`);
+    const source = opts.source || 'MEMBER_TERMINAL';
 
-    const existing = this.forItem(agendaItemId);
-    const previous = existing.length ? existing[existing.length - 1] : null;
-    const standing = ledger.currentChoices(existing).get(personId);
-
-    const eventId = require('node:crypto').randomUUID();
-    const now = new Date().toISOString();
-    const payload = {
+    const standing = this.current(agendaItemId, { asOf: null, throughSeq: null }).get(personId);
+    return this.appendEvent(item.meeting_id, standing ? 'VOTE_CHANGED' : 'VOTE_CAST', {
       agendaItemId,
       choice,
       credentialId: opts.credentialId || null,
-      eventId,
-      meetingId: item.meeting_id,
       motionVersionId: opts.motionVersionId || null,
       personId,
+      source,
       stationId: opts.stationId || null,
-      submittedAt: opts.submittedAt || now,
+      submittedAt: opts.submittedAt || null,
       supersedesEventId: standing ? standing.event_id : null,
-    };
-
-    const built = ledger.buildEntry({
-      previousEntryHash: previous ? previous.entry_hash : ledger.GENESIS,
-      payload,
-      key: this.key(),
-      sequence: existing.length + 1,
+    }, {
+      agendaItemId, personId, choice, source,
+      enteredBy: opts.userId || null,
+      supersedesEventId: standing ? standing.event_id : null,
     });
+  },
 
-    db.prepare(`INSERT INTO vote_events
-      (event_id, agenda_item_id, meeting_id, motion_version_id, person_id, choice,
-       station_id, credential_id, event_sequence, submitted_at, received_at,
-       previous_event_hash, payload_hash, entry_hash, member_signature, server_signature,
-       supersedes_event_id, cast_by_user_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      eventId, agendaItemId, item.meeting_id, payload.motionVersionId, personId, choice,
-      payload.stationId, payload.credentialId, built.eventSequence, payload.submittedAt, now,
-      built.previousEventHash, built.payloadHash, built.entryHash,
-      opts.memberSignature || null, built.serverSignature,
-      payload.supersedesEventId, opts.userId || null);
-
-    return { eventId, ...built };
+  /** Where the roll closed, as a position in the chain. */
+  closedSeq(agendaItemId) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item) return null;
+    return ledger.closedAtSeq(this.forMeeting(item.meeting_id), agendaItemId);
   },
 
   /**
-   * Recompute the chain for an item.
+   * Each member's standing position, as of the close by default.
    *
-   * The payload has to be rebuilt from the stored columns exactly as it was
-   * hashed, so a column edited directly in the database changes the recomputed
-   * hash and the verification fails at that entry.
+   * Bounded by chain position rather than a clock wherever a close exists: a
+   * sequence number cannot be backdated, a timestamp column can.
    */
-  verify(agendaItemId) {
-    const rows = this.forItem(agendaItemId).map((r) => ({
-      ...r,
-      payload: {
-        agendaItemId: r.agenda_item_id,
-        choice: r.choice,
-        credentialId: r.credential_id,
-        eventId: r.event_id,
-        meetingId: r.meeting_id,
-        motionVersionId: r.motion_version_id,
-        personId: r.person_id,
-        stationId: r.station_id,
-        submittedAt: r.submitted_at,
-        supersedesEventId: r.supersedes_event_id,
-      },
-    }));
+  current(agendaItemId, opts = {}) {
+    const throughSeq = opts.throughSeq !== undefined ? opts.throughSeq : this.closedSeq(agendaItemId);
+    return ledger.currentChoices(this.forItem(agendaItemId), {
+      asOf: opts.asOf !== undefined ? opts.asOf : null,
+      throughSeq,
+    });
+  },
+
+  /** Ballots recorded after the roll closed: kept, counted by nothing. */
+  late(agendaItemId) {
+    const throughSeq = this.closedSeq(agendaItemId);
+    if (throughSeq == null) return [];
+    return ledger.lateEvents(this.forItem(agendaItemId), { throughSeq });
+  },
+
+  /**
+   * Recompute the chain for a whole meeting.
+   *
+   * The payload is rehydrated from `payload_json` and the indexed columns are
+   * checked against it, so editing `choice` in the table to flip a vote is
+   * caught even though the hash covers the payload rather than the column.
+   */
+  verify(meetingId) {
+    const rows = this.forMeeting(meetingId).map((r) => {
+      const payload = JSON.parse(r.payload_json);
+      return {
+        ...r,
+        previous_event_hash: r.previous_hash,
+        entry_hash: r.event_hash,
+        payload_hash: ledger.payloadHash(payload),
+        payload,
+        _mirrors: (payload.choice ?? null) === (r.choice ?? null)
+          && (payload.personId ?? null) === (r.person_id ?? null)
+          && (payload.source ?? null) === (r.source ?? null)
+          && (payload.agendaItemId ?? null) === (r.agenda_item_id ?? null),
+      };
+    });
+    const bad = rows.findIndex((r) => !r._mirrors);
+    if (bad !== -1) {
+      return { ok: false, brokenAt: bad, reason: 'indexed columns disagree with the sealed payload' };
+    }
     return ledger.verifyChain(rows, this.key());
+  },
+
+  /** Convenience: verify the meeting an item belongs to. */
+  verifyItem(agendaItemId) {
+    const item = meetings.getItem(agendaItemId);
+    return item ? this.verify(item.meeting_id) : { ok: false, reason: 'no such item' };
   },
 };
 
@@ -2307,10 +2337,90 @@ const voteLedger = {
  * means the record asserts an outcome the Board has withdrawn.
  */
 const voteAdmin = {
-  /** Close the roll, stamping the instant the tally is defined against. */
-  closeRoll(itemId) {
-    db.prepare("UPDATE agenda_items SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?")
-      .run(itemId);
+  /**
+   * Open the roll: an event in the chain, and the rule fixed at that moment.
+   */
+  openRoll(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    const rule = item.threshold_rule || item.vote_threshold || 'majority';
+    db.prepare(`UPDATE agenda_items
+      SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
+          threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
+          result_certified_at = NULL, result_certified_by = NULL, result_published_at = NULL,
+          certification_checkpoint = NULL
+      WHERE id = ?`).run(rule, itemId);
+    voteLedger.appendEvent(item.meeting_id, 'ROLL_OPENED',
+      { agendaItemId: itemId, thresholdRule: rule }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /**
+   * Close the roll.
+   *
+   * The event's position in the chain is what bounds the tally; the timestamp
+   * is for people to read. Everything after this slot is late by construction.
+   */
+  closeRoll(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    voteLedger.appendEvent(item.meeting_id, 'ROLL_CLOSED',
+      { agendaItemId: itemId }, { agendaItemId: itemId, enteredBy: userId });
+    db.prepare(`UPDATE agenda_items
+      SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?`).run(itemId);
+
+    const outcome = eligibility.outcome(itemId);
+    db.prepare("UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
+      agendaItemId: itemId, yea: outcome.yea, nay: outcome.nay,
+      eligible: outcome.eligible, required: outcome.required,
+      thresholdRule: outcome.threshold, result: outcome.result,
+    }, { agendaItemId: itemId, enteredBy: userId });
+    return outcome;
+  },
+
+  /** The chair states the result to the room. */
+  announce(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item || !item.result_computed_at) return null;
+    db.prepare("UPDATE agenda_items SET result_announced_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_ANNOUNCED',
+      { agendaItemId: itemId, result: item.result }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /**
+   * The Clerk attests to the result.
+   *
+   * Anchored to a chain position: the checkpoint records exactly what the
+   * record consisted of at the moment of attestation, so "what did the Clerk
+   * certify" is answerable by hash rather than by inference.
+   */
+  certify(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    if (!item.result_computed_at) throw new Error('A result must be computed before it can be certified.');
+    const checkpoint = db.prepare(
+      'SELECT event_hash FROM session_events WHERE meeting_id = ? ORDER BY seq DESC LIMIT 1')
+      .get(item.meeting_id);
+    db.prepare(`UPDATE agenda_items
+      SET result_certified_at = datetime('now'), result_certified_by = ?, certification_checkpoint = ?
+      WHERE id = ?`).run(userId, checkpoint ? checkpoint.event_hash : null, itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_CERTIFIED', {
+      agendaItemId: itemId, result: item.result,
+      preCertificationCheckpoint: checkpoint ? checkpoint.event_hash : null,
+    }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /** Published to the public record. */
+  publish(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    if (!item.result_certified_at) throw new Error('A result must be certified before it is published.');
+    db.prepare("UPDATE agenda_items SET result_published_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_PUBLISHED',
+      { agendaItemId: itemId, result: item.result }, { agendaItemId: itemId, enteredBy: userId });
     return meetings.getItem(itemId);
   },
 
@@ -2349,8 +2459,7 @@ const voteAdmin = {
     // Reopening clears the close: the previous instant no longer bounds
     // anything, and leaving it would make the live roll compute against a
     // window that has already ended.
-    db.prepare("UPDATE agenda_items SET vote_opened_at = datetime('now'), vote_closed_at = NULL WHERE id = ?")
-      .run(item.id);
+    this.openRoll(item.id, { userId });
     return { reopened: wasClosed };
   },
 
@@ -2375,7 +2484,11 @@ const voteAdmin = {
     this.retractOutcome(item, { reason: clean, userId });
     votes.clearForItem(item.id);
     meetings.setVoteStatus(item.id, 'pending');
-    db.prepare('UPDATE agenda_items SET vote_closed_at = NULL WHERE id = ?').run(item.id);
+    db.prepare(`UPDATE agenda_items SET vote_closed_at = NULL, result_computed_at = NULL,
+      result_announced_at = NULL, result_certified_at = NULL, result_published_at = NULL
+      WHERE id = ?`).run(item.id);
+    voteLedger.appendEvent(item.meeting_id, 'CORRECTION_APPROVED',
+      { agendaItemId: item.id, reason: clean }, { agendaItemId: item.id, enteredBy: userId });
     if (item.matter_id) {
       // The voiding is itself an act the record should show. A history that
       // simply loses the entry would read as though the vote never happened.
@@ -2428,7 +2541,8 @@ const eligibility = {
     // No bound here on purpose: the roll shown to the clerk is what has been
     // received. Whether a given event counts is decided by outcome(), against
     // the close.
-    const standing = voteLedger.current(agendaItemId, { asOf: opts.asOf ?? null });
+    const standing = voteLedger.current(agendaItemId,
+      opts.throughSeq !== undefined ? { throughSeq: opts.throughSeq } : {});
     const roll = seated.map((p) => {
       const att = attendance.get(p.id) || 'Present';
       const ev = standing.get(p.id);
@@ -2461,16 +2575,16 @@ const eligibility = {
    * only "Fail" cannot check the ruling, and the chair has to be able to state
    * the basis aloud.
    */
-  outcome(agendaItemId, { asOf } = {}) {
-    const item0 = meetings.getItem(agendaItemId);
-    if (!item0) return null;
-    // A closed vote is computed as of its close. Anything received later is
-    // kept in the ledger and excluded here, so the result cannot drift.
-    const bound = asOf !== undefined ? asOf : item0.vote_closed_at || null;
-    const e = this.forItem(agendaItemId, { asOf: bound });
+  outcome(agendaItemId, { throughSeq } = {}) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item) return null;
+    // Bounded by the close's position in the chain. Anything after it is kept
+    // and excluded here, so a settled result cannot drift.
+    const bound = throughSeq !== undefined ? throughSeq : voteLedger.closedSeq(agendaItemId);
+    const e = this.forItem(agendaItemId, { throughSeq: bound });
     if (!e) return null;
-    const item = item0;
-    const threshold = item.vote_threshold || 'majority';
+    // The rule recorded with the roll, not whatever the config says today.
+    const threshold = item.threshold_rule || item.vote_threshold || 'majority';
     const yea = e.roll.filter((r) => r.choice === 'Yea').length;
     const nay = e.roll.filter((r) => r.choice === 'Nay').length;
 
@@ -2489,8 +2603,9 @@ const eligibility = {
     }
     return {
       ...e, yea, nay, threshold, required, passes,
-      asOf: bound,
-      late: bound ? voteLedger.late(agendaItemId).length : 0,
+      throughSeq: bound,
+      closed: bound != null,
+      late: bound != null ? voteLedger.late(agendaItemId).length : 0,
       result: passes ? 'Pass' : 'Fail',
       basis: threshold === 'majority_full'
         ? `majority of ${e.eligible} eligible`
