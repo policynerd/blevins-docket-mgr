@@ -1,14 +1,19 @@
 name: Fly Deploy (legacy)
 
-# The way back.
+# This is what deploys production.
 #
-# The rebuild now deploys to beg-docket-manager. If it misbehaves in production,
-# this puts the previous application back on the same app in one run, without
-# needing a revert commit or anyone's laptop.
+# `legacy/` is the legislative management system running on beg-docket-manager:
+# the docket, calendar, meetings, votes, minutes, municipal code, budget and
+# procurement. `legacy/fly.toml` names that app and mounts the docket_data
+# volume at /data, where the SQLite database lives.
 #
-# `legacy/` is otherwise untouched and still builds. Its SQLite volume
-# (docket_data) is not deleted by the rebuild's deploy — the rebuild simply does
-# not mount it — so the data it holds is still there when this runs.
+# It used to be a rollback lever, from when the rebuild deployed over the same
+# app. It is not that any more — the rebuild's fly.toml now names its own app,
+# so this workflow is the only thing in the repository that reaches production.
+# Run it to ship a change to the Board's live system, not to undo one.
+#
+# Deliberately workflow_dispatch: a push-triggered deploy of the Board's system
+# is not something to acquire by accident.
 on:
   workflow_dispatch:
 
