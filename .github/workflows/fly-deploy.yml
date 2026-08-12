@@ -1,14 +1,19 @@
 name: Fly Deploy
 
-# Deploys the app to Fly.io on every push to main. Requires a repository
-# secret FLY_API_TOKEN (create with: `fly tokens create deploy`).
+# Deploys the drafting application to its own Fly app, alongside the existing
+# legislative management system rather than over it.
+#
+# Manual on purpose: this has never handled a real request. Restore the `push:`
+# trigger once it has proven itself:
+#
+#   on:
+#     push:
+#       branches: [main]
+#     workflow_dispatch:
+
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
-# Least-privilege: deploy needs only to read the repo (Fly auth is via
-# FLY_API_TOKEN, not the GITHUB_TOKEN).
 permissions:
   contents: read
 
@@ -17,24 +22,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Module load smoke test
-        run: >
-          node --experimental-sqlite --no-warnings -e
-          "require('./src/repo');require('./src/views/pages');require('./src/views/admin');require('./src/views/org');require('./src/views/minutes');console.log('modules OK')"
-
   deploy:
-    needs: smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Fails the run before anything is built if the two secrets that cannot
+      # live in fly.toml are missing. Without this the deploy succeeds, the
+      # release command runs, and the machine then crashloops on a startup
+      # error that reads as a code fault rather than a missing secret.
+      - name: Check required secrets are set on the app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          names=$(flyctl secrets list --app blevins-drafting --json | jq -r '.[].Name')
+          missing=0
+          for required in SESSION_SECRET ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET APP_BASE_URL DATABASE_URL; do
+            if ! grep -qx "$required" <<< "$names"; then
+              echo "::error::$required is not set on blevins-drafting"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - name: Deploy to Fly
         run: flyctl deploy --remote-only
         env:

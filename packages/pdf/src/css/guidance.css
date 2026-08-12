@@ -1,0 +1,37 @@
+/*
+ * The drafting view.
+ *
+ * Layered on top of act.css to reveal the guidance that the export hides. This
+ * is what the drafter sees in the editor and on a guidance proof — the same
+ * document, with the instructions for filling it in shown in place, next to
+ * the section each one belongs to.
+ *
+ * Green and bracketed because that is the convention drafters already read as
+ * "not part of the text". The colour is doing real work: guidance sits inline
+ * with content, so it has to be distinguishable at a glance from the words
+ * that will actually be enacted.
+ */
+
+guidance {
+  display: block;
+  margin: 3pt 0 8pt 0;
+  color: #1a6b3c;
+  font-size: 9.5pt;
+  line-height: 1.35;
+  text-align: justify;
+  hyphens: none;
+}
+
+guidance::before {
+  content: '[';
+}
+
+guidance::after {
+  content: ']';
+}
+
+/* An unfilled section reads "Not Applicable" until someone replaces it. Muting
+   it keeps a page of placeholders from looking like a page of decisions. */
+tblock > aknP:only-of-type {
+  color: #6b7280;
+}

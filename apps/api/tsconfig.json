@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    // The template tests assert on rendered layout, which means running
+    // callbacks inside the browser via `page.evaluate()`. Those callbacks are
+    // serialised and executed in the page, where `document` and
+    // `getComputedStyle` are real — same reason packages/pdf carries the DOM
+    // lib.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+}

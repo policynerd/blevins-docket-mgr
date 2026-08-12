@@ -9,8 +9,66 @@ permissions:
   contents: read
 
 jobs:
+  # The new stack: pnpm workspace, TypeScript packages, Chromium-backed PDF
+  # rendering.
   test:
     runs-on: ubuntu-latest
+
+    # The schema tests assert on constraints — a case-insensitive unique index,
+    # a composite key, cascade and restrict rules — which exist only in the
+    # database. Running them against anything but a real PostgreSQL would test
+    # a substitute's agreement with itself.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blevins_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/blevins_test
+
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors out if the version is
+      # given in both places, and package.json's `packageManager` field is the
+      # one that also pins local development — keeping it as the single source
+      # means CI and a developer's machine cannot drift apart.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The PDF tests drive a real browser, so one has to be present. The
+      # version is pinned to the playwright-core in the lockfile: playwright
+      # resolves browsers by the exact revision its own version expects, and a
+      # mismatch leaves the download unused and the tests unable to launch.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Apply database migrations
+        run: pnpm db:migrate
+
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  # The application still serving production, kept green until the rebuild
+  # reaches parity and legacy/ is removed.
+  legacy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  // Turbo 2 runs tasks with a filtered environment, so anything a task needs
+  // from the ambient shell has to be named. These locate the Chromium the PDF
+  // renderer drives; without them the renderer falls back to Playwright's own
+  // default cache path and cannot launch. They are pass-through rather than
+  // hashed inputs because where the browser lives has no bearing on the output
+  // it produces, and hashing them would miss the cache on every machine.
+  "globalPassThroughEnv": [
+    "CHROMIUM_PATH",
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
+    "DATABASE_URL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    }
+  }
+}

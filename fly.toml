@@ -4,26 +4,78 @@
 #
 
 app = 'beg-docket-manager'
+# The rebuild, replacing the legacy application on this app.
+#
+# Non-secret configuration lives here rather than being set by hand, so a
+# machine that is rebuilt or a region that is added comes up configured. The two
+# real secrets — SESSION_SECRET and ENTRA_CLIENT_SECRET — are set out of band
+# and deliberately absent from this file.
+#
+# The tenant and client ids are identifiers, not secrets: they travel in the
+# sign-in URL in plain sight on every request.
+
+# NOT beg-docket-manager.
+#
+# That app runs the legislative management system — 50 tables and 248 routes
+# covering the docket, calendar, meetings, votes, minutes, the municipal code,
+# budget and procurement. This application models none of that: it is nine
+# tables of drafting. Pointing this file at that app does not replace it, it
+# removes it, and because this config declares no [[mounts]] the machine would
+# also come up with the docket_data volume detached.
+#
+# Fly caught exactly that and refused to deploy without an interactive --yes.
+# Naming a different app here means the platform is not the only thing standing
+# between a routine `flyctl deploy` and the Board losing its docket.
+#
+# Drafting runs alongside the existing system, not over it.
+app = 'blevins-drafting'
 primary_region = 'iad'
 
 [build]
   dockerfile = 'Dockerfile'
 
 [env]
-  DOCKET_DB = '/data/docket.db'
-  PORT = '3000'
+  NODE_ENV = 'production'
+  # Next serves the public port; the API listens on loopback behind its rewrite.
+  PORT = '3100'
+  API_PORT = '3200'
 
-[[mounts]]
-  source = 'docket_data'
-  destination = '/data'
+# ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET and APP_BASE_URL are
+# already set as secrets on this app by the application being replaced, and are
+# deliberately not repeated here. A Fly secret overrides an [env] value of the
+# same name, so listing them in both places would mean the file says one thing
+# and the app runs on another — the worst kind of configuration to debug.
+#
+# The tenant and client ids are not secret in themselves; they simply already
+# live there, and one copy is better than two that can drift.
+
+# Runs on a temporary machine before the new version takes traffic. A failure
+# here aborts the release, which is the point: a schema behind the code it
+# serves is worse than a deploy that did not happen.
+[deploy]
+  release_command = './scripts/release.sh'
 
 [http_service]
-  internal_port = 3000
+  internal_port = 3100
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
+  # Kept warm. A cold start here is not just Node booting — the first export
+  # after a wake also pays for Chromium's first launch, and the Board opening
+  # the docket mid-meeting should not wait for that. Set to 0 to trade that
+  # latency for a lower bill.
+  min_machines_running = 1
 
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    # Through the rewrite, so a pass means Next is up *and* reaching the API.
+    # Checking Next alone would report healthy with a dead API behind it.
+    path = '/api/health'
+
+# Chromium is the reason for the size. A 256mb machine renders nothing.
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '256mb'
@@ -35,3 +87,5 @@ primary_region = 'iad'
   cpus = 2
   memory_mb = 3072
   processes = ['app']
+  size = 'shared-cpu-2x'
+  memory = '3072mb'
