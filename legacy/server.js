@@ -732,15 +732,29 @@ route('POST', /^\/admin\/purge$/, (req, res, ctx) => {
 // Users & roles management (ADMIN only) --------------------------------------
 route('GET', /^\/admin\/users\/?$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
-  sendHtml(res, usersView.usersAdmin(ctx.user));
+  sendHtml(res, usersView.usersAdmin(ctx.user, ctx.query.link));
 });
 route('POST', /^\/admin\/users$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
   const b = ctx.body;
   if (b.email && !repo.users.byEmail(b.email)) {
-    repo.users.create({ name: b.name, email: b.email, role: b.role });
+    repo.users.create({
+      name: b.name, email: b.email, role: b.role, person_id: b.person_id,
+    });
   }
   redirect(res, '/admin/users');
+});
+// Say which governor a login speaks for. Without it the account signs in,
+// holds the member role, and is refused at the ballot as having no member
+// identity — with nothing in the interface able to repair it.
+route('POST', /^\/admin\/users\/(\d+)\/person$/, (req, res, ctx) => {
+  if (!need(ctx, res, 'admin')) return;
+  const r = repo.users.setPerson(Number(ctx.params[0]), ctx.body.person_id);
+  if (r.error === 'no_such_user') return sendHtml(res, pages.notFound(), 404);
+  // The refusals are carried back rather than swallowed: a mistyped id that
+  // silently linked nobody would leave the account looking configured.
+  const q = r.error ? '?link=' + encodeURIComponent(r.error === 'taken' ? `taken:${r.by}` : r.error) : '';
+  redirect(res, '/admin/users' + q);
 });
 route('POST', /^\/admin\/users\/(\d+)\/role$/, (req, res, ctx) => {
   if (!need(ctx, res, 'admin')) return;
