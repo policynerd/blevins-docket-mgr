@@ -657,6 +657,9 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 .live-banner { display: block; background: var(--bad); color: #fff; padding: 10px 16px; border-radius: 4px; font-weight: 700; margin-bottom: 16px; }
 .live-banner:hover { background: var(--bad-dark); color: #fff; text-decoration: none; }
 .live-pill { background: var(--faint); color: #fff; font-weight: 800; font-size: var(--t-small); padding: 4px 10px; border-radius: 999px; letter-spacing: .5px; }
+/* The clerk's route to the wall screen. The display is deliberately not in the
+   nav — it is not a page anyone browses — so the console is where it is found. */
+.live-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
 .live-pill.on { background: var(--bad); animation: livepulse 1.6s infinite; }
 @keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 .live-active-card { border-top: 3px solid var(--bad); }

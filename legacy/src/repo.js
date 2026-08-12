@@ -123,6 +123,21 @@ const bodies = {
       ORDER BY CASE bm.role WHEN 'Chair' THEN 0 WHEN 'Vice Chair' THEN 1 ELSE 2 END, p.full_name`)
       .all(bodyId);
   },
+  /**
+   * Is this person seated on this body?
+   *
+   * The question both cast routes have to answer before writing a ballot. The
+   * roll is built from `body_members`, so a vote for anyone else is counted by
+   * nothing and shown in no roster — while still sealing an entry into the
+   * ledger, which is the authoritative account. Asking it in one place keeps
+   * the clerk's answer and the member's answer from drifting apart.
+   */
+  isSeated(bodyId, personId) {
+    const id = Number(personId);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    return !!db.prepare('SELECT 1 FROM body_members WHERE body_id = ? AND person_id = ?')
+      .get(bodyId, id);
+  },
   upcomingMeetings(bodyId, limit = 10) {
     return db.prepare(`SELECT * FROM meetings WHERE body_id = ?
       ORDER BY meeting_date DESC LIMIT ?`).all(bodyId, limit);
