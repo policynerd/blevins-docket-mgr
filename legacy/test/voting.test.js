@@ -783,3 +783,67 @@ test('a seal URL cannot break out of the CSS it sits in', () => {
     org.ORG.logoLightUrl = before;
   }
 });
+
+/* -------------------------------------------------- the clerk's console ---- */
+
+test('the snapshot reports whether the record still verifies', () => {
+  // The clerk needs to know during the meeting, while ballots can still be
+  // re-taken — not months later in an audit.
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  assert.equal(live.snapshot(meetingId).chain.ok, true);
+
+  db.prepare("UPDATE session_events SET choice = 'Nay' WHERE choice = 'Yea' AND agenda_item_id = ?")
+    .run(itemId);
+
+  const chain = live.snapshot(meetingId).chain;
+  assert.equal(chain.ok, false, 'a tampered record still reported as verified');
+  assert.ok(chain.reason, 'the console was told it is broken but not why');
+});
+
+test('the console is given the figures the close will use', () => {
+  const { itemId, meetingId } = newItem({ threshold: 'majority_full' });
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  appendAt(itemId, people[1], 'Recused');
+
+  const a = live.snapshot(meetingId).active;
+  // Everything the clerk mockup asks for, from the same source as the outcome.
+  for (const k of ['present', 'eligible', 'recused', 'notVoted', 'required', 'basis']) {
+    assert.ok(a[k] !== undefined, `the console cannot show ${k}`);
+  }
+  assert.equal(a.eligible, 4);
+  assert.equal(a.required, 3);
+});
+
+test('the console knows how far through the lifecycle an item is', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+
+  let a = live.snapshot(meetingId).active;
+  assert.equal(a.closed, true);
+  assert.equal(a.announced, false);
+  assert.equal(a.certified, false);
+  assert.equal(a.published, false);
+
+  repo.voteAdmin.announce(itemId);
+  repo.voteAdmin.certify(itemId, { userId: null });
+  a = live.snapshot(meetingId).active;
+  assert.equal(a.announced, true);
+  assert.equal(a.certified, true);
+  assert.equal(a.published, false, 'certifying should not publish');
+});
+
+test('the console surfaces ballots that arrived after the close', () => {
+  const { itemId, meetingId } = newItem();
+  repo.voteAdmin.openRoll(itemId);
+  appendAt(itemId, people[0], 'Yea');
+  repo.voteAdmin.closeRoll(itemId);
+  appendAt(itemId, people[1], 'Nay');
+
+  assert.equal(live.snapshot(meetingId).active.late, 1,
+    'a ballot after the close was invisible to the clerk');
+});

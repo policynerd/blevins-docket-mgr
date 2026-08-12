@@ -2111,6 +2111,29 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/void$/, (req, res, ctx) => {
   sendJson(res, { ok: true });
 });
 
+/**
+ * The result lifecycle, one route per act.
+ *
+ * Separate endpoints rather than a status field the clerk sets, because these
+ * are four different things a different person may do at a different moment,
+ * and each one is an event in the session chain.
+ */
+for (const [step, fn] of [['announce', 'announce'], ['certify', 'certify'], ['publish', 'publish']]) {
+  route('POST', new RegExp(`^\\/admin\\/agenda-items\\/(\\d+)\\/${step}$`), (req, res, ctx) => {
+    const itemId = Number(ctx.params[0]);
+    const item = repo.meetings.getItem(itemId);
+    if (!item) return sendJson(res, { error: 'Not found' }, 404);
+    try {
+      const updated = repo.voteAdmin[fn](itemId, { userId: ctx.user ? ctx.user.id : null });
+      if (!updated) return sendJson(res, { error: 'Not available yet' }, 409);
+    } catch (e) {
+      return sendJson(res, { error: e.message }, 409);
+    }
+    live.pushUpdate(item.meeting_id);
+    sendJson(res, { ok: true });
+  });
+}
+
 route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);

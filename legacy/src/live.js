@@ -100,11 +100,19 @@ function snapshot(meetingId) {
       certified: !!open.result_certified_at,
       published: !!open.result_published_at,
       late: o.late,
+      announced: !!open.result_announced_at,
+      computedAt: open.result_computed_at || null,
     };
   }
 
+  // Chain health, surfaced to the clerk rather than left to be discovered.
+  // A record that has stopped verifying is something the person running the
+  // meeting needs to know during it, not months later during an audit.
+  const chain = repo.voteLedger.verify(meetingId);
+
   return {
     ts: Date.now(),
+    chain: { ok: chain.ok, brokenAt: chain.brokenAt ?? null, reason: chain.reason || null },
     meeting: { id: meeting.id, body: meeting.body_name, status: meeting.status,
       date: meeting.meeting_date, time: meeting.meeting_time },
     active,
