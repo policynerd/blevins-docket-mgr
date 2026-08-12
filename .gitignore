@@ -1,10 +1,14 @@
-# Generated SQLite database (legacy app; auto-seeded on first run)
-/data/*.db
-/data/*.db-shm
-/data/*.db-wal
+# Generated SQLite databases (legacy app; auto-seeded on first run).
+# `**/` on purpose: the legacy app falls back to its own ./data when DOCKET_DB
+# is unset, so a working copy grows legacy/data/docket.db as well as
+# /data/docket.db. These were once written `/data/*.db`, which git anchors to
+# the repository root — legacy/data/ slipped past it and got committed.
+**/data/*.db
+**/data/*.db-shm
+**/data/*.db-wal
 
 # Runtime database backups (auto-created on server startup)
-/data/backups/
+**/data/backups/
 
 # Local environment files
 .env
