@@ -37,11 +37,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          names=$(flyctl secrets list --app blevins-drafting --json | jq -r '.[].Name')
+          names=$(flyctl secrets list --app beg-docket-manager --json | jq -r '.[].Name')
           missing=0
           for required in SESSION_SECRET ENTRA_TENANT_ID ENTRA_CLIENT_ID ENTRA_CLIENT_SECRET APP_BASE_URL DATABASE_URL; do
             if ! grep -qx "$required" <<< "$names"; then
-              echo "::error::$required is not set on blevins-drafting"
+              echo "::error::$required is not set on beg-docket-manager"
               missing=1
             fi
           done
