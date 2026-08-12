@@ -923,3 +923,25 @@ test('the chamber display falls back to the drawn seal on an unusable brand valu
     ORG.logoLightUrl = original;
   }
 });
+
+// --- The chamber display has to be reachable ---------------------------------
+// It is deliberately absent from the navigation — it is not a page anyone
+// browses — which left it reachable only by typing the URL from memory, with
+// the meeting id in it. The clerk console is where the room gets set up, so
+// that is where the route to the wall screen belongs.
+
+test('the clerk console offers the chamber display; the public board does not', () => {
+  const liveViews = require('../src/views/live');
+  const { meetingId } = newItem();
+  const meeting = repo.meetings.get(meetingId);
+
+  const console_ = liveViews.clerkConsole(meeting, { person_id: null });
+  assert.match(console_, new RegExp(`href="/display/${meetingId}"`),
+    'the clerk had no way to open the display but to type its URL');
+
+  // The board is unauthenticated by design, but it is the clerk's instrument.
+  // Offering it from the public page invites the room to put it up themselves.
+  const publicBoard = liveViews.publicLive(meeting, null);
+  assert.doesNotMatch(publicBoard, new RegExp(`href="/display/${meetingId}"`),
+    'the public live board should not hand out the chamber display');
+});

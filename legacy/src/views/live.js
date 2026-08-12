@@ -15,6 +15,8 @@ function livePage(meeting, { role, personId, control }) {
       <span class="live-pill" data-live-pill>● LIVE</span>
     </div>
     <p class="muted">${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))} · ${meeting.location || ''}</p>
+    ${raw(control ? `<p class="live-tools"><a class="btn" href="/display/${meeting.id}" target="_blank" rel="noopener">Open chamber display →</a>
+      <span class="muted">The board for the room. Open it on the wall screen; it needs no sign-in.</span></p>` : '')}
 
     <div class="live" data-meeting="${meeting.id}" data-role="${role}" data-control="${control ? '1' : '0'}"${raw(personAttr)}>
       <section class="card live-active-card">
@@ -46,7 +48,8 @@ function liveLauncher() {
   const rows = list.length ? list.map((m) => html`
     <tr><td>${raw(formatDateTime(m.meeting_date, m.meeting_time))}</td>
     <td>${m.body_name}</td><td>${statusBadge(m.status)}</td>
-    <td><a class="btn" href="/admin/meetings/${m.id}/live">Run live</a></td></tr>`).join('') : null;
+    <td><a class="btn" href="/admin/meetings/${m.id}/live">Run live</a>
+    <a class="btn" href="/display/${m.id}" target="_blank" rel="noopener">Display</a></td></tr>`).join('') : null;
   return rows
     ? `<table class="data"><thead><tr><th>When</th><th>Body</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
     : '<p class="empty">No upcoming meetings to run.</p>';
