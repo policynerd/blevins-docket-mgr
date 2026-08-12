@@ -16,6 +16,7 @@
 
 const { escapeHtml, isBrandSrc } = require('../util');
 const { sealSvg, dataUri } = require('../seal');
+const lockupArt = require('../lockup');
 const { ORG } = require('../org');
 
 const STYLE = `
@@ -38,6 +39,14 @@ const STYLE = `
     position: relative; height: 100%; display: flex; flex-direction: column;
     padding: 2.5vh 4vw; gap: 1.6vh;
   }
+
+  /* Which body is sitting.
+     The board carried no name at all: the room could see a roll being called
+     and a result declared without being told whose. The title said so, but a
+     browser tab is not visible on a screen bolted to a wall. Sized to be read
+     on the way in and then ignored — it must not compete with the item. */
+  .masthead { flex: 0 0 auto; opacity: .92; }
+  .masthead svg { display: block; width: min(42vw, 620px); height: auto; }
 
   /* The result banner. Its own bar across the top, because the outcome is what
      the room is waiting for and it must not have to be read out of a tally. */
@@ -111,7 +120,7 @@ const STYLE = `
   [hidden] { display: none !important; }
 `;
 
-function displayBoard(meeting) {
+function displayBoard(meeting, body) {
   // The Board's own seal when one has been supplied, otherwise the drawn one.
   //
   // The reversed artwork, not the black: this board is white on black, and a
@@ -140,6 +149,9 @@ function displayBoard(meeting) {
 </head>
 <body>
 <div class="board" data-meeting="${meeting.id}">
+  <div class="masthead">${lockupArt.horizontalSvg(
+    body || { name: meeting.body_name }, { width: 620, ground: 'dark' },
+  )}</div>
   <div class="banner" data-banner hidden></div>
   <div data-board hidden>
     <div class="label">Agenda Item</div>

@@ -1028,6 +1028,7 @@ route('POST', /^\/admin\/bodies$/, (req, res, ctx) => {
     name: b.name, type: b.type || null, description: b.description || null,
     meeting_location: b.meeting_location || null, meets: b.meets || null,
     seats: b.seats ? Number(b.seats) : null,
+    accent_color: accentOrNull(b.accent_color),
   });
   redirect(res, `/bodies/${id}`);
 });
@@ -1045,6 +1046,7 @@ route('POST', /^\/admin\/bodies\/(\d+)$/, (req, res, ctx) => {
     name: f.name, type: f.type || null, description: f.description || null,
     meeting_location: f.meeting_location || null, meets: f.meets || null, active: b.active,
     seats: f.seats ? Number(f.seats) : null,
+    accent_color: accentOrNull(f.accent_color),
   });
   redirect(res, `/bodies/${b.id}`);
 });
@@ -2073,7 +2075,9 @@ route('GET', /^\/live\/(\d+)$/, (req, res, ctx) => {
 route('GET', /^\/display\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, displayViews.displayBoard(mt));
+  // The body itself, not just its name off the meeting: the lockup is set in
+  // the body's own accent, which lives on the body row.
+  sendHtml(res, displayViews.displayBoard(mt, mt.body_id ? repo.bodies.get(mt.body_id) : null));
 });
 route('GET', /^\/live\/(\d+)\/stream$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
@@ -2266,6 +2270,15 @@ function need(ctx, res, role) {
   if (auth.hasRole(ctx.user, role)) return true;
   sendHtml(res, forbidden(), 403);
   return false;
+}
+
+// A body's accent, or nothing. The colour input always posts a value, so the
+// Board's own slate is stored as "no accent chosen" rather than as a colour
+// this body picked — otherwise every body ever saved would look deliberate.
+function accentOrNull(v) {
+  const hex = String(v || '').trim();
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return null;
+  return hex.toLowerCase() === '#353d4f' ? null : hex;
 }
 
 function parseTopics(str) {

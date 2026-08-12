@@ -144,10 +144,11 @@ const bodies = {
   },
   insert(b) {
     return db.prepare(`INSERT INTO bodies
-      (name, type, description, meeting_location, meets, active, seats)
-      VALUES (?,?,?,?,?,?,?)`).run(
+      (name, type, description, meeting_location, meets, active, seats, accent_color)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
       b.name, b.type ?? null, b.description ?? null, b.meeting_location ?? null,
-      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null).lastInsertRowid;
+      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null,
+      b.accent_color ?? null).lastInsertRowid;
   },
   addMember(bodyId, personId, role = 'Member', voting = 1) {
     return db.prepare(`INSERT INTO body_members (body_id, person_id, role, voting)
@@ -163,10 +164,11 @@ const bodies = {
     db.prepare('DELETE FROM body_members WHERE id = ?').run(memberId);
   },
   update(id, b) {
-    db.prepare(`UPDATE bodies SET name=?, type=?, description=?, meeting_location=?, meets=?, active=?, seats=?
-      WHERE id=?`).run(
+    db.prepare(`UPDATE bodies SET name=?, type=?, description=?, meeting_location=?, meets=?, active=?, seats=?,
+      accent_color=? WHERE id=?`).run(
       b.name, b.type ?? null, b.description ?? null, b.meeting_location ?? null,
-      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null, id);
+      b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null,
+      b.accent_color ?? null, id);
   },
   // Members whose terms end within the window (or already ended), plus
   // seat vacancies, for the membership workspace.

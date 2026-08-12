@@ -1836,3 +1836,89 @@ test('documents: the details sheet omits a version column it cannot fill honestl
   assert.match(text, /Version 2/, 'the sheet should state the version the file is on');
   assert.doesNotMatch(text, /Ver\./, "a version column would attribute today's draft to an older vote");
 });
+
+// --- The body lockup ---------------------------------------------------------
+// Drawn from the body's own row rather than uploaded, so a committee that is
+// renamed re-letters itself and a new one needs no artwork before it can meet.
+
+test('lockup: the Board sitting as itself is not made a committee of itself', () => {
+  const lockup = require('../src/lockup');
+  const { ORG } = require('../src/org');
+
+  const plenary = lockup.stackedSvg({ name: ORG.name });
+  assert.equal((plenary.match(/BOARD/g) || []).length, 1,
+    'the Board\'s own meeting set its name twice, over a rule');
+  assert.match(plenary, new RegExp(`aria-label="${ORG.name}"`));
+
+  const committee = lockup.stackedSvg({ name: 'Planning Commission' });
+  assert.match(committee, /PLANNING COMMISSION/);
+  assert.match(committee, new RegExp(`aria-label="${ORG.name} — Planning Commission"`));
+});
+
+test('lockup: an accent is lifted until it carries on the chamber display', () => {
+  const lockup = require('../src/lockup');
+  const ratio = (hex) => {
+    const l = lockup.luminance(lockup.parseHex(hex));
+    return (l + 0.05) / 0.05;
+  };
+  // The palette is chosen against cream. On black the dark end of it vanishes:
+  // the Planning Commission's crimson sits at about 2.6:1 unlifted.
+  for (const paper of ['#9B1C2E', '#1F5C3D', '#2E6B4F', '#1E3A5F', '#8B1A2B', '#B8901A']) {
+    const wall = lockup.forDarkGround(paper);
+    assert.ok(ratio(wall) >= 7,
+      `${paper} lifted to ${wall}, still only ${ratio(wall).toFixed(1)}:1 on black`);
+  }
+  // A colour that already carries is left alone rather than washed out.
+  // Compared case-insensitively: the value round-trips through toHex, which
+  // normalises to lowercase, and that is not what this test is about.
+  assert.equal(lockup.forDarkGround('#B8901A').toLowerCase(), '#b8901a');
+
+  // And the lift only applies to the ground that needs it.
+  const body = { name: 'Planning Commission', accent_color: '#9B1C2E' };
+  assert.match(lockup.stackedSvg(body, { ground: 'light' }), /#9B1C2E/);
+  assert.doesNotMatch(lockup.stackedSvg(body, { ground: 'dark' }), /#9B1C2E/);
+});
+
+test('lockup: only a hex accent is drawn, and the body name is escaped', () => {
+  const lockup = require('../src/lockup');
+  // The value reaches an SVG attribute, and it comes from an admin form.
+  for (const junk of ['red', '#fff', 'url(#x)', '"/><script>x</script>', null, undefined, 42]) {
+    const svg = lockup.stackedSvg({ name: 'Some Committee', accent_color: junk });
+    assert.match(svg, /#353D4F/, `a non-hex accent was not replaced: ${String(junk)}`);
+    assert.doesNotMatch(svg, /<script/);
+  }
+  const nasty = lockup.stackedSvg({ name: 'A & B "quoted" <tag>' });
+  assert.doesNotMatch(nasty, /<tag>/, 'the body name reached the markup unescaped');
+  assert.match(nasty, /&amp;/);
+});
+
+test('lockup: the longest committee name stays inside the horizontal masthead', () => {
+  const lockup = require('../src/lockup');
+  // "COMMITTEE ON APPROPRIATIONS" overran the gutter at the nominal size and
+  // was clipped by the viewBox, losing its tail.
+  for (const name of [
+    'Committee on Appropriations',
+    'Committee on Health, Safety & Environment',
+    'Committee on Security & Classified Programs',
+    'Grants Commission',
+  ]) {
+    const svg = lockup.horizontalSvg({ name, accent_color: '#2E6B4F' });
+    const lines = [...svg.matchAll(/x="(\d+)"[^>]*font-size="([\d.]+)"[^>]*letter-spacing="([\d.]+)"[^>]*>([^<]+)</g)];
+    for (const [, x, size, track, raw] of lines) {
+      // Measure the glyphs that get drawn, not the markup: "&amp;" is one
+      // ampersand on the screen, and counting it as five characters made this
+      // check fail on a masthead that fits perfectly well.
+      //
+      // `&amp;` is undone last, not first. Escaping turns `&` into `&amp;`
+      // before anything else, so a body named "A &lt; B" is stored as
+      // "A &amp;lt; B"; unescaping in the same order walks it back twice and
+      // yields "A < B", measuring four glyphs that are not there.
+      const text = raw.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+      const width = text.length * (0.62 * Number(size) + Number(track));
+      assert.ok(Number(x) + width <= 1000,
+        `"${text}" runs to ${Math.round(Number(x) + width)} of 1000 in the ${name} masthead`);
+    }
+  }
+});
