@@ -129,8 +129,30 @@ function slugify(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+// What may be used as the source of the board's artwork.
+//
+// Brand art may be hosted (https) or shipped with the app under /brand/.
+// A local path keeps the mark working offline and on first boot.
+//
+// The path is built from one segment at a time so a traversal cannot be
+// spelled: each segment must start with an alphanumeric, which rejects both
+// `..` and a leading dot, and the `/`-joined form leaves no way to write an
+// empty segment (`//`). serveStatic() refuses to leave PUBLIC_DIR as well, so
+// this is the outer of two independent checks rather than the only one.
+//
+// It lives here rather than in views/layout.js because the chamber display
+// interpolates the same setting into a CSS url() and is deliberately built not
+// to depend on the layout module. Excluding quotes and whitespace is what makes
+// that safe: a value carrying a newline would otherwise end the CSS string and
+// let whatever follows be parsed as further rules.
+const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
+const SEGMENT = '[A-Za-z0-9][A-Za-z0-9._-]*';
+const LOCAL_ASSET = new RegExp(`^/(brand|assets)(/${SEGMENT})+$`);
+function isBrandSrc(v) { return HTTPS_URL.test(String(v == null ? '' : v)) || LOCAL_ASSET.test(String(v == null ? '' : v)); }
+
 module.exports = {
   escapeHtml, html, raw, renderValue,
   formatDate, formatDateTime, todayISO, MONTHS,
   sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray, slugify,
+  isBrandSrc,
 };

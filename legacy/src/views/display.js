@@ -14,7 +14,7 @@
 // should also keep working if the stylesheet fails to load, which it will not
 // do if its appearance depends on one.
 
-const { escapeHtml } = require('../util');
+const { escapeHtml, isBrandSrc } = require('../util');
 const { sealSvg, dataUri } = require('../seal');
 const { ORG } = require('../org');
 
@@ -121,8 +121,13 @@ function displayBoard(meeting) {
   // The generated seal is inlined as a data URI so the board makes no second
   // request; a supplied file is referenced by URL, because inlining a PNG of
   // any real size into every render would cost more than the request saves.
+  // The same test the rest of the application applies to branding, rather than
+  // this view's own. Rejecting a bare `"` kept the CSS string from being closed,
+  // but a value carrying a newline ends it just as well, and a merely malformed
+  // one — a typo in the Branding screen — put a broken background on the wall
+  // instead of falling back to the drawn seal. isBrandSrc admits neither.
   const supplied = ORG.logoLightUrl || '';
-  const seal = supplied && !supplied.includes('"')
+  const seal = isBrandSrc(supplied)
     ? supplied
     : dataUri(sealSvg({ size: 512, ground: 'dark' }));
   return `<!DOCTYPE html>
