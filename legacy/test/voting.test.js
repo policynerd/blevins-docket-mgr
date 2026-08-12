@@ -989,3 +989,127 @@ test('isSeated answers for the body asked about, and refuses junk', () => {
       `isSeated admitted ${JSON.stringify(junk)}`);
   }
 });
+
+// --- Who the live board offers a ballot to -----------------------------------
+// Roles rank: public, member, staff, clerk, admin. This page compared the role
+// string instead, so everyone senior to a member fell through to 'public' and
+// was shown no way to vote — including the Chair, whom auth.js seeds as staff.
+
+test('the live board offers a ballot to every rank at or above member', () => {
+  const liveViews = require('../src/views/live');
+  const { meetingId } = newItem();
+  const meeting = repo.meetings.get(meetingId);
+  const person = people[0];
+
+  for (const role of ['member', 'staff', 'clerk', 'admin']) {
+    const page = liveViews.publicLive(meeting, { role, person_id: person });
+    assert.match(page, /data-role="member"/,
+      `a ${role} was shown the board as a member of the public`);
+    assert.match(page, new RegExp(`data-person="${person}"`));
+  }
+
+  const publicView = liveViews.publicLive(meeting, null);
+  assert.match(publicView, /data-role="public"/);
+});
+
+test('a sign-in with no person behind it is not offered a ballot', () => {
+  const liveViews = require('../src/views/live');
+  const { meetingId } = newItem();
+  const meeting = repo.meetings.get(meetingId);
+
+  // What SSO provisions: a real account, a real role, no link to a person on
+  // the board. The cast route rejects it as having no member identity, so the
+  // page must not offer buttons that post a ballot destined to be refused.
+  const page = liveViews.publicLive(meeting, { role: 'member', person_id: null });
+  assert.match(page, /data-role="public"/,
+    'an account with no person behind it was offered a ballot');
+  assert.doesNotMatch(page, /data-person=/);
+});
+
+// --- Who is on the roll ------------------------------------------------------
+// The roll used to be a plain select over body_members, which counted a member
+// whose term had run out and an ex-officio member who does not vote — both
+// toward the quorum and both into the majority_full denominator.
+
+test('a non-voting member counts toward neither the vote nor the quorum', () => {
+  const b = repo.bodies.insert({ name: 'Ex Officio Body', type: 'Committee', seats: 4 });
+  const voters = ['P', 'Q', 'R'].map((n) => repo.people.insert({ full_name: `${n} Member` }));
+  voters.forEach((id) => repo.bodies.addMember(b, id, 'Member'));
+  const exOfficio = repo.people.insert({ full_name: 'X Officio' });
+  repo.bodies.addMember(b, exOfficio, 'Member', 0);
+
+  const roll = repo.bodies.votingRoll(b);
+  assert.equal(roll.length, 3, 'an ex-officio member was counted into the body');
+  assert.equal(roll.some((r) => r.id === exOfficio), false);
+  assert.equal(repo.bodies.isSeated(b, exOfficio), false,
+    'a ballot would be accepted for someone the tally will not count');
+});
+
+test('a member holds over until a successor takes the seat', () => {
+  const b = repo.bodies.insert({ name: 'Holdover Body', type: 'Committee', seats: 3 });
+  const sitting = ['S', 'T'].map((n) => repo.people.insert({ full_name: `${n} Member` }));
+  sitting.forEach((id) => repo.bodies.addMember(b, id, 'Member'));
+  const expired = repo.people.insert({ full_name: 'U Member' });
+  repo.bodies.addMember(b, expired, 'Member');
+  db.prepare("UPDATE body_members SET end_date = '2020-01-01' WHERE person_id = ?").run(expired);
+
+  // Three seats, two current members: the seat is not yet filled, so the
+  // member whose term ran out keeps voting.
+  assert.equal(repo.bodies.votingRoll(b).length, 3, 'a holdover was dropped with the seat still empty');
+  assert.equal(repo.bodies.isSeated(b, expired), true);
+
+  // Seat the successor and the holdover goes.
+  const successor = repo.people.insert({ full_name: 'V Member' });
+  repo.bodies.addMember(b, successor, 'Member');
+  const after = repo.bodies.votingRoll(b);
+  assert.equal(after.length, 3, 'the body grew past its authorized seats');
+  assert.equal(after.some((r) => r.id === expired), false, 'the holdover survived their successor');
+  assert.equal(after.some((r) => r.id === successor), true);
+});
+
+test('a seat held by a non-voting member is still a seat that can be filled', () => {
+  // The mistake this pins: filtering the non-voting out before working out
+  // occupancy hides their seat, so the body looks short and a holdover stays
+  // on the roll after they have in fact been replaced.
+  const b = repo.bodies.insert({ name: 'Occupancy Body', type: 'Committee', seats: 3 });
+  const a1 = repo.people.insert({ full_name: 'A One' });
+  repo.bodies.addMember(b, a1, 'Member');
+  const ex = repo.people.insert({ full_name: 'B Two' });
+  repo.bodies.addMember(b, ex, 'Member', 0);
+  const gone = repo.people.insert({ full_name: 'C Three' });
+  repo.bodies.addMember(b, gone, 'Member');
+  db.prepare("UPDATE body_members SET end_date = '2020-01-01' WHERE person_id = ?").run(gone);
+
+  // Seats: A One, the ex-officio, and one free — so the holdover keeps voting.
+  assert.equal(repo.bodies.isSeated(b, gone), true);
+
+  const successor = repo.people.insert({ full_name: 'D Four' });
+  repo.bodies.addMember(b, successor, 'Member');
+  assert.equal(repo.bodies.isSeated(b, gone), false,
+    'the ex-officio seat was not counted, so the holdover outlived their successor');
+  assert.deepEqual(repo.bodies.votingRoll(b).map((r) => r.full_name), ['A One', 'D Four']);
+});
+
+test('the tally counts the same roll that admits the ballots', () => {
+  const b = repo.bodies.insert({ name: 'Tally Body', type: 'Governing Body', seats: 5 });
+  const ids = ['G', 'H', 'I'].map((n) => repo.people.insert({ full_name: `${n} Member` }));
+  ids.forEach((id) => repo.bodies.addMember(b, id, 'Member'));
+  const ex = repo.people.insert({ full_name: 'J Officio' });
+  repo.bodies.addMember(b, ex, 'Member', 0);
+
+  const mt = repo.meetings.insert({ body_id: b, meeting_date: '2026-08-10' });
+  const m = repo.matters.insertNumbered({ type: 'Motion', title: 'Tally probe', status: 'Introduced', body_id: b });
+  const item = repo.meetings.addItem({ meeting_id: mt, matter_id: m.id });
+  db.prepare("UPDATE agenda_items SET vote_threshold = 'majority_full' WHERE id = ?").run(item);
+  repo.voteAdmin.openRoll(item);
+  repo.voteLedger.append(item, ids[0], 'Yea');
+  repo.voteLedger.append(item, ids[1], 'Yea');
+  repo.voteLedger.append(item, ids[2], 'Nay');
+
+  const o = repo.eligibility.outcome(item, { throughSeq: null });
+  // Three members entitled to vote; two of them in favour. The old base of
+  // four (counting the ex-officio) required three and recorded this as Fail.
+  assert.equal(o.eligible, 3, 'the denominator counted someone who cannot vote');
+  assert.equal(o.required, 2);
+  assert.equal(o.result, 'Pass', 'a motion carried 2-1 was recorded as failed');
+});

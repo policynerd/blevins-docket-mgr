@@ -2,6 +2,7 @@
 
 const { html, raw, formatDateTime } = require('../util');
 const { layout, statusBadge } = require('./layout');
+const { hasRole } = require('../auth');
 const repo = require('../repo');
 
 // One live page template, parameterized by capability. The client (live.js)
@@ -36,9 +37,31 @@ function clerkConsole(meeting, user) {
   return livePage(meeting, { role: 'clerk', personId: user && user.person_id, control: true });
 }
 
+/**
+ * The live board as anyone but the clerk sees it.
+ *
+ * `hasRole`, not `role === 'member'`. Roles rank — public, member, staff,
+ * clerk, admin — and every other gate in the application compares rank. This
+ * one compared the string, so everybody senior to a member fell through to
+ * 'public' and the board showed them no way to vote.
+ *
+ * That is not an edge case: auth.js seeds the Chair as `staff`, so the chair
+ * of the body could not cast a vote from the live board, and neither could any
+ * governor who had been made an admin. The server never agreed — the cast
+ * route asks whether you are seated, not what rank you hold — so this was the
+ * page declining to offer what the route would have accepted.
+ *
+ * The person link is required here too. A user with no `person_id` is not any
+ * particular member of the board — SSO provisions exactly that — and the
+ * buttons would post a ballot the server rejects as having no identity.
+ */
 function publicLive(meeting, user) {
-  const role = user && user.role === 'member' ? 'member' : 'public';
-  return livePage(meeting, { role, personId: user && user.person_id, control: false });
+  const canVote = hasRole(user, 'member') && !!(user && user.person_id);
+  return livePage(meeting, {
+    role: canVote ? 'member' : 'public',
+    personId: user && user.person_id,
+    control: false,
+  });
 }
 
 // List of meetings a clerk can run live (used as a small launcher).

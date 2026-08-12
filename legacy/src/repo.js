@@ -124,19 +124,81 @@ const bodies = {
       .all(bodyId);
   },
   /**
-   * Is this person seated on this body?
+   * The people entitled to vote on this body, as of a date.
    *
-   * The question both cast routes have to answer before writing a ballot. The
-   * roll is built from `body_members`, so a vote for anyone else is counted by
-   * nothing and shown in no roster — while still sealing an entry into the
-   * ledger, which is the authoritative account. Asking it in one place keeps
-   * the clerk's answer and the member's answer from drifting apart.
+   * The one definition of the roll. Everything that counts a vote, sets a
+   * quorum or admits a ballot comes through here, so the tally and the guard
+   * on the cast routes cannot disagree about who is on the body.
+   *
+   * Two columns the roll used to ignore, both of which change outcomes:
+   *
+   * `voting = 0` — ex-officio and similar. Excluded from the roll entirely, so
+   * they count toward neither the threshold nor the quorum. They attend and
+   * speak; they are not part of the body's arithmetic.
+   *
+   * `end_date` in the past — a term that has run out. Not simply dropped: a
+   * member holds over until a successor is seated, which is how the Board's
+   * seats actually work. A holdover is displaced only when someone has taken
+   * the seat.
+   *
+   * "Taken the seat" is approximated by count, because `body_members` records
+   * no seat identity — there is no column saying which of the seven seats a
+   * member occupies. Current members fill the authorized seats first; any
+   * seats still free are held by the most recently expired members. So a body
+   * whose current members already fill it has no holdovers, and one that is
+   * short keeps them until it is not. Where `seats` is unknown every holdover
+   * stays, because nothing here can then say a successor exists.
+   *
+   * The exact rule — this seat, that successor — needs seat identity in the
+   * schema. This is the closest the present data supports, and it is right
+   * wherever seats are filled in order.
+   */
+  votingRoll(bodyId, asOf = null) {
+    const today = asOf || require('./util').todayISO();
+    const rows = db.prepare(`
+      SELECT p.id, p.full_name, p.district, bm.end_date, bm.start_date, bm.voting
+      FROM body_members bm JOIN people p ON p.id = bm.person_id
+      WHERE bm.body_id = ?
+      ORDER BY p.full_name`).all(bodyId);
+
+    // Occupancy and eligibility are different questions, and answering them in
+    // the wrong order gets holdovers wrong. An ex-officio member holds a seat
+    // whether or not they vote, so a successor arriving into the last free
+    // seat displaces the holdover even though neither of them is countable —
+    // filtering the non-voting out first hid that seat and kept the holdover
+    // on the roll after they had been replaced.
+    const begun = rows.filter((r) => !r.start_date || r.start_date <= today);
+    const occupying = begun.filter((r) => !r.end_date || r.end_date >= today);
+    const holdovers = begun.filter((r) => r.end_date && r.end_date < today)
+      // Most recently expired first: the longest-standing vacancy is the one
+      // most likely to have been filled.
+      .sort((a, b) => String(b.end_date).localeCompare(String(a.end_date)));
+
+    const body = db.prepare('SELECT seats FROM bodies WHERE id = ?').get(bodyId);
+    // Where the seat count is unknown, nothing here can say a successor
+    // exists, so every holdover keeps their seat.
+    const kept = (!body || body.seats == null)
+      ? holdovers
+      : holdovers.slice(0, Math.max(0, Number(body.seats) - occupying.length));
+
+    return occupying.concat(kept)
+      .filter((r) => r.voting === 1)
+      .sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
+  },
+
+  /**
+   * May a ballot be recorded for this person on this body?
+   *
+   * The question both cast routes have to answer before writing one. A vote
+   * from off the roll is counted by nothing and shown in no roster — while
+   * still sealing an entry into the ledger, which is the authoritative
+   * account. Asked against the same roll the tally uses, so a ballot is
+   * refused exactly when it would not have counted.
    */
   isSeated(bodyId, personId) {
     const id = Number(personId);
     if (!Number.isInteger(id) || id <= 0) return false;
-    return !!db.prepare('SELECT 1 FROM body_members WHERE body_id = ? AND person_id = ?')
-      .get(bodyId, id);
+    return this.votingRoll(bodyId).some((r) => r.id === id);
   },
   upcomingMeetings(bodyId, limit = 10) {
     return db.prepare(`SELECT * FROM meetings WHERE body_id = ?
@@ -2550,9 +2612,12 @@ const eligibility = {
     // silently empty roll.
     const item = meetings.getItem(agendaItemId);
     if (!item) return null;
-    const seated = db.prepare(`SELECT p.id, p.full_name, p.district
-      FROM body_members bm JOIN people p ON p.id = bm.person_id
-      WHERE bm.body_id = ? ORDER BY p.full_name`).all(item.body_id || 0);
+    // The one roll. This used to select body_members directly, which counted a
+    // member whose term had run out and an ex-officio member who does not
+    // vote — both toward the quorum and both into the majority_full
+    // denominator. A three-member body could carry a motion 2–1 and have it
+    // recorded as failed, because the base was five.
+    const seated = bodies.votingRoll(item.body_id || 0);
 
     // Attendance is recorded per meeting; absent anything explicit, a seated
     // member is treated as present. Assuming absence would silently shrink the
