@@ -50,21 +50,68 @@
       '</div>';
   }
 
+  /*
+   * What it takes to carry, stated in full.
+   *
+   * This used to derive its own present count from seats minus absences, which
+   * was a third implementation of the arithmetic and the only one that never
+   * heard of recusal. It now reads the figures the close will actually use, so
+   * the clerk is looking at the same numbers that decide the vote.
+   */
   function outcomeBar(a) {
-    var presentCount = (a.seatCount || 0) - (a.tally.Absent || 0);
     var quorumClass = a.quorumMet ? 'qb-met' : 'qb-fail';
     var quorumText = a.quorumMet
-      ? 'Quorum ✓ (' + presentCount + '/' + a.seatCount + ' present)'
-      : 'No quorum (' + presentCount + '/' + a.quorumNeeded + ' needed)';
+      ? 'Quorum \u2713 ' + a.present + '/' + a.seatCount + ' present'
+      : 'No quorum \u2014 ' + a.present + ' of ' + a.quorumNeeded + ' needed';
     var outcomeClass = a.projectedOutcome === 'Passes' ? 'out-pass'
       : (a.projectedOutcome === 'Fails' ? 'out-fail' : 'out-noquorum');
-    return '<div class="outcome-bar" data-outcome>' +
-      '<span class="' + quorumClass + '">' + esc(quorumText) + '</span>' +
-      '<span class="ob-sep">·</span>' +
-      '<span class="ob-threshold">' + esc(THRESHOLD_LABELS[a.threshold] || a.threshold) + '</span>' +
-      '<span class="ob-sep">·</span>' +
-      '<strong class="' + outcomeClass + '">Projected: ' + esc(a.projectedOutcome) + '</strong>' +
-      '</div>';
+
+    var figures = [
+      ['Present', a.present],
+      ['Eligible', a.eligible],
+      ['Recused', a.recused],
+      ['Not voted', a.notVoted]
+    ].map(function (f) {
+      return '<span class="ob-fig"><b>' + f[1] + '</b> ' + f[0] + '</span>';
+    }).join('');
+
+    return '<div class="outcome-bar" data-outcome>'
+      + '<span class="' + quorumClass + '">' + esc(quorumText) + '</span>'
+      + '<span class="ob-sep">\u00b7</span>' + figures
+      + '<span class="ob-sep">\u00b7</span>'
+      + '<span class="ob-threshold">Requires <b>' + a.required + '</b> \u2014 '
+      + esc(a.basis || THRESHOLD_LABELS[a.threshold] || a.threshold) + '</span>'
+      + '<span class="ob-sep">\u00b7</span>'
+      + '<strong class="' + outcomeClass + '">'
+      + (a.closed ? 'Result: ' + esc(a.result || '') : 'Projected: ' + esc(a.projectedOutcome))
+      + '</strong>'
+      + (a.late ? '<span class="ob-late">' + a.late + ' after the close (not counted)</span>' : '')
+      + '</div>';
+  }
+
+  /*
+   * The clerk's controls, gated by where the item actually is.
+   *
+   * Showing every button always and rejecting the wrong ones server-side would
+   * work, but it puts the clerk in the position of discovering the order of
+   * business by being refused mid-meeting. The buttons that apply are the ones
+   * offered.
+   */
+  function controlBar(a) {
+    var h = '<div class="la-actions">';
+    if (!a.closed) {
+      h += '<button class="btn primary" data-close="' + a.id + '">Close roll &amp; record result</button>';
+    } else {
+      if (!a.announced) h += '<button class="btn" data-announce="' + a.id + '">Announce result</button>';
+      if (a.announced && !a.certified) h += '<button class="btn primary" data-certify="' + a.id + '">Certify</button>';
+      if (a.certified && !a.published) h += '<button class="btn" data-publish="' + a.id + '">Publish</button>';
+      if (a.published) h += '<span class="muted">Published</span>';
+      h += '<button class="btn-link" data-reopen="' + a.id + '">Reopen roll</button>';
+    }
+    // Voiding is destructive to a recorded outcome and always available, but
+    // never the default: it sits apart and asks for a reason.
+    h += '<button class="btn-link danger" data-void="' + a.id + '">Void this vote\u2026</button>';
+    return h + '</div>';
   }
 
   function motionForm(a) {
@@ -134,9 +181,7 @@
         h += '</div>';
       }
     }
-    if (control) {
-      h += '<div class="la-actions"><button class="btn primary" data-close="' + a.id + '">Close voting &amp; record result</button></div>';
-    }
+    if (control) h += controlBar(a);
     activeEl.innerHTML = h;
     activeEl.setAttribute('data-item-id', a.id);
     activeEl.classList.remove('la-active-fade'); void activeEl.offsetWidth; activeEl.classList.add('la-active-fade');
@@ -194,8 +239,33 @@
         post('/member/agenda-items/' + a.id + '/cast', { vote: b.getAttribute('data-myvote') });
       });
     });
-    var closeBtn = activeEl.querySelector('[data-close]');
-    if (closeBtn) closeBtn.addEventListener('click', function () { post('/admin/agenda-items/' + a.id + '/close', {}); });
+    // Each control maps to one act on the item, and each act is one event in
+    // the session chain. No button does two things.
+    [['close', 'close'], ['announce', 'announce'], ['certify', 'certify'],
+     ['publish', 'publish'], ['reopen', 'open']].forEach(function (pair) {
+      var btn = activeEl.querySelector('[data-' + pair[0] + ']');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        post('/admin/agenda-items/' + a.id + '/' + pair[1], {})
+          .catch(function (e) { window.alert(e.message); })
+          .then(function () { btn.disabled = false; });
+      });
+    });
+
+    var voidBtn = activeEl.querySelector('[data-void]');
+    if (voidBtn) voidBtn.addEventListener('click', function () {
+      // A reason is required by the server; asking here means the clerk is not
+      // sent round a rejection to find that out.
+      var reason = window.prompt(
+        'Voiding strikes the recorded outcome and clears the ballots.\n'
+        + 'The ledger keeps them, and the reason goes on the record.\n\n'
+        + 'Why is this vote being voided?');
+      if (reason === null) return;
+      if (!reason.trim()) { window.alert('A reason is required to void a vote.'); return; }
+      post('/admin/agenda-items/' + a.id + '/void', { reason: reason })
+        .catch(function (e) { window.alert(e.message); });
+    });
     var mfSave = activeEl.querySelector('[data-mf-save]');
     if (mfSave) mfSave.addEventListener('click', function () {
       post('/admin/agenda-items/' + a.id + '/motion', {
@@ -236,8 +306,39 @@
   }
 
   var es = new EventSource('/live/' + meetingId + '/stream');
+  /*
+   * Chain health, in front of the person running the meeting.
+   *
+   * A record that has stopped verifying is not an audit finding to be turned
+   * up months later — it is something the clerk needs while the meeting is
+   * still in the room, when the ballots can still be re-taken. Shown only to
+   * the console; the public board is not the place to raise it.
+   */
+  function renderChain(state) {
+    if (!control || !state.chain) return;
+    var bar = document.querySelector('[data-chain]');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.setAttribute('data-chain', '');
+      bar.className = 'chain-bar';
+      root.insertBefore(bar, root.firstChild);
+    }
+    if (state.chain.ok) {
+      bar.className = 'chain-bar ok';
+      bar.textContent = 'Record verified';
+    } else {
+      bar.className = 'chain-bar broken';
+      bar.textContent = 'RECORD DOES NOT VERIFY at entry '
+        + state.chain.brokenAt + ' — ' + state.chain.reason;
+    }
+  }
+
   es.addEventListener('update', function (e) {
-    try { render(JSON.parse(e.data)); } catch (_) {}
+    try {
+      var state = JSON.parse(e.data);
+      render(state);
+      renderChain(state);
+    } catch (_) {}
   });
   es.onopen = function () { if (pill) pill.classList.add('on'); };
   es.onerror = function () { if (pill) pill.classList.remove('on'); };

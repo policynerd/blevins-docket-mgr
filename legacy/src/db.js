@@ -528,6 +528,44 @@ CREATE TABLE IF NOT EXISTS public_comments (
 );
 
 -- Key/value store for runtime-editable settings (e.g. in-app branding overrides).
+CREATE TABLE IF NOT EXISTS motion_versions (
+  id INTEGER PRIMARY KEY,
+  agenda_item_id INTEGER NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  motion_text TEXT,
+  mover_id INTEGER REFERENCES people(id),
+  seconder_id INTEGER REFERENCES people(id),
+  threshold TEXT NOT NULL DEFAULT 'majority',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by INTEGER REFERENCES users(id),
+  UNIQUE (agenda_item_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS session_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT UNIQUE NOT NULL,
+  meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  previous_hash TEXT NOT NULL,
+  event_hash TEXT NOT NULL UNIQUE,
+  received_at TEXT NOT NULL,
+
+  -- Denormalised from the payload for querying. Verification checks these
+  -- against the hashed payload, so editing a column here to change a vote is
+  -- caught exactly as editing the payload would be.
+  agenda_item_id INTEGER REFERENCES agenda_items(id) ON DELETE CASCADE,
+  person_id INTEGER REFERENCES people(id),
+  choice TEXT,
+  source TEXT,
+  entered_by INTEGER REFERENCES users(id),
+  supersedes_event_id TEXT REFERENCES session_events(event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_events_meeting ON session_events(meeting_id, seq);
+CREATE INDEX IF NOT EXISTS idx_session_events_item ON session_events(agenda_item_id, seq);
+CREATE INDEX IF NOT EXISTS idx_motion_versions_item ON motion_versions(agenda_item_id, seq);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT,
@@ -672,6 +710,18 @@ CREATE INDEX IF NOT EXISTS idx_office_staff_person ON office_staff(person_id);
 // Additive column migrations for databases created before a column existed
 // (the Fly volume persists the DB across deploys).
 const COLUMN_MIGRATIONS = {
+  matter_history: {
+    // Which agenda item produced this entry. Without it a vote that is later
+    // reopened cannot find the record it wrote, so the wrong outcome stays in
+    // the legislative history with no way to identify it.
+    agenda_item_id: 'INTEGER REFERENCES agenda_items(id)',
+    // A retracted entry is struck through, never deleted. What the Board did
+    // and later undid is itself part of the record; a history that quietly
+    // loses its mistakes cannot be relied on to show what happened.
+    voided_at: 'TEXT',
+    void_reason: 'TEXT',
+    voided_by: 'INTEGER REFERENCES users(id)',
+  },
   agenda_items: {
     mover_id: 'INTEGER REFERENCES people(id)',
     seconder_id: 'INTEGER REFERENCES people(id)',
@@ -685,6 +735,26 @@ const COLUMN_MIGRATIONS = {
     // Defaults on: the packet is the record of what members were given, so an
     // item is included unless the clerk deliberately holds it back.
     in_packet: 'INTEGER NOT NULL DEFAULT 1',
+    // When the roll opened and closed, as timestamps rather than just a status.
+    //
+    // The tally is defined as of the close: events received after it are kept
+    // but do not count. Without a recorded instant there is nothing to compare
+    // them against, so a late arrival silently joins a settled vote and the
+    // same meeting re-rendered next year reports a different outcome.
+    vote_opened_at: 'TEXT',
+    vote_closed_at: 'TEXT',
+    // The rule that governed this roll, recorded with it. Standing orders
+    // change; a vote taken last year must still evaluate under the rule in
+    // force then, which it cannot do if the rule is only read from config.
+    threshold_rule: 'TEXT',
+    // The result lifecycle. Computing a result is not announcing it, and
+    // announcing is not the Clerk attesting to it.
+    result_computed_at: 'TEXT',
+    result_announced_at: 'TEXT',
+    result_certified_at: 'TEXT',
+    result_certified_by: 'INTEGER REFERENCES users(id)',
+    result_published_at: 'TEXT',
+    certification_checkpoint: 'TEXT',
   },
   matters: {
     body_html: 'TEXT',

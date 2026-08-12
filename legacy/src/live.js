@@ -19,39 +19,38 @@ function snapshot(meetingId) {
   if (!meeting) return { meeting: null };
   const items = repo.meetings.items(meetingId);
   const members = repo.bodies.members(meeting.body_id);
-  const open = items.find((i) => i.vote_status === 'open') || null;
+  // The item before the body: the open roll if there is one, otherwise the
+  // most recently closed one that has a result.
+  //
+  // A board that empties the instant the gavel falls is a board that never
+  // shows the outcome, which is the moment the room is actually waiting for.
+  // A real chamber board holds the result up until the chair calls the next
+  // item, and so does this.
+  const open = items.find((i) => i.vote_status === 'open')
+    || [...items].reverse().find((i) => i.vote_status === 'closed' && i.result_computed_at)
+    || null;
 
   const seatCount = members.length;
   const quorumNeeded = seatCount ? Math.floor(seatCount / 2) + 1 : 0;
 
   let active = null;
   if (open) {
-    const cast = repo.votes.forItem(open.id);
-    const castBy = {};
-    for (const v of cast) castBy[v.person_id] = v.vote;
-    const tally = repo.votes.tally(open.id);
-    const absentCount = tally.Absent || 0;
-    const presentCount = seatCount - absentCount;
-    const quorumMet = presentCount >= quorumNeeded;
-    const threshold = open.vote_threshold || 'majority';
-
-    let projectedOutcome;
-    if (!quorumMet) {
-      projectedOutcome = 'No quorum';
-    } else {
-      const yea = tally.Yea || 0;
-      const nay = tally.Nay || 0;
-      let passes;
-      if (threshold === 'two_thirds') {
-        const castVotes = yea + nay;
-        passes = castVotes > 0 && yea / castVotes >= 2 / 3;
-      } else if (threshold === 'majority_full') {
-        passes = yea > Math.floor(seatCount / 2);
-      } else {
-        passes = yea > nay;
-      }
-      projectedOutcome = passes ? 'Passes' : 'Fails';
-    }
+    // One arithmetic, shared with the close.
+    //
+    // This used to compute its own tally and threshold, which meant the board
+    // could project "Passes" while closing the roll recorded Fail — the two
+    // disagreeing about recusal, since only one of them removed a recused
+    // member from the denominator. The live view now asks the same function
+    // that decides the outcome, so the room and the record cannot diverge.
+    // Unbounded only while the roll is open — that is the live count. Once it
+    // is closed the board must show the official tally, bounded by the close,
+    // or the wall would report a different number from the minutes the moment
+    // a late ballot arrived.
+    const isOpen = open.vote_status === 'open';
+    const o = isOpen
+      ? repo.eligibility.outcome(open.id, { throughSeq: null })
+      : repo.eligibility.outcome(open.id);
+    const quorumMet = o.present >= quorumNeeded;
 
     active = {
       id: open.id,
@@ -63,20 +62,57 @@ function snapshot(meetingId) {
       seconder_id: open.seconder_id || null,
       mover: nameOf(open.mover_id),
       seconder: nameOf(open.seconder_id),
-      tally,
-      roster: members.map((m) => ({
-        person_id: m.person_id, name: m.full_name, vote: castBy[m.person_id] || null,
+      // Kept in the old shape so the existing client keeps rendering, with the
+      // counts now derived from the ledger rather than the mutable projection.
+      tally: {
+        Yea: o.yea,
+        Nay: o.nay,
+        Abstain: o.roll.filter((r) => r.choice === 'Abstain').length,
+        Present: o.roll.filter((r) => r.choice === 'Present').length,
+        Recused: o.recused,
+        Absent: o.seated - o.present,
+      },
+      roster: o.roll.map((r) => ({
+        person_id: r.person_id,
+        name: r.full_name,
+        vote: r.choice,
+        present: r.present,
+        changed: r.changed,
+        source: r.source || null,
       })),
       seatCount,
       quorumNeeded,
       quorumMet,
-      threshold,
-      projectedOutcome,
+      // What the room needs to see: who may vote, what it takes, and where the
+      // count stands against that.
+      present: o.present,
+      eligible: o.eligible,
+      recused: o.recused,
+      notVoted: o.notVoted,
+      required: o.required,
+      basis: o.basis,
+      threshold: o.threshold,
+      projectedOutcome: !quorumMet ? 'No quorum' : (o.passes ? 'Passes' : 'Fails'),
+      // Lifecycle, so the board can say "closed" and "certified" rather than
+      // inferring either from the presence of a number.
+      closed: o.closed,
+      result: open.result || null,
+      certified: !!open.result_certified_at,
+      published: !!open.result_published_at,
+      late: o.late,
+      announced: !!open.result_announced_at,
+      computedAt: open.result_computed_at || null,
     };
   }
 
+  // Chain health, surfaced to the clerk rather than left to be discovered.
+  // A record that has stopped verifying is something the person running the
+  // meeting needs to know during it, not months later during an audit.
+  const chain = repo.voteLedger.verify(meetingId);
+
   return {
     ts: Date.now(),
+    chain: { ok: chain.ok, brokenAt: chain.brokenAt ?? null, reason: chain.reason || null },
     meeting: { id: meeting.id, body: meeting.body_name, status: meeting.status,
       date: meeting.meeting_date, time: meeting.meeting_time },
     active,

@@ -1,6 +1,8 @@
 'use strict';
 
 const { db, ftsEnabled } = require('./db');
+const ledger = require('./ledger');
+const { todayISO } = require('./util');
 const { ORG } = require('./org');
 
 // ---------------------------------------------------------------------------
@@ -291,10 +293,37 @@ const matters = {
   },
   history(matterId) {
     return db.prepare(`
-      SELECT h.*, b.name AS body_name
-      FROM matter_history h LEFT JOIN bodies b ON b.id = h.body_id
+      SELECT h.*, b.name AS body_name, u.name AS voided_by_name
+      FROM matter_history h
+      LEFT JOIN bodies b ON b.id = h.body_id
+      LEFT JOIN users u ON u.id = h.voided_by
       WHERE h.matter_id = ?
       ORDER BY h.action_date DESC, h.id DESC`).all(matterId);
+  },
+  /**
+   * Entries a given agenda item wrote and that still stand.
+   *
+   * Used to find what a vote recorded so reopening it can retract exactly that
+   * and nothing else. Voided rows are excluded so reopening twice cannot
+   * retract the same entry again.
+   */
+  liveHistoryForItem(agendaItemId) {
+    return db.prepare(`SELECT * FROM matter_history
+      WHERE agenda_item_id = ? AND voided_at IS NULL
+      ORDER BY id`).all(agendaItemId);
+  },
+  /**
+   * Strike an entry from the record without removing it.
+   *
+   * Deleting would make the history agree with the present at the cost of no
+   * longer describing the past. A board that took a vote, then voided it,
+   * did both things, and an auditor asking "was this ever carried?" has to be
+   * able to see the answer.
+   */
+  voidHistory(id, { reason, userId = null } = {}) {
+    db.prepare(`UPDATE matter_history
+      SET voided_at = datetime('now'), void_reason = ?, voided_by = ?
+      WHERE id = ? AND voided_at IS NULL`).run(reason || null, userId, id);
   },
   attachments(matterId) {
     return db.prepare('SELECT * FROM attachments WHERE matter_id = ? ORDER BY id').all(matterId);
@@ -362,10 +391,11 @@ const matters = {
   },
   addHistory(h) {
     const id = db.prepare(`INSERT INTO matter_history
-      (matter_id, action_date, body_id, action, result, notes, meeting_id)
-      VALUES (?,?,?,?,?,?,?)`).run(
+      (matter_id, action_date, body_id, action, result, notes, meeting_id, agenda_item_id)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
       h.matter_id, h.action_date, h.body_id || null, h.action,
-      h.result || null, h.notes || null, h.meeting_id || null).lastInsertRowid;
+      h.result || null, h.notes || null, h.meeting_id || null,
+      h.agenda_item_id || null).lastInsertRowid;
     // Tell watchers (no-op unless SMTP is configured). Lazy require: notify
     // never imports repo, but keeping the edge lazy avoids load-order surprises.
     try {
@@ -2128,6 +2158,509 @@ const letters = {
   },
 };
 
+/**
+ * The vote ledger.
+ *
+ * Every cast, change and correction is an append. Nothing here updates or
+ * deletes, which is what lets the record answer "who voted what, when, and did
+ * anyone change their mind after the tally was visible".
+ *
+ * `votes` is kept in step as a projection of this, so the seven existing
+ * readers of that table — tallies, member history, minutes, exports — keep
+ * working unchanged while the ledger becomes the thing of record underneath.
+ */
+const voteLedger = {
+  /**
+   * The signing key. See the note on tamper evidence in ledger.js: the chain
+   * is what defends the record, and it needs no key. This only adds "this
+   * server wrote it".
+   */
+  key() {
+    if (process.env.VOTE_LEDGER_KEY) return process.env.VOTE_LEDGER_KEY;
+    if (this._key) return this._key;
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'vote_ledger_key'").get();
+    if (row && row.value) return (this._key = row.value);
+    const generated = require('node:crypto').randomBytes(32).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('vote_ledger_key', ?)")
+      .run(generated);
+    return (this._key = generated);
+  },
+
+  /** The whole chain for a meeting, in order. */
+  forMeeting(meetingId) {
+    return db.prepare('SELECT * FROM session_events WHERE meeting_id = ? ORDER BY seq')
+      .all(meetingId);
+  },
+
+  /** The chain filtered to one item — still ordered by the session sequence. */
+  forItem(agendaItemId) {
+    return db.prepare('SELECT * FROM session_events WHERE agenda_item_id = ? ORDER BY seq')
+      .all(agendaItemId);
+  },
+
+  /**
+   * Append any session event.
+   *
+   * One chain per meeting. Everything consequential goes through here, so the
+   * order of the session is itself part of the evidence.
+   */
+  appendEvent(meetingId, eventType, payload = {}, cols = {}) {
+    const last = db.prepare(
+      'SELECT event_hash FROM session_events WHERE meeting_id = ? ORDER BY seq DESC LIMIT 1')
+      .get(meetingId);
+    const eventId = require('node:crypto').randomUUID();
+    const now = new Date().toISOString();
+    const full = { ...payload, eventId, eventType, meetingId, receivedAt: now };
+
+    const built = ledger.buildEntry({
+      previousEntryHash: last ? last.event_hash : ledger.GENESIS,
+      payload: full,
+      key: this.key(),
+      eventType,
+    });
+
+    db.prepare(`INSERT INTO session_events
+      (event_id, meeting_id, event_type, payload_json, previous_hash, event_hash, received_at,
+       agenda_item_id, person_id, choice, source, entered_by, supersedes_event_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      eventId, meetingId, eventType, JSON.stringify(full),
+      built.previousEventHash, built.entryHash, now,
+      cols.agendaItemId || null, cols.personId || null, cols.choice || null,
+      cols.source || null, cols.enteredBy || null, cols.supersedesEventId || null);
+
+    return { eventId, eventHash: built.entryHash, receivedAt: now };
+  },
+
+  /**
+   * Record a vote.
+   *
+   * `source` is required and not defaulted. A vote the clerk typed from the
+   * spoken roll and a vote a governor pressed are different facts, and the
+   * difference has to survive into the record rather than being decided by
+   * whichever caller forgot to say.
+   */
+  append(agendaItemId, personId, choice, opts = {}) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item) throw new Error(`No agenda item ${agendaItemId}`);
+    const source = opts.source || 'MEMBER_TERMINAL';
+
+    const standing = this.current(agendaItemId, { asOf: null, throughSeq: null }).get(personId);
+    return this.appendEvent(item.meeting_id, standing ? 'VOTE_CHANGED' : 'VOTE_CAST', {
+      agendaItemId,
+      choice,
+      credentialId: opts.credentialId || null,
+      motionVersionId: opts.motionVersionId || null,
+      personId,
+      source,
+      stationId: opts.stationId || null,
+      submittedAt: opts.submittedAt || null,
+      supersedesEventId: standing ? standing.event_id : null,
+    }, {
+      agendaItemId, personId, choice, source,
+      enteredBy: opts.userId || null,
+      supersedesEventId: standing ? standing.event_id : null,
+    });
+  },
+
+  /** Where the roll closed, as a position in the chain. */
+  closedSeq(agendaItemId) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item) return null;
+    return ledger.closedAtSeq(this.forMeeting(item.meeting_id), agendaItemId);
+  },
+
+  /**
+   * Each member's standing position, as of the close by default.
+   *
+   * Bounded by chain position rather than a clock wherever a close exists: a
+   * sequence number cannot be backdated, a timestamp column can.
+   */
+  current(agendaItemId, opts = {}) {
+    const throughSeq = opts.throughSeq !== undefined ? opts.throughSeq : this.closedSeq(agendaItemId);
+    return ledger.currentChoices(this.forItem(agendaItemId), {
+      asOf: opts.asOf !== undefined ? opts.asOf : null,
+      throughSeq,
+    });
+  },
+
+  /** Ballots recorded after the roll closed: kept, counted by nothing. */
+  late(agendaItemId) {
+    const throughSeq = this.closedSeq(agendaItemId);
+    if (throughSeq == null) return [];
+    return ledger.lateEvents(this.forItem(agendaItemId), { throughSeq });
+  },
+
+  /**
+   * Recompute the chain for a whole meeting.
+   *
+   * The payload is rehydrated from `payload_json` and the indexed columns are
+   * checked against it, so editing `choice` in the table to flip a vote is
+   * caught even though the hash covers the payload rather than the column.
+   */
+  verify(meetingId) {
+    const rows = this.forMeeting(meetingId).map((r) => {
+      const payload = JSON.parse(r.payload_json);
+      return {
+        ...r,
+        previous_event_hash: r.previous_hash,
+        entry_hash: r.event_hash,
+        payload_hash: ledger.payloadHash(payload),
+        payload,
+        _mirrors: (payload.choice ?? null) === (r.choice ?? null)
+          && (payload.personId ?? null) === (r.person_id ?? null)
+          && (payload.source ?? null) === (r.source ?? null)
+          && (payload.agendaItemId ?? null) === (r.agenda_item_id ?? null),
+      };
+    });
+    const bad = rows.findIndex((r) => !r._mirrors);
+    if (bad !== -1) {
+      return { ok: false, brokenAt: bad, reason: 'indexed columns disagree with the sealed payload' };
+    }
+    return ledger.verifyChain(rows, this.key());
+  },
+
+  /** Convenience: verify the meeting an item belongs to. */
+  verifyItem(agendaItemId) {
+    const item = meetings.getItem(agendaItemId);
+    return item ? this.verify(item.meeting_id) : { ok: false, reason: 'no such item' };
+  },
+};
+
+/**
+ * Undoing a vote.
+ *
+ * Two different acts, deliberately not one. Reopening says "we are taking this
+ * again now"; voiding says "that vote should not have counted" and leaves the
+ * floor closed. Both must retract what closing recorded, because closing does
+ * two things beyond setting a status — it stamps a Pass/Fail on the item and
+ * writes a row into the matter's legislative history. Leaving either behind
+ * means the record asserts an outcome the Board has withdrawn.
+ */
+const voteAdmin = {
+  /**
+   * Open the roll: an event in the chain, and the rule fixed at that moment.
+   */
+  openRoll(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    const rule = item.threshold_rule || item.vote_threshold || 'majority';
+    db.prepare(`UPDATE agenda_items
+      SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
+          threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
+          result_certified_at = NULL, result_certified_by = NULL, result_published_at = NULL,
+          certification_checkpoint = NULL
+      WHERE id = ?`).run(rule, itemId);
+    voteLedger.appendEvent(item.meeting_id, 'ROLL_OPENED',
+      { agendaItemId: itemId, thresholdRule: rule }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /**
+   * Close the roll.
+   *
+   * The event's position in the chain is what bounds the tally; the timestamp
+   * is for people to read. Everything after this slot is late by construction.
+   */
+  closeRoll(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    voteLedger.appendEvent(item.meeting_id, 'ROLL_CLOSED',
+      { agendaItemId: itemId }, { agendaItemId: itemId, enteredBy: userId });
+    db.prepare(`UPDATE agenda_items
+      SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?`).run(itemId);
+
+    const outcome = eligibility.outcome(itemId);
+    // Persist the result here, where it is computed. It used to be set by the
+    // route instead, so closing the roll through the repo left the item with
+    // a computed timestamp and no outcome on it — and the board, which reads
+    // the item, showed a finished vote with no result.
+    meetings.setItemResult(itemId,
+      item.action || (item.motion_text ? 'Motion' : 'Vote taken'), outcome.result);
+    db.prepare("UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
+      agendaItemId: itemId, yea: outcome.yea, nay: outcome.nay,
+      eligible: outcome.eligible, required: outcome.required,
+      thresholdRule: outcome.threshold, result: outcome.result,
+    }, { agendaItemId: itemId, enteredBy: userId });
+    return outcome;
+  },
+
+  /** The chair states the result to the room. */
+  announce(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item || !item.result_computed_at) return null;
+    db.prepare("UPDATE agenda_items SET result_announced_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_ANNOUNCED',
+      { agendaItemId: itemId, result: item.result }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /**
+   * The Clerk attests to the result.
+   *
+   * Anchored to a chain position: the checkpoint records exactly what the
+   * record consisted of at the moment of attestation, so "what did the Clerk
+   * certify" is answerable by hash rather than by inference.
+   */
+  certify(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    if (!item.result_computed_at) throw new Error('A result must be computed before it can be certified.');
+    const checkpoint = db.prepare(
+      'SELECT event_hash FROM session_events WHERE meeting_id = ? ORDER BY seq DESC LIMIT 1')
+      .get(item.meeting_id);
+    db.prepare(`UPDATE agenda_items
+      SET result_certified_at = datetime('now'), result_certified_by = ?, certification_checkpoint = ?
+      WHERE id = ?`).run(userId, checkpoint ? checkpoint.event_hash : null, itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_CERTIFIED', {
+      agendaItemId: itemId, result: item.result,
+      preCertificationCheckpoint: checkpoint ? checkpoint.event_hash : null,
+    }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /** Published to the public record. */
+  publish(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    if (!item.result_certified_at) throw new Error('A result must be certified before it is published.');
+    db.prepare("UPDATE agenda_items SET result_published_at = datetime('now') WHERE id = ?").run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'RESULT_PUBLISHED',
+      { agendaItemId: itemId, result: item.result }, { agendaItemId: itemId, enteredBy: userId });
+    return meetings.getItem(itemId);
+  },
+
+  /** Retract the outcome a close recorded, without touching the ballots. */
+  retractOutcome(item, { reason, userId = null }) {
+    meetings.setItemResult(item.id, item.action, null);
+    if (!item.matter_id) return 0;
+    let n = 0;
+    for (const h of matters.liveHistoryForItem(item.id)) {
+      matters.voidHistory(h.id, { reason, userId });
+      n++;
+    }
+    return n;
+  },
+
+  /**
+   * Reopen the floor on an item that was closed.
+   *
+   * Ballots are kept: reopening is usually a correction to the roll, not a
+   * repudiation of everyone's vote, and members who are not changing their
+   * position should not have to cast again.
+   */
+  reopen(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    const wasClosed = item.vote_status === 'closed';
+    if (wasClosed) {
+      this.retractOutcome(item, {
+        reason: 'Vote reopened; this outcome was superseded', userId,
+      });
+    }
+    for (const it of meetings.items(item.meeting_id)) {
+      if (it.vote_status === 'open') meetings.setVoteStatus(it.id, 'pending');
+    }
+    meetings.setVoteStatus(item.id, 'open');
+    // Reopening clears the close: the previous instant no longer bounds
+    // anything, and leaving it would make the live roll compute against a
+    // window that has already ended.
+    this.openRoll(item.id, { userId });
+    return { reopened: wasClosed };
+  },
+
+  /**
+   * Void the vote entirely.
+   *
+   * The ballots go too. A voided vote whose individual Yeas and Nays remained
+   * attributable would keep every member on record for a vote the Board has
+   * said did not happen. They remain in the ledger — that is what the ledger
+   * is for — but they stop counting and stop being displayed as anyone's
+   * current position.
+   *
+   * A reason is required. A vote struck from the record on no stated ground is
+   * precisely what someone auditing that record needs to be able to rule out.
+   */
+  void(itemId, { reason, userId = null } = {}) {
+    const clean = String(reason || '').trim();
+    if (!clean) throw new Error('A reason is required to void a vote.');
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+
+    this.retractOutcome(item, { reason: clean, userId });
+    votes.clearForItem(item.id);
+    meetings.setVoteStatus(item.id, 'pending');
+    db.prepare(`UPDATE agenda_items SET vote_closed_at = NULL, result_computed_at = NULL,
+      result_announced_at = NULL, result_certified_at = NULL, result_published_at = NULL
+      WHERE id = ?`).run(item.id);
+    voteLedger.appendEvent(item.meeting_id, 'CORRECTION_APPROVED',
+      { agendaItemId: item.id, reason: clean }, { agendaItemId: item.id, enteredBy: userId });
+    if (item.matter_id) {
+      // The voiding is itself an act the record should show. A history that
+      // simply loses the entry would read as though the vote never happened.
+      matters.addHistory({
+        matter_id: item.matter_id, action_date: todayISO(),
+        body_id: item.body_id, action: 'Vote voided', result: null,
+        notes: clean, meeting_id: item.meeting_id, agenda_item_id: item.id,
+      });
+    }
+    return { voided: true };
+  },
+};
+
+/**
+ * Who may vote on an item, and what it takes to carry.
+ *
+ * The distinction the previous arithmetic missed: *seated* is not *present* is
+ * not *eligible*. A recused member is present and seated but must not count
+ * toward the threshold — leaving them in the denominator means a motion needing
+ * "a majority of eligible members" can be defeated by the recusal itself,
+ * which inverts the point of recusing.
+ *
+ * `majority_full` previously divided the whole seat count, so an absent or
+ * recused member counted as an effective No. That is right for some bodies and
+ * wrong for others, and it was never a decision anyone made — it was the only
+ * denominator to hand.
+ */
+const eligibility = {
+  /**
+   * @returns {{seated:number, present:number, recused:number, eligible:number,
+   *            notVoted:number, roll:Array}}
+   */
+  forItem(agendaItemId, opts = {}) {
+    // getItem, not a bare SELECT: body_id is the meeting's, reaching the item
+    // only through that join. Reading the row directly yields undefined and a
+    // silently empty roll.
+    const item = meetings.getItem(agendaItemId);
+    if (!item) return null;
+    const seated = db.prepare(`SELECT p.id, p.full_name, p.district
+      FROM body_members bm JOIN people p ON p.id = bm.person_id
+      WHERE bm.body_id = ? ORDER BY p.full_name`).all(item.body_id || 0);
+
+    // Attendance is recorded per meeting; absent anything explicit, a seated
+    // member is treated as present. Assuming absence would silently shrink the
+    // body every time a clerk had not yet taken the roll.
+    const attendance = new Map(
+      db.prepare('SELECT person_id, status FROM attendance WHERE meeting_id = ?')
+        .all(item.meeting_id).map((a) => [a.person_id, a.status]));
+
+    // No bound here on purpose: the roll shown to the clerk is what has been
+    // received. Whether a given event counts is decided by outcome(), against
+    // the close.
+    const standing = voteLedger.current(agendaItemId,
+      opts.throughSeq !== undefined ? { throughSeq: opts.throughSeq } : {});
+    const roll = seated.map((p) => {
+      const att = attendance.get(p.id) || 'Present';
+      const ev = standing.get(p.id);
+      const choice = ev ? ev.choice : null;
+      const present = att !== 'Absent' && att !== 'Excused';
+      const recused = choice === 'Recused';
+      return {
+        person_id: p.id, full_name: p.full_name, district: p.district,
+        attendance: att, present, recused, choice,
+        changed: !!(ev && ev.supersedes_event_id),
+        // Shown, not hidden: a vote the clerk entered from the spoken roll is
+        // a different fact from one the member pressed, and the board should
+        // say which it is rather than presenting them identically.
+        source: ev ? ev.source : null,
+      };
+    });
+
+    const present = roll.filter((r) => r.present).length;
+    const recused = roll.filter((r) => r.recused).length;
+    return {
+      seated: seated.length,
+      present,
+      recused,
+      eligible: present - recused,
+      notVoted: roll.filter((r) => r.present && !r.recused && !r.choice).length,
+      roll,
+    };
+  },
+
+  /**
+   * Does the item carry?
+   *
+   * Returns the arithmetic as well as the answer, because a board that is told
+   * only "Fail" cannot check the ruling, and the chair has to be able to state
+   * the basis aloud.
+   */
+  outcome(agendaItemId, { throughSeq } = {}) {
+    const item = meetings.getItem(agendaItemId);
+    if (!item) return null;
+    // Bounded by the close's position in the chain. Anything after it is kept
+    // and excluded here, so a settled result cannot drift.
+    const bound = throughSeq !== undefined ? throughSeq : voteLedger.closedSeq(agendaItemId);
+    const e = this.forItem(agendaItemId, { throughSeq: bound });
+    if (!e) return null;
+    // The rule recorded with the roll, not whatever the config says today.
+    const threshold = item.threshold_rule || item.vote_threshold || 'majority';
+    const yea = e.roll.filter((r) => r.choice === 'Yea').length;
+    const nay = e.roll.filter((r) => r.choice === 'Nay').length;
+
+    let required;
+    let passes;
+    if (threshold === 'two_thirds') {
+      const cast = yea + nay;
+      required = cast ? Math.ceil((cast * 2) / 3) : 0;
+      passes = cast > 0 && yea >= required;
+    } else if (threshold === 'majority_full') {
+      required = Math.floor(e.eligible / 2) + 1;
+      passes = yea >= required;
+    } else {
+      required = nay + 1;
+      passes = yea > nay;
+    }
+    return {
+      ...e, yea, nay, threshold, required, passes,
+      throughSeq: bound,
+      closed: bound != null,
+      late: bound != null ? voteLedger.late(agendaItemId).length : 0,
+      result: passes ? 'Pass' : 'Fail',
+      basis: threshold === 'majority_full'
+        ? `majority of ${e.eligible} eligible`
+        : threshold === 'two_thirds' ? 'two-thirds of those voting' : 'majority of those voting',
+    };
+  },
+};
+
+/** Motion text, versioned, so a vote binds to what was actually on the floor. */
+const motionVersions = {
+  /**
+   * Record the motion as it stands and return the version.
+   *
+   * Reuses the current version when nothing has changed, so merely reopening
+   * an item does not manufacture a new one.
+   */
+  ensure(agendaItemId, { motionText, moverId, seconderId, threshold, userId = null } = {}) {
+    const latest = this.latest(agendaItemId);
+    const same = latest
+      && (latest.motion_text || null) === (motionText || null)
+      && (latest.mover_id || null) === (moverId || null)
+      && (latest.seconder_id || null) === (seconderId || null)
+      && latest.threshold === (threshold || 'majority');
+    if (same) return latest;
+    const seq = latest ? latest.seq + 1 : 1;
+    const id = db.prepare(`INSERT INTO motion_versions
+      (agenda_item_id, seq, motion_text, mover_id, seconder_id, threshold, created_by)
+      VALUES (?,?,?,?,?,?,?)`).run(agendaItemId, seq, motionText || null,
+      moverId || null, seconderId || null, threshold || 'majority', userId).lastInsertRowid;
+    return this.get(id);
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM motion_versions WHERE id = ?').get(id);
+  },
+  latest(agendaItemId) {
+    return db.prepare(
+      'SELECT * FROM motion_versions WHERE agenda_item_id = ? ORDER BY seq DESC LIMIT 1')
+      .get(agendaItemId);
+  },
+  all(agendaItemId) {
+    return db.prepare(
+      'SELECT * FROM motion_versions WHERE agenda_item_id = ? ORDER BY seq').all(agendaItemId);
+  },
+};
+
 const audit = {
   record({ userId, userName, method, path, ip }) {
     db.prepare(`INSERT INTO audit_log (user_id, user_name, method, path, ip)
@@ -2350,6 +2883,7 @@ module.exports = {
   letters, LETTER_SECTIONS_DEFAULT,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
   proposals, implementation, vendors, procurement, tas, consents, code,
+  voteLedger, motionVersions, eligibility, voteAdmin,
   RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, CODE_OPS,
   stats, statusBuckets, purgeDomainData,
 };

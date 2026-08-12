@@ -8,7 +8,21 @@
 # The tenant and client ids are identifiers, not secrets: they travel in the
 # sign-in URL in plain sight on every request.
 
-app = 'beg-docket-manager'
+# NOT beg-docket-manager.
+#
+# That app runs the legislative management system — 50 tables and 248 routes
+# covering the docket, calendar, meetings, votes, minutes, the municipal code,
+# budget and procurement. This application models none of that: it is nine
+# tables of drafting. Pointing this file at that app does not replace it, it
+# removes it, and because this config declares no [[mounts]] the machine would
+# also come up with the docket_data volume detached.
+#
+# Fly caught exactly that and refused to deploy without an interactive --yes.
+# Naming a different app here means the platform is not the only thing standing
+# between a routine `flyctl deploy` and the Board losing its docket.
+#
+# Drafting runs alongside the existing system, not over it.
+app = 'blevins-drafting'
 primary_region = 'iad'
 
 [build]

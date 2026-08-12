@@ -1045,3 +1045,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .brand-seal-mark svg { display: block; }
 .auth-brand .brand-seal-mark svg { width: 112px; height: 112px; }
 .unit-lockup .brand-seal-mark svg { width: 62px; height: 62px; }
+
+/* The clerk console's record-integrity bar. Green is unremarkable; the broken
+   state is meant to be impossible to carry on past. */
+.chain-bar { padding: .5rem .9rem; border-radius: 6px; font-size: .85rem;
+  letter-spacing: .04em; margin-bottom: .75rem; }
+.chain-bar.ok { background: #eef7f0; color: #1d6b3a; border: 1px solid #bfe0c9; }
+.chain-bar.broken { background: #7a1620; color: #fff; font-weight: 700; border: 1px solid #a8323d; }
+.outcome-bar .ob-fig { margin-right: .9rem; }
+.outcome-bar .ob-fig b { font-variant-numeric: tabular-nums; }
+.outcome-bar .ob-late { margin-left: .9rem; color: #8a6100; }
+.la-actions .btn-link.danger { color: #a8323d; }

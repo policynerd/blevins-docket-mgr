@@ -13,6 +13,7 @@ const feeds = require('./src/exports');
 const auth = require('./src/auth');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
+const displayViews = require('./src/views/display');
 const member = require('./src/views/member');
 const orgView = require('./src/views/org');
 const reportsView = require('./src/views/reports');
@@ -1937,10 +1938,26 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/votes$/, (req, res, ctx) => {
     motion_text: b.motion_text || null,
     vote_threshold: b.vote_threshold || 'majority',
   });
-  repo.votes.clearForItem(itemId);
+  // Through the ledger, not straight into the projection. The clerk entering a
+  // roll from the minutes is recording the same fact as a member pressing a
+  // button at the table, and a vote that reaches the record without an event
+  // is a vote the chain cannot vouch for.
+  const motionVersion = repo.motionVersions.ensure(itemId, {
+    motionText: b.motion_text || null,
+    moverId: b.mover_id ? Number(b.mover_id) : null,
+    seconderId: b.seconder_id ? Number(b.seconder_id) : null,
+    threshold: b.vote_threshold || 'majority',
+    userId: ctx.user ? ctx.user.id : null,
+  });
   for (const key of Object.keys(b)) {
     const m = key.match(/^vote_(\d+)$/);
-    if (m && b[key]) repo.votes.record(itemId, Number(m[1]), b[key]);
+    if (m && b[key]) {
+      recordSingleVote(itemId, Number(m[1]), b[key], {
+        motionVersionId: motionVersion ? motionVersion.id : null,
+        userId: ctx.user ? ctx.user.id : null,
+        stationId: 'clerk-entry',
+      });
+    }
   }
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
@@ -2040,6 +2057,20 @@ route('GET', /^\/live\/(\d+)$/, (req, res, ctx) => {
   if (!mt) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, liveViews.publicLive(mt, ctx.user));
 });
+/**
+ * The chamber display.
+ *
+ * Public and unauthenticated, like the live view it shares a stream with: it
+ * shows the roll of a public body voting in a public meeting. It is served on
+ * its own route rather than as a mode of /live because it is a different
+ * medium — no navigation, no controls, nothing clickable, type sized for the
+ * back of the room.
+ */
+route('GET', /^\/display\/(\d+)$/, (req, res, ctx) => {
+  const mt = repo.meetings.get(Number(ctx.params[0]));
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, displayViews.displayBoard(mt));
+});
 route('GET', /^\/live\/(\d+)\/stream$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   if (!repo.meetings.get(id)) return sendJson(res, { error: 'Not found' }, 404);
@@ -2054,46 +2085,77 @@ route('GET', /^\/admin\/meetings\/(\d+)\/live$/, (req, res, ctx) => {
   sendHtml(res, liveViews.clerkConsole(mt, ctx.user));
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
+  const r = repo.voteAdmin.reopen(Number(ctx.params[0]), { userId: ctx.user ? ctx.user.id : null });
+  if (!r) return sendJson(res, { error: 'Not found' }, 404);
   const item = repo.meetings.getItem(Number(ctx.params[0]));
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true, reopened: r.reopened });
+});
+
+/**
+ * Void a vote. Distinct from reopening — see repo.voteAdmin.
+ */
+route('POST', /^\/admin\/agenda-items\/(\d+)\/void$/, (req, res, ctx) => {
+  const itemId = Number(ctx.params[0]);
+  const item = repo.meetings.getItem(itemId);
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
-  // Only one item open at a time per meeting.
-  for (const it of repo.meetings.items(item.meeting_id)) {
-    if (it.vote_status === 'open') repo.meetings.setVoteStatus(it.id, 'pending');
+  try {
+    repo.voteAdmin.void(itemId, {
+      reason: ctx.body && ctx.body.reason,
+      userId: ctx.user ? ctx.user.id : null,
+    });
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 400);
   }
-  repo.meetings.setVoteStatus(item.id, 'open');
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true });
 });
+
+/**
+ * The result lifecycle, one route per act.
+ *
+ * Separate endpoints rather than a status field the clerk sets, because these
+ * are four different things a different person may do at a different moment,
+ * and each one is an event in the session chain.
+ */
+for (const [step, fn] of [['announce', 'announce'], ['certify', 'certify'], ['publish', 'publish']]) {
+  route('POST', new RegExp(`^\\/admin\\/agenda-items\\/(\\d+)\\/${step}$`), (req, res, ctx) => {
+    const itemId = Number(ctx.params[0]);
+    const item = repo.meetings.getItem(itemId);
+    if (!item) return sendJson(res, { error: 'Not found' }, 404);
+    try {
+      const updated = repo.voteAdmin[fn](itemId, { userId: ctx.user ? ctx.user.id : null });
+      if (!updated) return sendJson(res, { error: 'Not available yet' }, 409);
+    } catch (e) {
+      return sendJson(res, { error: e.message }, 409);
+    }
+    live.pushUpdate(item.meeting_id);
+    sendJson(res, { ok: true });
+  });
+}
+
 route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
-  const t = repo.votes.tally(item.id);
-  const threshold = item.vote_threshold || 'majority';
-  const yea = t.Yea || 0;
-  const nay = t.Nay || 0;
-  let passes;
-  if (threshold === 'two_thirds') {
-    const cast = yea + nay;
-    passes = cast > 0 && yea / cast >= 2 / 3;
-  } else if (threshold === 'majority_full') {
-    const seatCount = repo.bodies.members(item.body_id).length;
-    passes = yea > Math.floor(seatCount / 2);
-  } else {
-    passes = yea > nay;
-  }
-  const result = passes ? 'Pass' : 'Fail';
-  repo.meetings.setItemResult(item.id, item.action || (item.motion_text ? 'Motion' : 'Vote taken'), result);
-  repo.meetings.setVoteStatus(item.id, 'closed');
+  // Eligibility-aware: a recused member is present but out of the denominator.
+  // The previous arithmetic divided the full seat count for `majority_full`, so
+  // recusing counted against the motion exactly as a No vote would.
+  // Stamp the close first: the tally is defined as of that instant, so it has
+  // to exist before the outcome is computed against it.
+  const outcome = repo.voteAdmin.closeRoll(item.id, { userId: ctx.user ? ctx.user.id : null });
+  const result = outcome.result;
   // Reflect the outcome on the matter's legislative history.
   if (item.matter_id) {
     repo.matters.addHistory({
       matter_id: item.matter_id, action_date: require('./src/util').todayISO(),
       body_id: item.body_id, action: 'Vote taken in live session', result,
-      meeting_id: item.meeting_id,
+      notes: `${outcome.yea}-${outcome.nay}, ${outcome.basis}`
+        + (outcome.recused ? `, ${outcome.recused} recused` : ''),
+      meeting_id: item.meeting_id, agenda_item_id: item.id,
     });
   }
   live.pushUpdate(item.meeting_id);
-  sendJson(res, { ok: true, result });
+  sendJson(res, { ok: true, result, tally: outcome });
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/motion$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
@@ -2189,8 +2251,18 @@ function parseTopics(str) {
   return String(str || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 25);
 }
 
-function recordSingleVote(itemId, personId, vote) {
+/**
+ * Record a vote.
+ *
+ * The append to the ledger is the record; the row in `votes` is a projection
+ * of it kept so the existing tally, minutes and export readers work unchanged.
+ * Order matters — the ledger is written first, so a crash between the two
+ * leaves the authoritative account complete and only the derived view stale,
+ * rather than the other way round.
+ */
+function recordSingleVote(itemId, personId, vote, opts = {}) {
   if (!personId) return;
+  repo.voteLedger.append(itemId, personId, vote, opts);
   repo.votes.clearPersonForItem(itemId, personId);
   repo.votes.record(itemId, personId, vote);
 }
