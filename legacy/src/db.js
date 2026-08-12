@@ -769,6 +769,11 @@ const COLUMN_MIGRATIONS = {
   },
   bodies: {
     seats: 'INTEGER', // authorized seat count (vacancies = seats - active members)
+    // The body's accent in the lockup. Only the accent varies between bodies:
+    // the Board's name is always slate, because it is the same Board. Null
+    // leaves the body set in slate too — an arbitrary hue would read as
+    // meaning something it does not.
+    accent_color: 'TEXT',
   },
   budget_lines: {
     appropriation_code: 'TEXT', // legal appropriation account (e.g. 100-4200-51000)

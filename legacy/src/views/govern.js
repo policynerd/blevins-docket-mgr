@@ -85,7 +85,11 @@ function bodyForm(b) {
         <label>Type<select name="type">${raw(selectOptions(types, b ? b.type : ORG.primaryBodyType, { includeBlank: '—' }))}</select></label>
         <label>Meets<input type="text" name="meets" value="${b && b.meets ? b.meets : ''}" placeholder="2nd Mondays, 4:00 PM"></label>
         <label>Authorized seats<input type="number" min="0" name="seats" value="${b && b.seats != null ? b.seats : ''}" placeholder="7"></label>
+        <label>Accent<input type="color" name="accent_color" value="${b && b.accent_color ? b.accent_color : '#353D4F'}"></label>
       </div>
+      <p class="hint muted">The accent carries this body in its lockup — the rule and its
+        name — while the Board's own name stays slate. It is lightened automatically
+        where it has to read on the chamber display's black ground.</p>
       <label>Meeting location<input type="text" name="meeting_location" value="${b && b.meeting_location ? b.meeting_location : ''}" placeholder="${escapeText(ORG.meetingLocation)}"></label>
       <label>Description<textarea name="description" rows="3">${b ? (b.description || '') : ''}</textarea></label>
       <div class="form-actions">
