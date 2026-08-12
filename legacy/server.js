@@ -2046,8 +2046,9 @@ route('POST', /^\/member\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
   if (!ctx.user || !ctx.user.person_id) return sendJson(res, { error: 'No member identity' }, 403);
   if ((item.vote_status || 'pending') !== 'open') return sendJson(res, { error: 'Voting is not open' }, 409);
-  const roster = new Set(repo.bodies.members(item.body_id).map((m) => m.person_id));
-  if (!roster.has(ctx.user.person_id)) return sendJson(res, { error: 'Not on this body' }, 403);
+  if (!repo.bodies.isSeated(item.body_id, ctx.user.person_id)) {
+    return sendJson(res, { error: 'Not on this body' }, 403);
+  }
   if (!repo.VOTE_VALUES.includes(ctx.body.vote)) return sendJson(res, { error: 'Invalid vote' }, 400);
   recordSingleVote(itemId, ctx.user.person_id, ctx.body.vote);
   live.pushUpdate(item.meeting_id);
@@ -2177,7 +2178,24 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
   if (!repo.VOTE_VALUES.includes(ctx.body.vote)) return sendJson(res, { error: 'Invalid vote' }, 400);
-  recordSingleVote(item.id, Number(ctx.body.person_id), ctx.body.vote);
+  // The roll is built from the body's seated members, so a ballot for anyone
+  // else is counted by nothing and appears in no roster — but it still seals an
+  // entry into the ledger, which is the authoritative account. This answered
+  // `ok` for it, so the clerk had no way to know the vote had gone nowhere.
+  //
+  // Reachable without a crafted request: leave the console open across a
+  // roster change and the chips on the page name people who are no longer
+  // seated. That is exactly the moment the clerk needs to be told.
+  //
+  // The member route has refused this all along; this is the same refusal.
+  // Note it does not also require the roll to be open — unlike a member
+  // casting their own vote, a clerk recording a ballot after the close is a
+  // real thing that happens, and `late()` exists to account for it.
+  const personId = Number(ctx.body.person_id);
+  if (!repo.bodies.isSeated(item.body_id, personId)) {
+    return sendJson(res, { error: 'Not on this body' }, 409);
+  }
+  recordSingleVote(item.id, personId, ctx.body.vote);
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true });
 });

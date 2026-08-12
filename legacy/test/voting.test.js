@@ -945,3 +945,47 @@ test('the clerk console offers the chamber display; the public board does not', 
   assert.doesNotMatch(publicBoard, new RegExp(`href="/display/${meetingId}"`),
     'the public live board should not hand out the chamber display');
 });
+
+// --- Who may have a ballot recorded for them ---------------------------------
+// The roll is built from the body's seated members, so a ballot for anyone else
+// is counted by nothing and appears in no roster — while still sealing an entry
+// into the ledger, which is the authoritative account. Both cast routes ask
+// this question; they ask it in one place so their answers cannot drift.
+
+test('a ballot for someone not seated is counted by nothing but still seals an entry', () => {
+  const { itemId, meetingId } = newItem();
+  const outsider = repo.people.insert({ full_name: 'Not A Member' });
+  repo.voteAdmin.openRoll(itemId);
+
+  appendAt(itemId, people[0], 'Yea');
+  const before = repo.voteLedger.forItem(itemId).length;
+  repo.voteLedger.append(itemId, outsider, 'Yea');
+
+  const o = repo.eligibility.outcome(itemId, { throughSeq: null });
+  assert.equal(o.yea, 1, 'a vote from off the roster reached the tally');
+  assert.equal(o.roll.some((r) => r.person_id === outsider), false,
+    'someone not seated appeared in the roll');
+  // This is why the routes have to refuse it rather than lean on the tally:
+  // the entry is permanent and invisible, and the chain cannot be edited.
+  assert.equal(repo.voteLedger.forItem(itemId).length, before + 1,
+    'the uncounted ballot was still written to the ledger');
+  assert.equal(live.snapshot(meetingId).active.tally.Yea, 1);
+});
+
+test('isSeated answers for the body asked about, and refuses junk', () => {
+  const other = repo.bodies.insert({ name: 'Some Other Body', type: 'Committee', seats: 3 });
+
+  assert.equal(repo.bodies.isSeated(bodyId, people[0]), true);
+  assert.equal(repo.bodies.isSeated(other, people[0]), false,
+    'a member of one body was treated as seated on another');
+
+  const outsider = repo.people.insert({ full_name: 'Also Not A Member' });
+  assert.equal(repo.bodies.isSeated(bodyId, outsider), false);
+
+  // The clerk route takes person_id off the request, so these are the shapes
+  // that actually arrive when a stale page posts a chip that no longer exists.
+  for (const junk of [undefined, null, '', 'abc', NaN, 0, -1, 1.5]) {
+    assert.equal(repo.bodies.isSeated(bodyId, junk), false,
+      `isSeated admitted ${JSON.stringify(junk)}`);
+  }
+});
