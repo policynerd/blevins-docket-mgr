@@ -1908,8 +1908,14 @@ test('lockup: the longest committee name stays inside the horizontal masthead', 
       // Measure the glyphs that get drawn, not the markup: "&amp;" is one
       // ampersand on the screen, and counting it as five characters made this
       // check fail on a masthead that fits perfectly well.
-      const text = raw.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      //
+      // `&amp;` is undone last, not first. Escaping turns `&` into `&amp;`
+      // before anything else, so a body named "A &lt; B" is stored as
+      // "A &amp;lt; B"; unescaping in the same order walks it back twice and
+      // yields "A < B", measuring four glyphs that are not there.
+      const text = raw.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
       const width = text.length * (0.62 * Number(size) + Number(track));
       assert.ok(Number(x) + width <= 1000,
         `"${text}" runs to ${Math.round(Number(x) + width)} of 1000 in the ${name} masthead`);
