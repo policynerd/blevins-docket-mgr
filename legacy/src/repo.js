@@ -1622,11 +1622,63 @@ const users = {
   setActive(id, active) {
     db.prepare('UPDATE users SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
   },
+  /**
+   * Say which member of the board this login speaks for.
+   *
+   * Signing in proves an account is authorized. This says which governor it
+   * is, and a ballot is recorded against the person rather than the account —
+   * so without it a user holds the member role, sees the roll, and is told
+   * "no member identity" the moment they vote.
+   *
+   * Every route that creates a user leaves this null: the admin form and the
+   * SSO provisioner both insert NULL, and only the boot-time seed and the CSV
+   * importer ever set it. So anyone onboarded through the interface could not
+   * vote and there was no way to repair it from the interface either.
+   *
+   * Returns { ok } or { error }, because each refusal means something
+   * different to whoever is looking at the form:
+   *
+   *  - `no_such_person` — the number does not name anyone. A mistyped id must
+   *    not silently link nobody, leaving the account looking configured.
+   *  - `taken` — that governor already has an account. Two logins for one
+   *    person means two people can cast that governor's vote, and the later
+   *    click wins.
+   */
+  setPerson(userId, personId) {
+    const uid = Number(userId);
+    if (!Number.isInteger(uid) || uid <= 0) return { error: 'no_such_user' };
+    if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(uid)) return { error: 'no_such_user' };
+
+    // Clearing the link is allowed: an account may outlive a term.
+    if (personId === null || personId === undefined || personId === '') {
+      db.prepare('UPDATE users SET person_id = NULL WHERE id = ?').run(uid);
+      return { ok: true, person: null };
+    }
+
+    const pid = Number(personId);
+    if (!Number.isInteger(pid) || pid <= 0) return { error: 'no_such_person' };
+    const person = db.prepare('SELECT id, full_name FROM people WHERE id = ?').get(pid);
+    if (!person) return { error: 'no_such_person' };
+
+    const held = db.prepare('SELECT id, email FROM users WHERE person_id = ? AND id != ?').get(pid, uid);
+    if (held) return { error: 'taken', by: held.email };
+
+    db.prepare('UPDATE users SET person_id = ? WHERE id = ?').run(pid, uid);
+    return { ok: true, person };
+  },
+
   // Pre-provision an SSO login by email (matched on first Microsoft sign-in).
-  create({ name, email, role }) {
+  create({ name, email, role, person_id: personId = null }) {
     if (!USER_ROLES.includes(role)) role = 'member';
+    const pid = Number(personId);
+    // Refuse a person already spoken for rather than raising on the unique
+    // index; the caller renders this as a message beside the form.
+    const linked = Number.isInteger(pid) && pid > 0
+      && db.prepare('SELECT 1 FROM people WHERE id = ?').get(pid)
+      && !db.prepare('SELECT 1 FROM users WHERE person_id = ?').get(pid)
+      ? pid : null;
     return db.prepare(`INSERT INTO users (person_id, name, email, role, auth_provider)
-      VALUES (NULL, ?, ?, ?, 'entra')`).run(name || email, email, role).lastInsertRowid;
+      VALUES (?, ?, ?, ?, 'entra')`).run(linked, name || email, email, role).lastInsertRowid;
   },
 };
 

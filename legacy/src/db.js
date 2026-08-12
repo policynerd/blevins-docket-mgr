@@ -668,6 +668,16 @@ CREATE TABLE IF NOT EXISTS office_staff (
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
+-- One account per governor.
+--
+-- person_id says which member of the board a login speaks for, and a ballot is
+-- recorded against the person, not the account. Two accounts pointing at one
+-- person means two people can vote as that governor — and because the ledger
+-- takes the latest standing choice, whoever clicks last owns the vote.
+-- Partial, so the many accounts with no person behind them are unaffected.
+-- (No backticks in here: this whole schema is a JS template literal.)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_person ON users(person_id) WHERE person_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_matters_status ON matters(status);
 CREATE INDEX IF NOT EXISTS idx_mversions_matter ON matter_versions(matter_id);
 CREATE INDEX IF NOT EXISTS idx_pcomments_matter ON public_comments(matter_id);

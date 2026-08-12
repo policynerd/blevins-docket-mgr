@@ -1922,3 +1922,72 @@ test('lockup: the longest committee name stays inside the horizontal masthead', 
     }
   }
 });
+
+// --- Which governor a login speaks for ---------------------------------------
+// Signing in proves an account is authorized. person_id says which member of
+// the board it is, and a ballot is recorded against the person. Every route
+// that made a user left it null, and nothing could set it afterwards — so a
+// governor onboarded through the interface could not vote, and no one could
+// repair it through the interface either.
+
+test('users: a login can be pointed at the governor it speaks for', () => {
+  const p = repo.people.insert({ full_name: 'Linkable Governor' });
+  const uid = repo.users.create({ name: 'Linkable', email: 'link@example.gov', role: 'member' });
+
+  assert.equal(repo.users.get(uid).person_id, null, 'a new login should start unlinked');
+
+  const ok = repo.users.setPerson(uid, p);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.person.full_name, 'Linkable Governor');
+  assert.equal(repo.users.get(uid).person_id, p);
+
+  // An account may outlive a term.
+  assert.equal(repo.users.setPerson(uid, '').ok, true);
+  assert.equal(repo.users.get(uid).person_id, null);
+});
+
+test('users: one governor, one login', () => {
+  const p = repo.people.insert({ full_name: 'Sole Governor' });
+  const first = repo.users.create({ name: 'First', email: 'first@example.gov', role: 'member' });
+  const second = repo.users.create({ name: 'Second', email: 'second@example.gov', role: 'member' });
+
+  assert.equal(repo.users.setPerson(first, p).ok, true);
+  // Two logins for one person means two people can cast that governor's vote,
+  // and because the ledger takes the latest standing choice, the later click
+  // wins. Refused rather than left to the unique index to raise.
+  const clash = repo.users.setPerson(second, p);
+  assert.equal(clash.error, 'taken');
+  assert.equal(clash.by, 'first@example.gov');
+  assert.equal(repo.users.get(second).person_id, null);
+
+  // And the same refusal at creation time.
+  const third = repo.users.create({
+    name: 'Third', email: 'third@example.gov', role: 'member', person_id: p,
+  });
+  assert.equal(repo.users.get(third).person_id, null, 'a taken governor was linked at creation');
+});
+
+test('users: an id that names nobody links nobody, and says so', () => {
+  const uid = repo.users.create({ name: 'Typo', email: 'typo@example.gov', role: 'member' });
+  // The failure that matters: a mistyped id must not leave the account looking
+  // configured while still being unable to vote.
+  for (const junk of [999999, 0, -1, 'abc', 1.5]) {
+    const r = repo.users.setPerson(uid, junk);
+    assert.equal(r.error, 'no_such_person', `id ${JSON.stringify(junk)} was not refused`);
+    assert.equal(repo.users.get(uid).person_id, null);
+  }
+});
+
+test('users: the admin page names the linked governor, not just a number', () => {
+  const usersView = require('../src/views/users');
+  const p = repo.people.insert({ full_name: 'Shown Governor' });
+  const uid = repo.users.create({ name: 'Shown', email: 'shown@example.gov', role: 'member' });
+  repo.users.setPerson(uid, p);
+
+  const page = usersView.usersAdmin({ id: 0, role: 'admin' });
+  // A typed id is only safe if the page shows which governor it hit.
+  assert.match(page, /Shown Governor/, 'the linked governor was not named on the page');
+  assert.match(page, /Not linked — cannot vote/,
+    'an unlinked account should say why it cannot vote');
+  assert.match(page, /Board member ids/, 'the ids to type should be on the same page as the field');
+});
