@@ -13,6 +13,12 @@ primary_region = 'iad'
 [env]
   DOCKET_DB = '/data/docket.db'
   PORT = '3000'
+  # The Board's seal, served from public/brand/. Two inks of one drawing: the
+  # navy for light grounds, the reversed white for the navy sidebar. Set here
+  # rather than left to the Branding screen so a rebuilt machine comes up with
+  # the seal already on it. A value saved under Admin -> Branding still wins.
+  ORG_LOGO_URL = '/brand/seal.png'
+  ORG_LOGO_LIGHT_URL = '/brand/seal-light.png'
 
 [[mounts]]
   source = 'docket_data'
