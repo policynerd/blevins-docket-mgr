@@ -890,3 +890,36 @@ test('the keep-alive fires well inside the display staleness window', () => {
   assert.ok(live.KEEPALIVE_MS * 2 <= window,
     `keep-alive every ${live.KEEPALIVE_MS}ms cannot keep a ${window}ms window open`);
 });
+
+// --- The board on the wall validates its branding like everything else -------
+
+test('the chamber display falls back to the drawn seal on an unusable brand value', () => {
+  const { ORG } = require('../src/org');
+  const displayViews = require('../src/views/display');
+  const meeting = { id: 1, body_name: 'Board of Governors' };
+  const original = ORG.logoLightUrl;
+
+  try {
+    for (const bad of [
+      'https://example.com/a.png\n); } body { display: none } .x { y: url(z',
+      'http://example.com/insecure.png',
+      '/etc/passwd',
+      '/brand/../../secret.png',
+      'not a url at all',
+    ]) {
+      ORG.logoLightUrl = bad;
+      const html = displayViews.displayBoard(meeting);
+      assert.ok(html.includes('--seal: url("data:image/svg+xml'),
+        `display did not fall back for: ${JSON.stringify(bad)}`);
+      assert.ok(!html.includes(bad),
+        'the rejected branding value was interpolated into the board anyway');
+    }
+
+    ORG.logoLightUrl = '/brand/seal-light.png';
+    assert.match(displayViews.displayBoard(meeting),
+      /--seal: url\("\/brand\/seal-light\.png"\)/,
+      'a valid local path should be used as supplied');
+  } finally {
+    ORG.logoLightUrl = original;
+  }
+});

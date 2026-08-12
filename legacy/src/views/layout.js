@@ -1,6 +1,6 @@
 'use strict';
 
-const { html, raw, formatDate } = require('../util');
+const { html, raw, formatDate, isBrandSrc } = require('../util');
 const { ORG } = require('../org');
 const { getFooterHtml } = require('../footer-content');
 
@@ -83,18 +83,8 @@ function brandHead() {
   return `<style>:root{--accent:${c};--accent-dark:color-mix(in srgb, ${c}, #000 28%);}</style>`;
 }
 
-const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
-// Brand art may be hosted (https) or shipped with the app under /brand/.
-// A local path keeps the mark working offline and on first boot.
-//
-// The path is built from one segment at a time so a traversal cannot be
-// spelled: each segment must start with an alphanumeric, which rejects both
-// `..` and a leading dot, and the `/`-joined form leaves no way to write an
-// empty segment (`//`). serveStatic() refuses to leave PUBLIC_DIR as well, so
-// this is the outer of two independent checks rather than the only one.
-const SEGMENT = '[A-Za-z0-9][A-Za-z0-9._-]*';
-const LOCAL_ASSET = new RegExp(`^/(brand|assets)(/${SEGMENT})+$`);
-function isBrandSrc(v) { return HTTPS_URL.test(v) || LOCAL_ASSET.test(v); }
+// isBrandSrc now lives in ../util so the chamber display, which is built to
+// stay independent of this module, can apply the same test.
 
 // Favicon: an explicit favicon URL, else the logo URL, else an auto-generated
 // inline SVG (rounded square in the brand color with the seal glyph) so the tab
