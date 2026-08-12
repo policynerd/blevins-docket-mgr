@@ -15,7 +15,14 @@ Set the paths under **Admin → Branding**, or with `ORG_*` environment variable
 Printed agenda packets are text-only today and carry no seal, and the print
 stylesheet hides the sidebar mark — so nothing here affects PDF output.
 
-| `lockup-light.png` | A horizontal lockup shown **alone** in the sidebar, replacing the seal-and-name masthead | `logoLockupUrl` / `ORG_LOGO_LOCKUP_URL` |
+| `lockup-light` | A horizontal lockup shown **alone** in the sidebar, replacing the seal-and-name masthead | `logoLockupUrl` / `ORG_LOGO_LOCKUP_URL` |
+
+The lockup shipped here carries no file extension, and the path must be written
+without one. That is not a mistake to tidy up: `src/mimetype.js` identifies
+static files from their header bytes precisely because brand artwork so often
+arrives extensionless, and every response sends `X-Content-Type-Options:
+nosniff`, so a wrong content type is fatal rather than untidy. Renaming the file
+would break any branding value already pointing at the current path.
 
 ## Which artwork goes where
 
