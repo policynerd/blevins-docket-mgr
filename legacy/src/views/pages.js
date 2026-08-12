@@ -378,6 +378,7 @@ function matterDetail(matter, query = {}, user = null) {
       ${note ? `<span class="muted">${escapeText(note)}</span>` : ''}
     </li>`;
   const officialDocs = [
+    docLink('details.pdf', 'Legislation details', 'The file at a glance, with every action taken on it'),
     docLink('board-letter.pdf', 'Board letter', 'The item as carried to the body'),
     isOrdinance ? docLink('ordinance.pdf', 'Ordinance (clean)', 'The instrument as it would read') : '',
     isOrdinance ? docLink('ordinance-redline.pdf', 'Ordinance (redline)', 'Changes to the Code, struck and underlined') : '',

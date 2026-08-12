@@ -433,6 +433,9 @@ route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
 // the body actually adopted. The board letter and the approval log carry any
 // item, because that is what they are for.
 const OFFICIAL_DOCS = {
+  // Describes the file rather than speaking for the body, so it carries any
+  // matter type: there is no instrument here to misstate.
+  'details': { fn: (m) => documents.legislationDetails(m), slug: 'details', types: null },
   'board-letter': { fn: (m) => documents.boardLetter(m), slug: 'board-letter', types: null },
   'ordinance': { fn: (m) => documents.ordinance(m), slug: 'ordinance', types: ['Ordinance'] },
   'ordinance-redline': { fn: (m) => documents.ordinance(m, { redline: true }), slug: 'ordinance-redline', types: ['Ordinance'] },

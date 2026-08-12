@@ -431,4 +431,105 @@ async function approvalLog(matter) {
   return doc.save();
 }
 
-module.exports = { boardLetter, ordinance, summaryForPublication, approvalLog, reportDoc, attachmentLabel, paragraphs };
+/**
+ * The legislation details sheet.
+ *
+ * The cover a file gets asked for by number: what it is, where it stands, who
+ * sponsored it, what is attached to it, and every action taken on it. It is
+ * the sheet a records request means when it names a file rather than a
+ * document, and the one a member wants in front of them when an item is called.
+ *
+ * It carries any matter type, and that is safe in a way the ordinance template
+ * is not: this describes the file, it does not speak for the body. Nothing here
+ * ordains, resolves or enacts, so there is no instrument to misstate.
+ *
+ * No `Ver.` column on the history table, though Legistar prints one. This
+ * schema records the action, not the version of the text it was taken against
+ * (`matter_history` has no version column), so filling it with the file's
+ * current version would attach today's number to a vote taken on an earlier
+ * draft. An absent column says less than a wrong one.
+ */
+async function legislationDetails(matter) {
+  const body = matter.body_id ? repo.bodies.get(matter.body_id) : null;
+  const sponsors = repo.matters.sponsors(matter.id);
+  const topics = repo.topics.forMatter(matter.id);
+  const attachments = repo.matters.attachments(matter.id);
+  const history = repo.matters.history(matter.id);
+  const appearances = repo.matters.appearsOn(matter.id);
+  const versions = repo.matters.versions(matter.id);
+  const version = versions.length ? versions[0].version : 1;
+
+  const doc = await Doc.create({
+    footer: officialFooter(`${ORG.name} \u00b7 Legislation details \u00b7 ${matter.file_number}`),
+  });
+
+  doc.text(ORG.clerkOffice || ORG.name, { size: 9, style: 'sans', color: MUTED, after: 2 });
+  doc.text('LEGISLATION DETAILS', { size: 13, style: 'b', after: 12 });
+  doc.rule({ after: 12 });
+
+  const W = doc.contentW;
+  const lab = 88;
+  const half = (W - lab * 2) / 2;
+  const date = (d) => (d ? formatDate(String(d).slice(0, 10)) : '');
+
+  // The scheduled appearance and the disposition. appearsOn() is ordered by
+  // meeting date descending, so the earliest row is the last element.
+  const scheduled = appearances.length ? appearances[appearances.length - 1] : null;
+  const inControl = (body && body.name)
+    || (scheduled && scheduled.body_name)
+    || ORG.primaryBody;
+
+  doc.table([lab, half, lab, half], [
+    ['File #', matter.file_number || '', 'Version', String(version)],
+    ['Type', matter.type || '', 'Status', matter.status || ''],
+    // `intro_date`, not `created_at`. Legistar heads this column "File
+    // created", but created_at is the row's insert time — for anything
+    // imported or migrated that is the day of the import, which says something
+    // true about the database and nothing about the file. Introduction is the
+    // event the record actually turns on.
+    ['Introduced', date(matter.intro_date), 'Final action', date(matter.final_date)],
+  ], { after: 0 });
+
+  doc.table([lab, W - lab], [
+    ['In control', inControl || ''],
+    ['On agenda', appearances.length
+      ? appearances.map((a) => `${date(a.meeting_date)} \u2014 ${a.body_name}`).join('\n')
+      : 'Not yet scheduled'],
+    ['Title', matter.title || ''],
+    ['Subject', matter.summary || ''],
+    ['Sponsors', sponsors.length
+      ? sponsors.map((sp) => (sp.sponsor_type === 'Primary' ? `${sp.full_name} (Primary)` : sp.full_name)).join(', ')
+      : 'None'],
+    ['Indexes', topics.length ? topics.map((t) => t.name).join(', ') : 'None'],
+    ['Attachments', attachments.length
+      ? attachments.map((a, i) => `${attachmentLabel(i)}. ${a.name}`).join('\n')
+      : 'None'],
+  ], { after: 16 });
+
+  // Voided entries are shown, struck through in words rather than removed. The
+  // board that carried a motion and then voided it did both, and a sheet that
+  // prints only the survivors cannot answer "was this ever carried?".
+  const rows = history.map((h) => [
+    h.body_name || inControl || '',
+    date(h.action_date),
+    h.voided_at ? `${h.action || ''} (voided)` : (h.action || ''),
+    h.voided_at ? '\u2014' : (h.result || ''),
+  ]);
+  if (!rows.length) rows.push(['No action recorded', '', '', '']);
+
+  doc.table([W - 96 - 68 - 74, 74, 96, 68], rows, {
+    head: ['Action by', 'Date', 'Action', 'Result'],
+    after: 12,
+  });
+
+  const voided = history.filter((h) => h.voided_at).length;
+  if (voided) {
+    doc.text(`${voided} entr${voided === 1 ? 'y' : 'ies'} shown above ${voided === 1 ? 'has' : 'have'} been voided. `
+      + 'A voided action is struck from effect, not from the record.',
+    { size: 9, style: 'i', color: MUTED });
+  }
+
+  return doc.save();
+}
+
+module.exports = { legislationDetails, boardLetter, ordinance, summaryForPublication, approvalLog, reportDoc, attachmentLabel, paragraphs };
