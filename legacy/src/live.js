@@ -132,7 +132,26 @@ function sendInitial(meetingId, res) {
   try { res.write(`event: update\ndata: ${JSON.stringify(snapshot(meetingId))}\n\n`); } catch (_) { /* ignore */ }
 }
 
-function subscribe(meetingId, req, res) {
+// The keep-alive.
+//
+// This was `: ping`, an SSE comment. A comment holds the socket open but fires
+// no listener in EventSource, so it is invisible to the page: the chamber
+// display resets its staleness clock on the `update` event, and updates arrive
+// only when something changes. A meeting that sat quiet for a minute — debate,
+// public comment, anything procedural — therefore raised "these numbers cannot
+// be vouched for" across the whole board while the stream was perfectly
+// healthy. A named event with an empty payload proves the connection to the
+// page at the same cost.
+//
+// Named `ping` rather than `update` on purpose: the live board and the clerk
+// console listen for `update` and would re-render four times a minute for
+// nothing. An unrecognised event name is ignored by an EventSource that has
+// not registered a listener for it, so this is inert for both of them.
+const KEEPALIVE_EVENT = 'ping';
+const KEEPALIVE_FRAME = `event: ${KEEPALIVE_EVENT}\ndata: {}\n\n`;
+const KEEPALIVE_MS = 25000;
+
+function subscribe(meetingId, req, res, { keepAliveMs = KEEPALIVE_MS } = {}) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -146,8 +165,8 @@ function subscribe(meetingId, req, res) {
   set.add(res);
 
   const keepAlive = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch (_) { /* ignore */ }
-  }, 25000);
+    try { res.write(KEEPALIVE_FRAME); } catch (_) { /* ignore */ }
+  }, keepAliveMs);
 
   const cleanup = () => {
     clearInterval(keepAlive);
@@ -172,4 +191,7 @@ function subscriberCount(meetingId) {
   return set ? set.size : 0;
 }
 
-module.exports = { subscribe, broadcast, subscriberCount, snapshot, pushUpdate, sendInitial };
+module.exports = {
+  subscribe, broadcast, subscriberCount, snapshot, pushUpdate, sendInitial,
+  KEEPALIVE_EVENT, KEEPALIVE_FRAME, KEEPALIVE_MS,
+};

@@ -146,6 +146,18 @@
     el.stale.hidden = true;
     try { render(JSON.parse(ev.data)); } catch (_) { /* keep the last good frame */ }
   });
+  /*
+   * The server's keep-alive, which carries no data.
+   *
+   * Its only job is to prove the stream is still there. Without it the clock
+   * above measures time since the tally last changed, not time since the
+   * server was last heard from, and a meeting with nothing happening in it
+   * reads exactly like a dead board.
+   */
+  source.addEventListener('ping', function () {
+    lastUpdate = Date.now();
+    el.stale.hidden = true;
+  });
   source.addEventListener('error', function () {
     // EventSource retries on its own; the staleness overlay is what tells the
     // room, so there is nothing to do here but let it.

@@ -847,3 +847,46 @@ test('the console surfaces ballots that arrived after the close', () => {
   assert.equal(live.snapshot(meetingId).active.late, 1,
     'a ballot after the close was invisible to the clerk');
 });
+
+// --- The keep-alive has to be visible to the page ----------------------------
+//
+// The chamber display raises a staleness overlay when it has not heard from the
+// server for a minute. That is only meaningful if the keep-alive reaches the
+// page: an SSE comment (`: ping`) holds the socket open but fires no listener,
+// so a quiet meeting was indistinguishable from a dead stream and the board
+// told a room full of people it could not vouch for numbers that were correct.
+
+test('the stream keep-alive is a named event, not an invisible comment', async () => {
+  const { meetingId } = newItem();
+  const writes = [];
+  const res = { writeHead() {}, write(chunk) { writes.push(String(chunk)); } };
+  const handlers = {};
+  const req = { on(ev, fn) { handlers[ev] = fn; } };
+
+  live.subscribe(meetingId, req, res, { keepAliveMs: 15 });
+  await new Promise((r) => setTimeout(r, 45));
+  handlers.close();
+
+  const pings = writes.filter((w) => w.startsWith('event: ping'));
+  assert.ok(pings.length > 0, 'no keep-alive reached the client');
+  assert.ok(!writes.some((w) => w.trimStart().startsWith(':')),
+    'keep-alive sent as an SSE comment, which fires no EventSource listener');
+  assert.equal(pings[0], 'event: ping\ndata: {}\n\n');
+});
+
+test('the chamber display listens for the event the server actually sends', () => {
+  const client = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'assets', 'display.js'), 'utf8');
+  assert.match(client, new RegExp(`addEventListener\\('${live.KEEPALIVE_EVENT}'`),
+    'the display does not handle the keep-alive, so its staleness clock only '
+    + 'resets when the tally changes');
+});
+
+test('the keep-alive fires well inside the display staleness window', () => {
+  const client = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'assets', 'display.js'), 'utf8');
+  const window = Number((client.match(/lastUpdate\s*<\s*(\d+)/) || [])[1]);
+  assert.ok(window > 0, 'could not read the staleness window from the display');
+  assert.ok(live.KEEPALIVE_MS * 2 <= window,
+    `keep-alive every ${live.KEEPALIVE_MS}ms cannot keep a ${window}ms window open`);
+});
