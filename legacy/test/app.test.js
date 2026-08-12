@@ -1757,3 +1757,82 @@ test('typesetting: a footnote long enough to wrap reserves and draws more than o
   const text = await pdfText(bytes);
   assert.match(text, /content width/, 'the wrapped tail of the long note was not printed');
 });
+
+// --- The legislation details sheet -------------------------------------------
+// The cover a records request means when it names a file by number. It carries
+// any matter type because it describes the file rather than speaking for the
+// body, so unlike the ordinance template there is no instrument to misstate.
+
+test('documents: the details sheet reports the file, its sponsors and its actions', async () => {
+  const b = repo.bodies.insert({ name: 'Details Board', type: 'Governing Body', seats: 5 });
+  const sponsor = repo.people.insert({ full_name: 'Marion Sponsor', district: '3' });
+  const m = repo.matters.insertNumbered({
+    type: 'Resolution', title: 'A Resolution adopting the midcycle budget',
+    status: 'Passed', body_id: b, intro_date: '2026-06-03', final_date: '2026-06-12',
+    summary: 'Adopts the budget for fiscal years 2026-27 and appropriates funds.',
+  });
+  repo.matters.addSponsor(m.id, sponsor, 'Primary');
+  repo.matters.addAttachment({ matter_id: m.id, name: 'Staff report.pdf' });
+  repo.matters.addHistory({
+    matter_id: m.id, action_date: '2026-06-12', body_id: b,
+    action: 'Adopted as amended', result: 'Pass',
+  });
+
+  const text = await pdfText(await documents.legislationDetails(repo.matters.get(m.id)));
+
+  assert.match(text, /LEGISLATION DETAILS/);
+  assert.ok(text.includes(m.file_number), 'the file number is the point of the sheet');
+  assert.match(text, /Resolution/);
+  assert.match(text, /Passed/);
+  assert.match(text, /Marion Sponsor \(Primary\)/);
+  assert.match(text, /Staff report\.pdf/);
+  assert.match(text, /Adopted as amended/);
+  assert.match(text, /Details Board/);
+  // Introduced and final action are the dates the record turns on.
+  assert.match(text, /June 3, 2026/);
+  assert.match(text, /June 12, 2026/);
+});
+
+test('documents: the details sheet keeps voided actions on the record', async () => {
+  const b = repo.bodies.insert({ name: 'Void Board', type: 'Governing Body', seats: 5 });
+  const m = repo.matters.insertNumbered({
+    type: 'Motion', title: 'A Motion that was carried and then voided',
+    status: 'Introduced', body_id: b,
+  });
+  repo.matters.addHistory({
+    matter_id: m.id, action_date: '2026-07-01', body_id: b,
+    action: 'Carried on a voice vote', result: 'Pass',
+  });
+  const entry = repo.matters.history(m.id)[0];
+  repo.matters.voidHistory(entry.id, { reason: 'No quorum was present' });
+
+  const text = await pdfText(await documents.legislationDetails(repo.matters.get(m.id)));
+
+  // Deleting would make the sheet agree with the present at the cost of no
+  // longer describing the past. An auditor asking "was this ever carried?"
+  // has to be able to see that it was, and that it was struck.
+  assert.match(text, /Carried on a voice vote/, 'a voided action vanished from the sheet');
+  assert.match(text, /voided/, 'the sheet showed a voided action as though it still stood');
+  assert.doesNotMatch(text, /Pass/, 'a voided action kept its result');
+});
+
+test('documents: the details sheet omits a version column it cannot fill honestly', async () => {
+  const b = repo.bodies.insert({ name: 'Ver Board', type: 'Governing Body', seats: 5 });
+  const m = repo.matters.insertNumbered({
+    type: 'Resolution', title: 'A Resolution acted on before it was amended',
+    status: 'Passed', body_id: b,
+  });
+  repo.matters.addHistory({
+    matter_id: m.id, action_date: '2026-05-01', body_id: b, action: 'Adopted', result: 'Pass',
+  });
+  // The file is on v2 while the action above was taken against v1.
+  // matter_history records no version, so a Ver. column on the history table
+  // could only print the current one against a vote that predates it.
+  const add = db.prepare('INSERT INTO matter_versions (matter_id, version, full_text, note) VALUES (?,?,?,?)');
+  add.run(m.id, 1, 'Original text', 'As introduced');
+  add.run(m.id, 2, 'Amended text', 'As amended');
+
+  const text = await pdfText(await documents.legislationDetails(repo.matters.get(m.id)));
+  assert.match(text, /Version 2/, 'the sheet should state the version the file is on');
+  assert.doesNotMatch(text, /Ver\./, "a version column would attribute today's draft to an older vote");
+});
