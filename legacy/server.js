@@ -48,7 +48,7 @@ const { sameOrigin, safeUrl } = require('./src/security');
 const { setUser, forbidden } = require('./src/views/layout');
 const { sanitizeHtml } = require('./src/sanitize');
 const {
-  sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray,
+  sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray, todayISO,
 } = require('./src/util');
 
 init();
@@ -1614,6 +1614,29 @@ route('GET', /^\/admin\/backup$/, (req, res, ctx) => {
 
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
 route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
+// Retiring a governor: its own form, because it is its own act. The roster
+// used to carry an inline "Propose removal" box — the same interaction as
+// editing a term date, for the thing that ends someone's service.
+route('GET', /^\/govern\/members\/retire$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  const member = repo.bodies.memberById(Number(ctx.query.member));
+  if (!member) return sendHtml(res, pages.notFound(), 404);
+  const body = repo.bodies.get(member.body_id);
+  if (!body) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, govern.retireForm(member, body, { today: todayISO() }));
+});
+route('POST', /^\/govern\/members\/retire$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  const member = repo.bodies.memberById(Number(ctx.body.member_id));
+  if (!member) return sendHtml(res, pages.notFound(), 404);
+  const cause = govern.END_CAUSES.includes(ctx.body.cause) ? ctx.body.cause : 'Retired';
+  repo.memberMotions.nominate({
+    action: 'remove', body_id: member.body_id, person_id: member.person_id,
+    member_id: member.id, effective_date: ctx.body.effective_date || todayISO(),
+    cause, reason: ctx.body.reason || null, nominated_by: ctx.user.id,
+  });
+  redirect(res, '/govern/members');
+});
 route('POST', /^\/govern\/members\/nominate$/, (req, res, ctx) => {
   if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
   const b = ctx.body;

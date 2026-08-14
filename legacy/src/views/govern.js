@@ -73,6 +73,66 @@ function bodiesAdmin() {
   return layout({ title: 'Bodies & committees', active: '/admin', body });
 }
 
+/**
+ * Retiring a governor.
+ *
+ * Its own page, and its own words. This was an inline text box in a roster
+ * cell with a red "Propose removal" beside it — the same three-second
+ * interaction as editing a term date, for the act that ends someone's service
+ * on the board. Most of the time it is a retirement, not a removal, and the
+ * interface should not describe an honourable exit as a dismissal.
+ *
+ * What it asks for that the old control could not:
+ *
+ *  - the last day of service, which is not the day the paperwork is finished.
+ *    A retirement announced in March and executed in April ends in March, and
+ *    the roll reads that date to decide who was seated when.
+ *  - how the service ended, as a category rather than a sentence, because that
+ *    is what a roster or an annual report is read by.
+ *
+ * It does not delete anything. The seat stays on the record with its dates
+ * closed, so the body's history remains answerable.
+ */
+const END_CAUSES = ['Retired', 'Term expired', 'Resigned', 'Removed', 'Deceased'];
+
+function retireForm(member, body, opts = {}) {
+  const person = member ? repo.people.get(member.person_id) : null;
+  const served = member && member.start_date
+    ? `Seated ${escapeText(member.start_date)}` : 'Seated (start date not recorded)';
+  const form = html`
+    <form class="form" method="post" action="/govern/members/retire">
+      <input type="hidden" name="member_id" value="${member.id}">
+      <p class="muted">${raw(served)} on <strong>${escapeText(body.name)}</strong>
+        as ${escapeText(member.role || 'Member')}.</p>
+      <div class="form-row">
+        <label>Last day of service
+          <input type="date" name="effective_date" value="${escapeText(opts.today || '')}" required>
+        </label>
+        <label>How the service ended
+          <select name="cause">${raw(selectOptions(END_CAUSES, 'Retired'))}</select>
+        </label>
+      </div>
+      <label>Note for the record
+        <input type="text" name="reason" placeholder="Optional — read alongside the roster">
+      </label>
+      <p class="muted">The seat is not deleted. Its dates are closed, so the record still shows
+        that ${escapeText((person && person.full_name) || 'this member')} served and until when.
+        An ended term leaves the quorum and the voting denominator on its own, holding over only
+        until a successor is seated.</p>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Propose retirement</button>
+        <a class="btn-link" href="/govern/members">Cancel</a>
+      </div>
+    </form>`;
+  const bodyHtml = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/govern/members">Membership</a> / Retire</p>
+    <h1>Retire ${escapeText((person && person.full_name) || 'a governor')}</h1>
+    <p class="muted">Changes follow <strong>Nominate → Approve → Complete</strong>. This proposes the
+      retirement; someone other than you approves it, and it takes effect when completed.</p>
+    ${raw(card('Retirement', form))}`;
+  return layout({ title: 'Retire a governor', active: '/govern/members', body: bodyHtml });
+}
+
 function bodyForm(b) {
   const isEdit = !!b;
   const action = isEdit ? `/admin/bodies/${b.id}` : '/admin/bodies';
@@ -210,15 +270,9 @@ function membersPage(user) {
             <input type="date" name="end_date" value="${escapeText(mm.end_date || '')}" aria-label="Term end">
             <button type="submit" class="btn-link">save term</button>
           </form>`) : raw(mm.end_date ? `Term ends ${escapeText(mm.end_date)}` : '')}</td>
-        <td>${isClerk ? raw(`
-          <form class="inline remove-form" method="post" action="/govern/members/nominate">
-            <input type="hidden" name="action" value="remove">
-            <input type="hidden" name="body_id" value="${b.id}">
-            <input type="hidden" name="member_id" value="${mm.id}">
-            <input type="hidden" name="person_id" value="${mm.person_id}">
-            <input type="text" name="reason" placeholder="Reason (optional)" class="reason-inp">
-            <button type="submit" class="btn-link danger">Propose removal</button>
-          </form>`) : ''}</td>
+        <td>${isClerk ? raw(mm.end_date
+    ? `<span class="muted">Concluded ${escapeText(mm.end_date)}${mm.end_reason ? ` · ${escapeText(mm.end_reason)}` : ''}</span>`
+    : `<a class="btn-link" href="/govern/members/retire?member=${mm.id}">Retire…</a>`) : ''}</td>
       </tr>`).join('') : `<tr><td colspan="4" class="muted">No members.</td></tr>`;
     const seatNote = b.seats != null
       ? ` — ${members.length}/${b.seats} seats${b.seats > members.length ? `, ${b.seats - members.length} vacant` : ''}` : '';
@@ -546,4 +600,5 @@ function integrationsPage({ status: flash = '' } = {}) {
   return layout({ title: 'Integrations', active: '/admin', body });
 }
 
-module.exports = { bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage, integrationsPage };
+module.exports = {
+  retireForm, END_CAUSES, bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage, integrationsPage };
