@@ -1501,11 +1501,12 @@ const memberMotions = {
   nominate(m) {
     return db.prepare(`INSERT INTO member_motions
       (action, body_id, person_id, member_id, nominee_name, nominee_title, nominee_email,
-       nominee_district, seat_role, reason, nominated_by, status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?, 'Nominated')`).run(
+       nominee_district, seat_role, reason, effective_date, cause, nominated_by, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'Nominated')`).run(
       m.action, m.body_id ?? null, m.person_id ?? null, m.member_id ?? null,
       m.nominee_name ?? null, m.nominee_title ?? null, m.nominee_email ?? null,
       m.nominee_district ?? null, m.seat_role ?? 'Member', m.reason ?? null,
+      m.effective_date ?? null, m.cause ?? null,
       m.nominated_by ?? null).lastInsertRowid;
   },
   approve(id, userId, notes) {
@@ -1538,10 +1539,27 @@ const memberMotions = {
           'SELECT id FROM body_members WHERE body_id = ? AND person_id = ?').get(m.body_id, personId);
         if (!dup) bodies.addMember(m.body_id, personId, m.seat_role || 'Member');
       } else if (m.action === 'remove') {
-        if (m.member_id) db.prepare('DELETE FROM body_members WHERE id = ?').run(m.member_id);
-        else if (m.body_id && personId) {
-          db.prepare('DELETE FROM body_members WHERE body_id = ? AND person_id = ?')
-            .run(m.body_id, personId);
+        // Close the term; do not delete the seat.
+        //
+        // This used to DELETE the body_members row, which destroyed the record
+        // that the governor ever sat — their term dates with it. Their votes
+        // survived, because those key on the person, but "who sat on this body
+        // in March 2025" became unanswerable. That is the opposite of how the
+        // rest of the record behaves: a voided vote is struck and kept,
+        // precisely so the past stays describable.
+        //
+        // end_date is also what the roll now reads. An ended term leaves the
+        // quorum and the denominator on its own, holding over only until a
+        // successor takes the seat, so closing it is sufficient — nothing has
+        // to be removed for the arithmetic to be right.
+        const ends = m.effective_date || new Date().toISOString().slice(0, 10);
+        const cause = m.cause || 'Retired';
+        if (m.member_id) {
+          db.prepare('UPDATE body_members SET end_date = ?, end_reason = ? WHERE id = ?')
+            .run(ends, cause, m.member_id);
+        } else if (m.body_id && personId) {
+          db.prepare('UPDATE body_members SET end_date = ?, end_reason = ? WHERE body_id = ? AND person_id = ?')
+            .run(ends, cause, m.body_id, personId);
         }
       }
       db.prepare(`UPDATE member_motions

@@ -120,6 +120,27 @@ const STYLE = `
   [hidden] { display: none !important; }
 `;
 
+/**
+ * Which body is sitting — when that needs saying.
+ *
+ * Only for a body below the Board. When the Board sits as itself the lockup
+ * has nothing to add: the seal behind the board is the Board's, the room is
+ * the Board's chamber, and a line reading BOARD OF GOVERNORS over a board that
+ * is already the Board of Governors is furniture. The masthead exists to
+ * answer "which of them is this?", and in plenary there is nothing to answer.
+ *
+ * A committee is the case it was built for — the Planning Commission and the
+ * Committee on Appropriations meet in the same room, on the same screen, and
+ * look identical without it.
+ */
+function masthead(body, meeting) {
+  const named = lockupArt.subordinateName(body || { name: meeting.body_name });
+  if (!named) return '';
+  return `<div class="masthead">${lockupArt.horizontalSvg(
+    body || { name: meeting.body_name }, { width: 620, ground: 'dark' },
+  )}</div>`;
+}
+
 function displayBoard(meeting, body) {
   // The Board's own seal when one has been supplied, otherwise the drawn one.
   //
@@ -149,9 +170,7 @@ function displayBoard(meeting, body) {
 </head>
 <body>
 <div class="board" data-meeting="${meeting.id}">
-  <div class="masthead">${lockupArt.horizontalSvg(
-    body || { name: meeting.body_name }, { width: 620, ground: 'dark' },
-  )}</div>
+  ${masthead(body, meeting)}
   <div class="banner" data-banner hidden></div>
   <div data-board hidden>
     <div class="label">Agenda Item</div>

@@ -777,6 +777,24 @@ const COLUMN_MIGRATIONS = {
   budgets: {
     adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
   },
+  body_members: {
+    // How a term ended, recorded on the seat rather than only on the motion
+    // that ended it. A roster answering "who served, and until when" should
+    // not need the governance paperwork joined to it to say why they left.
+    end_reason: 'TEXT',
+  },
+  member_motions: {
+    // The last day of service, which is not the day the paperwork completed:
+    // a retirement announced in March and executed in April ends the term in
+    // March. Seating has the same distinction between decision and effect.
+    effective_date: 'TEXT',
+    // How the service ended — retired, term expired, resigned, removed,
+    // deceased. Retirement is the ordinary case and removal the rare one, and
+    // conflating them is why the roster called an honourable exit a removal.
+    // Distinct from `reason`, which is the free note; this is the category the
+    // record is searched and reported by.
+    cause: 'TEXT',
+  },
   bodies: {
     seats: 'INTEGER', // authorized seat count (vacancies = seats - active members)
     // The body's accent in the lockup. Only the accent varies between bodies:

@@ -1113,3 +1113,69 @@ test('the tally counts the same roll that admits the ballots', () => {
   assert.equal(o.required, 2);
   assert.equal(o.result, 'Pass', 'a motion carried 2-1 was recorded as failed');
 });
+
+// --- Retiring a governor -----------------------------------------------------
+// Retirement is the ordinary way service ends, and it used to DELETE the
+// body_members row — destroying the record that the governor ever sat, term
+// dates and all. Their votes survived, keyed on the person, but "who sat on
+// this body in March 2025" became unanswerable. The rest of the record works
+// the other way round: a voided vote is struck and kept.
+
+test('retiring a governor closes the term and keeps the seat on the record', () => {
+  const b = repo.bodies.insert({ name: 'Retiring Body', type: 'Committee', seats: 3 });
+  const p = repo.people.insert({ full_name: 'Retiring Governor' });
+  const memberId = repo.bodies.addMember(b, p, 'Member');
+
+  const motion = repo.memberMotions.nominate({
+    action: 'remove', body_id: b, person_id: p, member_id: memberId,
+    effective_date: '2026-03-31', cause: 'Retired', nominated_by: null,
+  });
+  repo.memberMotions.approve(motion, null, null);
+  repo.memberMotions.complete(motion, null);
+
+  const row = repo.bodies.memberById(memberId);
+  assert.ok(row, 'the seat was deleted; the body can no longer say who served');
+  assert.equal(row.end_date, '2026-03-31', 'the last day of service is the date given, not today');
+  assert.equal(row.end_reason, 'Retired');
+});
+
+test('a retired governor leaves the roll, the quorum and the denominator', () => {
+  const b = repo.bodies.insert({ name: 'Quorum Body', type: 'Committee', seats: 3 });
+  const ids = ['P', 'Q', 'R'].map((n) => repo.people.insert({ full_name: `${n} Governor` }));
+  const memberIds = ids.map((id) => repo.bodies.addMember(b, id, 'Member'));
+
+  assert.equal(repo.bodies.votingRoll(b).length, 3);
+
+  const motion = repo.memberMotions.nominate({
+    action: 'remove', body_id: b, person_id: ids[2], member_id: memberIds[2],
+    effective_date: '2020-01-01', cause: 'Retired', nominated_by: null,
+  });
+  repo.memberMotions.approve(motion, null, null);
+  repo.memberMotions.complete(motion, null);
+
+  // Three seats, two sitting: the retired member holds over only until someone
+  // takes the seat, so the roll is unchanged until a successor arrives.
+  assert.equal(repo.bodies.votingRoll(b).length, 3, 'a holdover should keep the seat while it is free');
+  const successor = repo.people.insert({ full_name: 'S Governor' });
+  repo.bodies.addMember(b, successor, 'Member');
+  const roll = repo.bodies.votingRoll(b).map((r) => r.id);
+  assert.equal(roll.includes(ids[2]), false, 'the retired governor kept a seat that was filled');
+  assert.equal(roll.includes(successor), true);
+  assert.equal(repo.bodies.isSeated(b, ids[2]), false, 'a retired governor could still be cast for');
+});
+
+test('the retirement form asks for the things the inline box could not', () => {
+  const govern = require('../src/views/govern');
+  const b = repo.bodies.insert({ name: 'Form Body', type: 'Committee', seats: 3 });
+  const p = repo.people.insert({ full_name: 'Formal Governor' });
+  const memberId = repo.bodies.addMember(b, p, 'Member');
+
+  const page = govern.retireForm(repo.bodies.memberById(memberId), repo.bodies.get(b), { today: '2026-08-12' });
+  assert.match(page, /Retire Formal Governor/);
+  assert.match(page, /name="effective_date"/, 'the last day of service must be askable');
+  assert.match(page, /name="cause"/, 'how the service ended must be a category, not a sentence');
+  assert.match(page, /Retired/);
+  // The word matters: this is usually an honourable exit, not a dismissal.
+  assert.doesNotMatch(page, /Propose removal/);
+  assert.match(page, /not deleted/, 'the form should say the record is preserved');
+});
