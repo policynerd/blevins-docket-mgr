@@ -212,9 +212,10 @@ const bodies = {
       b.meets ?? null, b.active == null ? 1 : b.active, b.seats ?? null,
       b.accent_color ?? null).lastInsertRowid;
   },
-  addMember(bodyId, personId, role = 'Member', voting = 1) {
-    return db.prepare(`INSERT INTO body_members (body_id, person_id, role, voting)
-      VALUES (?,?,?,?)`).run(bodyId, personId, role, voting).lastInsertRowid;
+  addMember(bodyId, personId, role = 'Member', voting = 1, term = {}) {
+    return db.prepare(`INSERT INTO body_members (body_id, person_id, role, voting, start_date, end_date)
+      VALUES (?,?,?,?,?,?)`).run(bodyId, personId, role, voting ? 1 : 0,
+      term.start_date ?? null, term.end_date ?? null).lastInsertRowid;
   },
   memberById(memberId) {
     return db.prepare(`
@@ -1501,12 +1502,14 @@ const memberMotions = {
   nominate(m) {
     return db.prepare(`INSERT INTO member_motions
       (action, body_id, person_id, member_id, nominee_name, nominee_title, nominee_email,
-       nominee_district, seat_role, reason, effective_date, cause, nominated_by, status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'Nominated')`).run(
+       nominee_district, seat_role, reason, effective_date, term_end_date, seat_voting,
+       cause, nominated_by, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'Nominated')`).run(
       m.action, m.body_id ?? null, m.person_id ?? null, m.member_id ?? null,
       m.nominee_name ?? null, m.nominee_title ?? null, m.nominee_email ?? null,
       m.nominee_district ?? null, m.seat_role ?? 'Member', m.reason ?? null,
-      m.effective_date ?? null, m.cause ?? null,
+      m.effective_date ?? null, m.term_end_date ?? null,
+      m.seat_voting == null ? null : (m.seat_voting ? 1 : 0), m.cause ?? null,
       m.nominated_by ?? null).lastInsertRowid;
   },
   approve(id, userId, notes) {
@@ -1537,7 +1540,15 @@ const memberMotions = {
         // Avoid duplicate membership on the same body.
         const dup = db.prepare(
           'SELECT id FROM body_members WHERE body_id = ? AND person_id = ?').get(m.body_id, personId);
-        if (!dup) bodies.addMember(m.body_id, personId, m.seat_role || 'Member');
+        // The term is granted with the seat. addMember used to take neither
+        // date, so every governor seated through this path started with no
+        // start date at all and someone had to remember a second form — the
+        // roll reads start_date to decide who was seated when.
+        if (!dup) {
+          bodies.addMember(m.body_id, personId, m.seat_role || 'Member',
+            m.seat_voting == null ? 1 : m.seat_voting,
+            { start_date: m.effective_date || null, end_date: m.term_end_date || null });
+        }
       } else if (m.action === 'remove') {
         // Close the term; do not delete the seat.
         //

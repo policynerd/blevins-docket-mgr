@@ -95,6 +95,75 @@ function bodiesAdmin() {
  */
 const END_CAUSES = ['Retired', 'Term expired', 'Resigned', 'Removed', 'Deceased'];
 
+/**
+ * Seating a governor.
+ *
+ * The counterpart to retiring one, and until now the lesser of the two: a card
+ * among cards on the membership page, which granted a seat and recorded no
+ * term for it. The dates were a separate inline form in the roster afterwards,
+ * so a governor seated properly still had no start date until somebody
+ * remembered — and the roll reads start_date to decide who was seated when.
+ *
+ * What it asks for that the old card did not:
+ *
+ *  - the day the term begins, granted with the seat rather than added later;
+ *  - the day it ends, where the appointment is for a fixed term. Left empty
+ *    for an open-ended one, which is not the same as an expired one;
+ *  - whether the seat carries a vote. Ex-officio members hold a seat without
+ *    one, and the roll leaves them out of both quorum and the denominator, so
+ *    it cannot be an afterthought.
+ */
+const SEAT_ROLES = ['Member', 'Chair', 'Vice Chair', 'Alternate', 'Ex-Officio'];
+
+function seatForm(bodies, people, opts = {}) {
+  const bodyOpts = bodies.map((b) => ({ value: b.id, label: b.name }));
+  const form = html`
+    <form class="form" method="post" action="/govern/members/seat">
+      <div class="form-row">
+        <label>Body<select name="body_id" required>${raw(selectOptions(bodyOpts, opts.bodyId || '', { includeBlank: 'Select…' }))}</select></label>
+        <label>Seat<select name="seat_role">${raw(selectOptions(SEAT_ROLES, 'Member'))}</select></label>
+      </div>
+
+      <label>Who is being seated
+        <select name="person_id">${raw(selectOptions(people, '', { includeBlank: '— someone not yet on file, below —' }))}</select>
+      </label>
+      <fieldset>
+        <legend>…or someone new</legend>
+        <div class="form-row">
+          <label>Full name<input type="text" name="nominee_name" placeholder="Jane Doe"></label>
+          <label>Title<input type="text" name="nominee_title" placeholder="${escapeText(ORG.memberTitle)}"></label>
+        </div>
+        <div class="form-row">
+          <label>Email<input type="email" name="nominee_email" placeholder="jane@blevinsholdings.com"></label>
+          <label>Seat / district<input type="text" name="nominee_district" placeholder="Seat Three"></label>
+        </div>
+      </fieldset>
+
+      <div class="form-row">
+        <label>Term begins<input type="date" name="effective_date" value="${escapeText(opts.today || '')}" required></label>
+        <label>Term ends<input type="date" name="term_end_date"> <span class="muted">optional — leave empty for an open term</span></label>
+      </div>
+      <label class="check">
+        <input type="checkbox" name="seat_voting" value="1" checked> This seat votes
+        <span class="muted">Clear it for an ex-officio seat: the holder attends and speaks,
+          and counts toward neither the quorum nor the majority.</span>
+      </label>
+
+      <label>Note for the record<input type="text" name="reason" placeholder="Appointment context (optional)"></label>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">Propose seating</button>
+        <a class="btn-link" href="/govern/members">Cancel</a>
+      </div>
+    </form>`;
+  const body = html`
+    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/govern/members">Membership</a> / Seat</p>
+    <h1>Seat a governor</h1>
+    <p class="muted">Changes follow <strong>Nominate → Approve → Complete</strong>. This proposes the
+      appointment; someone other than you approves it, and the seat is granted when completed.</p>
+    ${raw(card('Appointment', form))}`;
+  return layout({ title: 'Seat a governor', active: '/govern/members', body });
+}
+
 function retireForm(member, body, opts = {}) {
   const person = member ? repo.people.get(member.person_id) : null;
   const served = member && member.start_date
@@ -280,31 +349,12 @@ function membersPage(user) {
       `<table class="data compact"><thead><tr><th>Member</th><th>Role</th><th>Term</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
   }).join('');
 
-  // Nominate-to-seat form (clerk only)
-  const nominateForm = isClerk ? card('Nominate a member to seat', html`
-    <form class="form" method="post" action="/govern/members/nominate">
-      <input type="hidden" name="action" value="seat">
-      <div class="form-row">
-        <label>Body<select name="body_id" required>${raw(selectOptions(bodyOpts, pb ? pb.id : '', { includeBlank: 'Select…' }))}</select></label>
-        <label>Seat role<select name="seat_role">${raw(selectOptions(['Member', 'Chair', 'Vice Chair', 'Alternate', 'Ex-Officio'], 'Member'))}</select></label>
-      </div>
-      <label>Existing person (optional)
-        <select name="person_id">${raw(selectOptions(people, '', { includeBlank: '— new person below —' }))}</select>
-      </label>
-      <fieldset>
-        <legend>…or a new person</legend>
-        <div class="form-row">
-          <label>Full name<input type="text" name="nominee_name" placeholder="Jane Doe"></label>
-          <label>Title<input type="text" name="nominee_title" placeholder="${escapeText(ORG.memberTitle)}"></label>
-        </div>
-        <div class="form-row">
-          <label>Email<input type="email" name="nominee_email" placeholder="jane@example.gov"></label>
-          <label>District / seat<input type="text" name="nominee_district" placeholder="Seat 3"></label>
-        </div>
-      </fieldset>
-      <label>Reason / note<input type="text" name="reason" placeholder="Appointment context (optional)"></label>
-      <button type="submit" class="btn primary">Submit nomination</button>
-    </form>`) : '';
+  // Seating has its own page now, for the same reason retiring does: it is an
+  // act, not a field. The card that used to sit here granted a seat and
+  // recorded no term for it.
+  const seatLink = isClerk ? card('Seat a governor', html`
+    <p class="muted">Grant a seat on a body, with the term it is granted for.</p>
+    <p><a class="btn primary" href="/govern/members/seat">Seat a governor →</a></p>`) : '';
 
   const body = html`
     <p class="crumbs"><a href="/admin">Admin</a> / Membership</p>
@@ -312,7 +362,7 @@ function membersPage(user) {
     <p class="muted">Changes follow <strong>Nominate → Approve → Seat</strong>. The Clerk nominates and executes; approval must come from someone other than the nominator.</p>
     ${raw(card('Pending changes', pendingHtml))}
     ${raw(termsCard)}
-    ${raw(nominateForm)}
+    ${raw(seatLink)}
     <h2 class="section-title">Current rosters</h2>
     ${raw(rosterCards)}`;
   return layout({ title: 'Board membership', active: '/govern/members', body });
@@ -601,4 +651,4 @@ function integrationsPage({ status: flash = '' } = {}) {
 }
 
 module.exports = {
-  retireForm, END_CAUSES, bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage, integrationsPage };
+  retireForm, END_CAUSES, seatForm, SEAT_ROLES, bodiesAdmin, bodyForm, membersPage, brandingPage, importPage, mattersImportPage, announcementPage, integrationsPage };
