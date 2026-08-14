@@ -1,0 +1,759 @@
+{
+ "code": "Blevins Administrative Code",
+ "short_citation": "BAC",
+ "citation_range": "BAC § 1.01–9.09",
+ "effective_date": "2026-08-12",
+ "adopted_by": "Board of Governors",
+ "source": "BlevinsAdminCode.pdf (23pp), supplied 2026-08-14. Paragraphs recovered from line spacing and structural markers; two-column lists read a column at a time and the definitions table read a row at a time.",
+ "sections": [
+  {
+   "citation": "1.01",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Code is to establish a uniform administrative framework for the governance, management, and operation of Blevins Holdings LLC (“Blevins Holdings” or the “Company”), including its departments, controlled subsidiaries, programs, personnel, facilities, systems, funds, records, and administrative activities.\nThis Code is intended to:\n1. Establish clear lines of authority and accountability;\n2. Provide uniform administrative standards;\n3. Define the responsibilities of departments and officials;\n4. Establish procedures for delegation, approval, documentation, and oversight;\n5. Promote effective internal controls and responsible stewardship of Company resources;\n6. Provide a framework for enterprise-wide compliance, risk management, and internal oversight; and\n7. Provide an orderly system for issuing and maintaining administrative rules."
+  },
+  {
+   "citation": "1.02",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Authority",
+   "body_text": "This Code is adopted pursuant to:\n1. Delegated Authority. Resolutions, directives, delegations, and other lawful actions of the Board of Directors, Chief Executive Officer, or other duly authorized Company officials.\n2. Applicable Requirements. Applicable federal, state, and local law; contractual obligations; licenses and permits; regulatory requirements; financing arrangements; insurance requirements; and other obligations binding upon the Company.\nIn the event of a conflict, controlling law and the Company’s governing documents shall prevail, followed by duly adopted Board actions, this Code, Board Policies, executive directives, departmental policies, and subordinate administrative procedures, in that order unless a governing instrument expressly provides otherwise."
+  },
+  {
+   "citation": "1.03",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Applicability",
+   "body_text": "Unless otherwise provided, this Code applies to:\n1. Members of the Board when acting in an administrative or delegated capacity;\n2. Officers;\n3. Employees;\n4. Departments and offices;\n5. Controlled subsidiaries to the extent directed by the Company or applicable subsidiary governance documents;\n6. Contractors, consultants, agents, and other third parties where required by contract or written Company directive;\n7. Company-owned, leased, managed, or controlled facilities;\n8. Company information systems, records, funds, property, and programs; and\n9. All administrative activities undertaken on behalf of Blevins Holdings."
+  },
+  {
+   "citation": "1.04",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Definitions",
+   "body_text": "For purposes of this Code:\nAdministrative Directive — A written instruction issued by an authorized official to implement or administer authority established by law, governing documents, Board action, this Code, or Company policy.\nAuthorized Official — An officer, department head, manager, employee, or other person possessing authority by virtue of governing documents, Board action, this Code, written delegation, or other lawful authorization.\nBoard — The Board of Governors of Blevins Holdings LLC.\nBoard Policy / BP — A policy formally adopted or approved under authority specifically reserved to the Board.\nCode — The Blevins Holdings Administrative Code.\nCompany — Blevins Holdings LLC.\nControlled Subsidiary — An entity for which Blevins Holdings directly or indirectly possesses the authority to control governance, management, or material operating decisions.\nDepartment — An organizational unit of Blevins Holdings established by the Board, Chief Executive Officer, organizational plan, or other competent authority.\nDepartment Head — The officer, executive, director, or other person designated to exercise administrative responsibility for a department.\nExecutive Directive — An enterprise-wide administrative instruction issued under executive authority.\nGeneral Counsel — The attorney designated or retained by the Company to serve as its General Counsel, including the Contracted General Counsel when applicable.\nOIG — The Office of Inspector General or equivalent internal oversight function of Blevins Holdings.\nPolicy — A formally approved statement establishing mandatory principles, standards, requirements, or controls.\nProcedure — Documented instructions prescribing how a policy, rule, requirement, or administrative function is to be carried out.\nRecord — Recorded information, regardless of medium or format, created, received, maintained, or controlled in connection with Company business.\nSubsidiary — A legal entity directly or indirectly owned or controlled by Blevins Holdings."
+  },
+  {
+   "citation": "1.05",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Rules of Construction",
+   "body_text": "Unless the context requires otherwise:\n1. Words in the singular include the plural and words in the plural include the singular.\n2. “Shall” and “must” establish a mandatory requirement.\n3. “May” grants discretion or authority but does not impose a mandatory duty.\n4. “Including” means including without limitation.\n5. References to a department include any successor department assigned substantially equivalent responsibilities.\n6. References to a law, regulation, policy, standard, or other authority include amendments and successor provisions.\n7. Headings are for organization and convenience and do not independently limit substantive requirements.\n8. A specific provision controls over a general provision concerning the same subject.\n9. Duties assigned by this Code may be delegated unless delegation is prohibited by law, governing documents, Board action, or this Code."
+  },
+  {
+   "citation": "1.06",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "Severability",
+   "body_text": "If any provision of this Code or its application is determined to be invalid, unlawful, or unenforceable, the remaining provisions shall remain in effect to the maximum extent permitted."
+  },
+  {
+   "citation": "1.07",
+   "title_num": "1",
+   "chapter": "General Provisions",
+   "heading": "No Creation of Employment or Third-Party Rights",
+   "body_text": "This Code is an internal administrative instrument. Except where expressly required by law or contract, it does not:\n1. Create an employment contract;\n2. Alter the at-will status of any employee;\n3. Create a private cause of action;\n4. Confer enforceable rights upon third parties; or\n5. Expand the authority of any official beyond authority otherwise lawfully granted.\nChapter 2. Administration of the Code"
+  },
+  {
+   "citation": "1.20",
+   "title_num": "1",
+   "chapter": "Administration of the Code",
+   "heading": "Code Administrator",
+   "body_text": "The Chief Executive Officer shall designate a department or official to serve as Code Administrator. The Code Administrator shall:\n1. Maintain the official administrative codification;\n2. Assign chapter, article, and section numbers;\n3. Maintain amendment and revision records;\n4. Coordinate publication of approved amendments;\n5. Maintain superseded provisions as required by the records retention schedule;\n6. Identify conflicting or obsolete administrative provisions; and\n7. Periodically recommend technical or substantive revisions."
+  },
+  {
+   "citation": "1.21",
+   "title_num": "1",
+   "chapter": "Administration of the Code",
+   "heading": "Official Version",
+   "body_text": "The version maintained in the Company’s designated official policy or records repository shall constitute the authoritative administrative copy of this Code.\nUnofficial reproductions, extracts, summaries, or copies shall not supersede the official version."
+  },
+  {
+   "citation": "1.22",
+   "title_num": "1",
+   "chapter": "Administration of the Code",
+   "heading": "Administrative Interpretation",
+   "body_text": "Questions concerning interpretation shall ordinarily be resolved by the responsible department in consultation with the Code Administrator.\nQuestions involving legal authority, interpretation of governing documents, regulatory requirements, legal privilege, or material legal risk shall be referred to the General Counsel."
+  },
+  {
+   "citation": "1.23",
+   "title_num": "1",
+   "chapter": "Administration of the Code",
+   "heading": "Amendments",
+   "body_text": "This Code may be amended by:\n1. The Board;\n2. The Chief Executive Officer acting within delegated authority; or\n3. Another official expressly authorized to amend specified provisions.\nNo administrative amendment may modify, impair, or circumvent authority reserved to the Board or established by controlling law or governing documents."
+  },
+  {
+   "citation": "1.24",
+   "title_num": "1",
+   "chapter": "Administration of the Code",
+   "heading": "Technical Corrections",
+   "body_text": "The Code Administrator may make non-substantive technical corrections without separate substantive approval, including:\n1. Correcting typographical errors;\n2. Renumbering provisions;\n3. Updating cross-references;\n4. Correcting department or position names following approved reorganizations; and\n5. Standardizing formatting.\nTechnical corrections may not alter substantive duties, authority, rights, controls, or approval requirements.\nT I T L E 2 Organization and Administration\nChapter 3. Enterprise Organization"
+  },
+  {
+   "citation": "2.01",
+   "title_num": "2",
+   "chapter": "Enterprise Organization",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish the administrative organization of Blevins Holdings and provide for assignment of enterprise functions."
+  },
+  {
+   "citation": "2.02",
+   "title_num": "2",
+   "chapter": "Enterprise Organization",
+   "heading": "Authority",
+   "body_text": "This Chapter is adopted pursuant to the Company’s governing documents, organizational authority of the Board and Chief Executive Officer, approved organizational plans, and applicable law."
+  },
+  {
+   "citation": "2.03",
+   "title_num": "2",
+   "chapter": "Enterprise Organization",
+   "heading": "Divisions",
+   "body_text": "The administrative organization of Blevins Holdings may include the following divisions and organizational functions:\n1. Administrative Operations (ADM)\n2. Enterprise Operations (OPS)\n3. Finance (FIN)\n4. Revenue and Client Services (RCS)\n5. Legal, Risk, and Compliance (LRC)\n6. Office of Inspector General (OIG)\n7. Communications and Public Affairs (COM)\n8. Information Systems and Technology (IST)\n9. Global Human Resources (GHR)\n10. Subsidiaries (SUBSIDIARIES)\nThe Board or Chief Executive Officer, within their respective authority, may establish, consolidate, reorganize, rename, or discontinue departments and subordinate organizational units."
+  },
+  {
+   "citation": "2.04",
+   "title_num": "2",
+   "chapter": "Enterprise Organization",
+   "heading": "Divisional Heads",
+   "body_text": "Each division shall be administered by a division head designated pursuant to applicable organizational authority. A division head shall:\n1. Direct the operations of the department;\n2. Implement applicable Board Policies, executive directives, and provisions of this Code;\n3. Establish appropriate internal procedures and controls;\n4. Maintain records of material decisions and approvals;\n5. Administer personnel and resources assigned to the department;\n6. Coordinate with other departments where responsibilities overlap;\n7. Escalate material legal, financial, security, operational, or compliance matters;\n8. Maintain appropriate segregation of duties; and\n9. Perform other duties lawfully assigned."
+  },
+  {
+   "citation": "2.05",
+   "title_num": "2",
+   "chapter": "Enterprise Organization",
+   "heading": "Organizational Charts",
+   "body_text": "Administrative Operations or another designated function shall maintain the official enterprise organizational chart.\nNo organizational chart alone shall create authority exceeding that established by governing documents, Board action, this Code, or written delegation.\nChapter 4. Delegation of Authority"
+  },
+  {
+   "citation": "2.20",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Article is to establish uniform requirements for delegating administrative and approval authority."
+  },
+  {
+   "citation": "2.21",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "General Rule",
+   "body_text": "Authority assigned to an official may be delegated when:\n1. Delegation is not prohibited by law or governing documents;\n2. The delegating official possesses the authority being delegated;\n3. The delegation is consistent with applicable approval matrices and internal controls; and\n4. The delegation is documented when required by this Article."
+  },
+  {
+   "citation": "2.22",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Written Delegations",
+   "body_text": "A delegation shall be in writing when it concerns:\n1. Contract execution;\n2. Expenditure or payment approval;\n3. Personnel actions;\n4. Regulatory certification;\n5. Access to restricted information or systems;\n6. Disposition of material Company assets;\n7. Settlement of claims or disputes;\n8. Execution of legal documents;\n9. Authority ordinarily reserved to an officer or department head; or\n10. Any matter designated by policy as requiring written delegation."
+  },
+  {
+   "citation": "2.23",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Contents of Delegation",
+   "body_text": "A written delegation should identify:\n1. The delegating official;\n2. The delegate;\n3. The authority delegated;\n4. Any monetary, subject-matter, geographic, or\n5. The effective date;\n6. The expiration date, if applicable;\n7. Whether subdelegation is permitted; and\n8. Any reporting or documentation requirements.\norganizational limits;"
+  },
+  {
+   "citation": "2.24",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Responsibility Retained",
+   "body_text": "Delegation of authority does not relieve the delegating official of supervisory responsibility unless the governing authority expressly provides otherwise."
+  },
+  {
+   "citation": "2.25",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Prohibition on Self-Approval",
+   "body_text": "No person may approve a transaction, payment, reimbursement, personnel action, access request, or other matter in which that person is the requesting party or principal beneficiary when an independent approval is required."
+  },
+  {
+   "citation": "2.26",
+   "title_num": "2",
+   "chapter": "Delegation of Authority",
+   "heading": "Acting Officials",
+   "body_text": "An acting official may exercise the duties and authority of the position for which the official is formally designated, subject to limitations in the acting designation, governing documents, or applicable law.\nChapter 5. Administrative Issuances"
+  },
+  {
+   "citation": "2.40",
+   "title_num": "2",
+   "chapter": "Administrative Issuances",
+   "heading": "Authorized Issuances",
+   "body_text": "Company administrative issuances may include:\n1. Board Policies;\n2. Provisions of this Administrative Code;\n3. Executive directives;\n4. Enterprise standards;\n5. Departmental policies;\n7. Manuals;\n8. Control standards;\n9. Technical standards;\n10. Guidance documents; and\n11. Temporary administrative instructions.\n6. Standard operating procedures;"
+  },
+  {
+   "citation": "2.41",
+   "title_num": "2",
+   "chapter": "Administrative Issuances",
+   "heading": "Hierarchy",
+   "body_text": "Subordinate administrative issuances shall be consistent with superior authority. Unless expressly provided otherwise, the order of precedence is:\n1. Controlling law;\n2. Governing documents;\n3. Board action and Board Policy;\n4. This Administrative Code;\n6. Enterprise policies and standards;\n7. Departmental policies;\n8. Procedures and manuals; and\n9. Guidance and informal instructions.\n5. Executive directives;"
+  },
+  {
+   "citation": "2.42",
+   "title_num": "2",
+   "chapter": "Administrative Issuances",
+   "heading": "Policy Ownership",
+   "body_text": "Each controlled administrative issuance shall have an identified owner responsible for:\n1. Maintaining its accuracy;\n2. Reviewing it periodically;\n3. Coordinating required approvals;\n5. Maintaining related procedures; and\n6. Initiating retirement or replacement when obsolete.\n4. Communicating material changes;"
+  },
+  {
+   "citation": "2.43",
+   "title_num": "2",
+   "chapter": "Administrative Issuances",
+   "heading": "Exceptions",
+   "body_text": "Exceptions to mandatory administrative requirements may be granted only by an authority empowered to approve the exception. Material exceptions shall be documented and include:\n1. The requirement affected;\n2. The reason for the exception;\n3. The approving authority;\n4. Compensating controls, if applicable;\n5. The duration of the exception; and\n6. Required review or expiration date.\nT I T L E 3 Financial and Commercial Administration\nChapter 6. Financial Administration"
+  },
+  {
+   "citation": "3.01",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish minimum standards for financial stewardship, accounting, budgeting, treasury activities, expenditures, and internal financial control."
+  },
+  {
+   "citation": "3.02",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Financial Administration",
+   "body_text": "The Finance Department shall administer enterprise financial operations subject to Board-approved budgets, financial policies, delegations of authority, and applicable accounting and legal requirements."
+  },
+  {
+   "citation": "3.03",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Books and Records",
+   "body_text": "The Company shall maintain books and financial records that accurately and reasonably reflect transactions, assets, liabilities, revenues, expenses, and other material financial activity. No person shall knowingly:\n1. Create or approve a false or misleading financial entry;\n2. Maintain an undisclosed or unrecorded Company fund or asset;\n3. Circumvent required approval controls;\n4. Alter supporting documentation for an improper purpose; or\n5. Direct another person to mischaracterize a transaction."
+  },
+  {
+   "citation": "3.04",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Budget Administration",
+   "body_text": "Departments shall operate within approved budgets and applicable spending authority.\nMaterial budget transfers, unbudgeted expenditures, capital expenditures, and commitments extending beyond approved authority shall receive approval in accordance with applicable financial policy and delegation matrices."
+  },
+  {
+   "citation": "3.05",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Segregation of Duties",
+   "body_text": "Financial processes shall be designed, to the extent practicable, to separate:\n1. Transaction initiation;\n2. Approval;\n3. Custody of assets;\n4. Payment execution;\n5. Accounting or recording; and\n6. Reconciliation or review.\nWhere full segregation is impracticable, compensating controls shall be documented."
+  },
+  {
+   "citation": "3.06",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Reconciliations",
+   "body_text": "Material financial accounts shall be reconciled at intervals appropriate to their risk and volume.\nMaterial discrepancies shall be investigated and resolved promptly."
+  },
+  {
+   "citation": "3.07",
+   "title_num": "3",
+   "chapter": "Financial Administration",
+   "heading": "Expense Reimbursement",
+   "body_text": "Company funds may reimburse legitimate, reasonable, documented business expenses in accordance with applicable policy.\nNo person may approve the person’s own reimbursement except through an expressly authorized independent review process.\nChapter 7. Procurement and Contract Administration"
+  },
+  {
+   "citation": "3.20",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish fair, controlled, and commercially reasonable procedures for acquisition of goods and services."
+  },
+  {
+   "citation": "3.21",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Procurement Standards",
+   "body_text": "Company procurement shall, as appropriate to the transaction:\n1. Serve a legitimate business purpose;\n2. Be supported by sufficient budget authority;\n3. Promote reasonable competition;\n4. Consider cost, quality, risk, performance, security, and reliability;\n5. Avoid prohibited conflicts of interest;\n6. Be appropriately documented;\n7. Receive required approvals before commitment; and\n8. Be conducted in accordance with applicable sanctions, vendor-risk, and compliance requirements."
+  },
+  {
+   "citation": "3.22",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Competitive Sourcing",
+   "body_text": "Competitive quotations or proposals shall be obtained when required by procurement policy or when prudent based on transaction value, risk, complexity, or market conditions.\nThe Company may use sole-source procurement when justified by circumstances including:\n1. Unique technical requirements;\n2. Compatibility;\n3. Intellectual property restrictions;\n5. Continuity requirements;\n6. Absence of reasonable alternatives; or\n7. Other documented business justification.\n4. Emergency conditions;"
+  },
+  {
+   "citation": "3.23",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Contract Review",
+   "body_text": "Contracts shall receive legal, financial, security, privacy, risk, procurement, or other functional review when required by policy or the nature of the transaction."
+  },
+  {
+   "citation": "3.24",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Contract Signature",
+   "body_text": "No employee or agent may bind the Company to a contract unless the person possesses sufficient delegated signature authority.\nUse of Company letterhead, email, purchasing systems, or job title does not independently create contracting authority."
+  },
+  {
+   "citation": "3.25",
+   "title_num": "3",
+   "chapter": "Procurement and Contract Administration",
+   "heading": "Vendor Due Diligence",
+   "body_text": "Risk-based due diligence shall be performed before engaging vendors that may:\n1. Access sensitive Company information;\n2. Access Company systems;\n3. Handle material Company funds;\n4. Interact with regulators or government officials on behalf of the Company;\n5. Perform regulated activities;\n6. Create material operational dependency; or\n7. Present significant legal, financial, reputational, security, or compliance risk.\nT I T L E 4 People, Information, and Operations\nChapter 8. Personnel Administration"
+  },
+  {
+   "citation": "4.01",
+   "title_num": "4",
+   "chapter": "Personnel Administration",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish uniform administrative standards for personnel management."
+  },
+  {
+   "citation": "4.02",
+   "title_num": "4",
+   "chapter": "Personnel Administration",
+   "heading": "Administration",
+   "body_text": "Global Human Resources shall establish and administer enterprise personnel standards consistent with applicable law, Board Policy, executive direction, compensation authority, and approved workforce plans."
+  },
+  {
+   "citation": "4.03",
+   "title_num": "4",
+   "chapter": "Personnel Administration",
+   "heading": "Personnel Actions",
+   "body_text": "Hiring, promotion, transfer, compensation changes, disciplinary actions, leave administration, separation, and other material personnel actions shall be:\n1. Authorized by an appropriate official;\n2. Documented as required;\n3. Processed through approved systems;\n4. Consistent with applicable law and Company policy; and\n5. Subject to required Human Resources review."
+  },
+  {
+   "citation": "4.04",
+   "title_num": "4",
+   "chapter": "Personnel Administration",
+   "heading": "Personnel Records",
+   "body_text": "Personnel records shall be maintained with appropriate confidentiality, access controls, retention requirements, and legal protections."
+  },
+  {
+   "citation": "4.05",
+   "title_num": "4",
+   "chapter": "Personnel Administration",
+   "heading": "Conflicts of Interest",
+   "body_text": "Employees and officials shall disclose actual or reasonably apparent conflicts of interest in accordance with Company policy.\nNo employee may participate in a Company decision where an undisclosed personal or financial interest materially impairs, or reasonably appears to impair, independent business judgment.\nChapter 9. Records and Information Governance"
+  },
+  {
+   "citation": "4.20",
+   "title_num": "4",
+   "chapter": "Records and Information Governance",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish standards for creation, classification, preservation, retention, access, protection, and disposition of Company records."
+  },
+  {
+   "citation": "4.21",
+   "title_num": "4",
+   "chapter": "Records and Information Governance",
+   "heading": "Ownership",
+   "body_text": "Records created or received in the course of Company business are Company property unless otherwise provided by law or contract."
+  },
+  {
+   "citation": "4.22",
+   "title_num": "4",
+   "chapter": "Records and Information Governance",
+   "heading": "Records Retention",
+   "body_text": "Records shall be retained and disposed of according to an approved records retention schedule.\nRecords subject to a legal hold, investigation hold, audit hold, regulatory preservation requirement, or other preservation directive shall not be altered, destroyed, or disposed of until the hold is released."
+  },
+  {
+   "citation": "4.23",
+   "title_num": "4",
+   "chapter": "Records and Information Governance",
+   "heading": "Official Repositories",
+   "body_text": "Departments shall use designated systems of record for official Company information when such systems have been established.\nMaterial Company records shall not be maintained solely in personal accounts, unauthorized applications, or other locations outside Company control."
+  },
+  {
+   "citation": "4.24",
+   "title_num": "4",
+   "chapter": "Records and Information Governance",
+   "heading": "Confidential Information",
+   "body_text": "Access to confidential or restricted information shall be limited to persons with an authorized business need.\nConfidential information shall be handled in accordance with applicable data-classification, privacy, legal, security, contractual, and records-management requirements.\nChapter 10. Information Systems and Technology"
+  },
+  {
+   "citation": "4.40",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish administrative governance for Company information systems, technology assets, cybersecurity controls, data, and technology services."
+  },
+  {
+   "citation": "4.41",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Administration",
+   "body_text": "Information Systems and Technology shall administer enterprise technology standards, architecture, infrastructure, access controls, cybersecurity requirements, technology procurement standards, and approved technology services."
+  },
+  {
+   "citation": "4.42",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Authorized Systems",
+   "body_text": "Company information shall be processed, stored, transmitted, or accessed only through authorized systems when required by Company policy."
+  },
+  {
+   "citation": "4.43",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Access Control",
+   "body_text": "Access to Company systems shall:\n1. Be based on legitimate business need;\n2. Be approved by authorized personnel;\n3. Observe least-privilege principles where practicable;\n4. Be reviewed periodically;\n5. Be modified promptly following role changes; and\n6. Be revoked promptly following separation or loss of business need."
+  },
+  {
+   "citation": "4.44",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Security Incidents",
+   "body_text": "Suspected or confirmed cybersecurity incidents, unauthorized access, material data loss, malware, compromise of credentials, or unauthorized disclosure of protected information shall be promptly reported through designated incident-response channels."
+  },
+  {
+   "citation": "4.45",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Technology Changes",
+   "body_text": "Material changes to production systems shall be subject to appropriate testing, authorization, documentation, segregation of duties, rollback planning, and change-management controls proportionate to risk."
+  },
+  {
+   "citation": "4.46",
+   "title_num": "4",
+   "chapter": "Information Systems and Technology",
+   "heading": "Artificial Intelligence and Automated Systems",
+   "body_text": "Use of artificial intelligence, machine learning, automated decision systems, and generative technologies for Company business shall comply with approved standards governing:\n1. Data confidentiality;\n2. Information security;\n3. Privacy;\n4. Intellectual property;\n5. Human review;\n6. Accuracy and validation;\n7. Records retention;\n8. Regulatory compliance;\n9. Vendor risk; and\n10. Prohibited or restricted use cases.\nChapter 11. Facilities and Administrative Operations"
+  },
+  {
+   "citation": "4.60",
+   "title_num": "4",
+   "chapter": "Facilities and Administrative Operations",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish administrative standards for Company facilities, physical assets, workplace operations, and business continuity."
+  },
+  {
+   "citation": "4.61",
+   "title_num": "4",
+   "chapter": "Facilities and Administrative Operations",
+   "heading": "Facilities Administration",
+   "body_text": "Administrative Operations and Enterprise Operations shall coordinate the management of Company facilities and enterprise operational services according to assigned responsibilities."
+  },
+  {
+   "citation": "4.62",
+   "title_num": "4",
+   "chapter": "Facilities and Administrative Operations",
+   "heading": "Physical Access",
+   "body_text": "Access to controlled Company facilities shall be based upon legitimate business need and applicable physical-security requirements.\nAccess credentials remain Company property and may not be shared, duplicated, or transferred except as expressly authorized."
+  },
+  {
+   "citation": "4.63",
+   "title_num": "4",
+   "chapter": "Facilities and Administrative Operations",
+   "heading": "Company Property",
+   "body_text": "Company property shall be:\n1. Used primarily for authorized Company purposes;\n2. Protected against loss, theft, misuse, and unauthorized disposition;\n3. Inventoried where appropriate;\n4. Returned upon request or separation; and\n5. Disposed of through authorized processes."
+  },
+  {
+   "citation": "4.64",
+   "title_num": "4",
+   "chapter": "Facilities and Administrative Operations",
+   "heading": "Business Continuity",
+   "body_text": "Departments responsible for critical operations shall maintain continuity and recovery arrangements proportionate to operational risk.\nT I T L E 5 Legal, Risk, Compliance, and Oversight\nChapter 12. Legal Affairs"
+  },
+  {
+   "citation": "5.01",
+   "title_num": "5",
+   "chapter": "Legal Affairs",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish standards for legal representation, legal review, privilege, litigation, claims, and legal-risk management."
+  },
+  {
+   "citation": "5.02",
+   "title_num": "5",
+   "chapter": "Legal Affairs",
+   "heading": "General Counsel",
+   "body_text": "The General Counsel shall serve as the principal legal advisor to the Company within the scope of the General Counsel’s engagement and authority. The General Counsel may:\n1. Advise the Board, officers, departments, and subsidiaries on legal matters;\n2. Coordinate outside counsel;\n3. Establish legal review requirements;\n4. Direct or coordinate litigation and material disputes;\n5. Issue or approve legal holds;\n6. Advise concerning attorney-client privilege and work-product protection;\n7. Review material contracts and transactions as required;\n8. Advise concerning corporate governance; and\n9. Perform other legal functions assigned by competent authority."
+  },
+  {
+   "citation": "5.03",
+   "title_num": "5",
+   "chapter": "Legal Affairs",
+   "heading": "Engagement of Outside Counsel",
+   "body_text": "No department may independently engage outside legal counsel at Company expense except as authorized by the General Counsel, Chief Executive Officer, Board, or applicable policy."
+  },
+  {
+   "citation": "5.04",
+   "title_num": "5",
+   "chapter": "Legal Affairs",
+   "heading": "Legal Privilege",
+   "body_text": "Communications with counsel shall be handled in a manner designed to preserve applicable attorney-client privilege, work-product protection, and confidentiality.\nPrivileged material shall not be distributed beyond persons with a legitimate need without authorization from Legal."
+  },
+  {
+   "citation": "5.05",
+   "title_num": "5",
+   "chapter": "Legal Affairs",
+   "heading": "Legal Process",
+   "body_text": "Subpoenas, summonses, warrants, regulatory demands, litigation notices, formal claims, and other legal process received by Company personnel shall be promptly referred to Legal in accordance with established procedures.\nChapter 13. Risk and Compliance"
+  },
+  {
+   "citation": "5.20",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish an enterprise framework for compliance with legal, regulatory, contractual, ethical, and policy requirements."
+  },
+  {
+   "citation": "5.21",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Compliance Responsibility",
+   "body_text": "Compliance is a responsibility shared by all Company personnel.\nThe Legal, Risk, and Compliance Department shall coordinate enterprise compliance activities, subject to oversight by executive management and the Board."
+  },
+  {
+   "citation": "5.22",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Compliance Program",
+   "body_text": "The Company’s compliance program may include:\n1. Policies and standards;\n2. Training;\n3. Risk assessments;\n4. Monitoring;\n5. Testing;\n7. Investigations;\n8. Corrective actions;\n9. Third-party controls; and\n10. Reporting to executive management and the Board.\n6. Reporting mechanisms;"
+  },
+  {
+   "citation": "5.23",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Mandatory Reporting",
+   "body_text": "Personnel shall promptly report known or reasonably suspected material violations of law, fraud, corruption, theft, significant conflicts of interest, serious policy violations, retaliation, material cybersecurity incidents, or other conduct required to be reported under Company policy."
+  },
+  {
+   "citation": "5.24",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Non-Retaliation",
+   "body_text": "Retaliation against a person for making a good-faith report, participating in an authorized investigation, or raising a compliance concern is prohibited.\nThis section does not prevent appropriate action concerning knowingly false statements, bad-faith misconduct, or independent violations of Company requirements."
+  },
+  {
+   "citation": "5.25",
+   "title_num": "5",
+   "chapter": "Risk and Compliance",
+   "heading": "Corrective Action",
+   "body_text": "Confirmed deficiencies may result in corrective measures including:\n1. Process changes;\n2. Additional controls;\n3. Training;\n4. Restitution or financial recovery;\n5. Vendor remediation;\n6. Personnel action;\n8. Referral to executive management;\n9. Referral to the Board or an appropriate Board committee;\n10. Referral to law enforcement or regulators when authorized or required; or\n11. Other measures appropriate to the circumstances.\n7. Disciplinary action;\nChapter 14. Office of Inspector General"
+  },
+  {
+   "citation": "5.40",
+   "title_num": "5",
+   "chapter": "Office of Inspector General",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish the Office of Inspector General as an internal oversight function responsible for promoting integrity, accountability, efficiency, and appropriate stewardship of Company resources."
+  },
+  {
+   "citation": "5.41",
+   "title_num": "5",
+   "chapter": "Office of Inspector General",
+   "heading": "Functions",
+   "body_text": "Subject to its charter, Board Policy, and applicable law, OIG may:\n1. Conduct audits, reviews, inspections, investigations, and evaluations;\n2. Review allegations of fraud, waste, abuse, misconduct, or significant control failure;\n3. Evaluate internal controls and administrative processes;\n4. Issue findings and recommendations;\n5. Monitor corrective actions;\n6. Refer matters to Legal, Human Resources, Compliance, executive management, or the Board;\n7. Recommend policy or control improvements; and\n8. Perform other oversight functions assigned by competent authority."
+  },
+  {
+   "citation": "5.42",
+   "title_num": "5",
+   "chapter": "Office of Inspector General",
+   "heading": "Access",
+   "body_text": "Personnel shall provide OIG timely access to Company records, systems, facilities, property, and personnel reasonably necessary to perform authorized work, subject to applicable legal restrictions and appropriate treatment of privileged material."
+  },
+  {
+   "citation": "5.43",
+   "title_num": "5",
+   "chapter": "Office of Inspector General",
+   "heading": "Independence",
+   "body_text": "No person may improperly obstruct, interfere with, manipulate, or retaliate in connection with an authorized OIG review or investigation.\nOIG shall maintain sufficient functional independence to report material matters through channels established by its charter or Board Policy."
+  },
+  {
+   "citation": "5.44",
+   "title_num": "5",
+   "chapter": "Office of Inspector General",
+   "heading": "Cooperation",
+   "body_text": "Employees, officers, departments, and controlled subsidiaries shall cooperate with authorized OIG activities.\nNothing in this section requires waiver of attorney-client privilege, work-product protection, or other legally protected rights.\nT I T L E 6 Enterprise and Subsidiary Governance\nChapter 15. Subsidiary Administration"
+  },
+  {
+   "citation": "6.01",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish enterprise governance standards for entities owned or controlled by Blevins Holdings."
+  },
+  {
+   "citation": "6.02",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Covered Subsidiaries",
+   "body_text": "For administrative purposes, the Company’s subsidiary portfolio may include:\n1. Blevins Energy Systems (BES);\n2. Blevins Data Infrastructure (BINFRA);\n3. Blevins Defense (BDEF);\n4. Blevins Real Estate (BRES);\n5. Blevins Health (BHEALTH);\n6. Blevins Pharma (BRX);\n7. Blevins Research and Development (BRD);\n8. BCOMPANY; and\n9. Any other entity subsequently established, acquired, or designated as a subsidiary."
+  },
+  {
+   "citation": "6.03",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Separate Legal Existence",
+   "body_text": "Each subsidiary shall observe its separate legal existence, governing documents, capitalization requirements, books and records, contractual obligations, regulatory requirements, and corporate formalities.\nNothing in this Code authorizes disregard of legal separateness between Blevins Holdings and any subsidiary."
+  },
+  {
+   "citation": "6.04",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Reserved Matters",
+   "body_text": "The Board or other competent authority may establish matters requiring approval by Blevins Holdings before action by a subsidiary, including:\n1. Annual budgets;\n2. Material capital expenditures;\n3. Material indebtedness;\n4. Issuance of equity or ownership interests;\n5. Material acquisitions or dispositions;\n6. Formation or dissolution of entities;\n8. Entry into new regulated business lines;\n9. Material related-party transactions;\n10. Appointment or removal of specified officers;\n11. Material contracts above established thresholds; and\n12. Other matters designated as reserved.\n7. Material litigation settlements;"
+  },
+  {
+   "citation": "6.05",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Enterprise Policies",
+   "body_text": "Enterprise policies may be made applicable to subsidiaries by:\n1. Board action;\n2. Subsidiary governing documents;\n3. Written shareholder or member action;\n4. Intercompany agreement;\n5. Executive directive issued under appropriate authority; or\n6. Formal adoption by the subsidiary’s governing body.\nApplication of an enterprise policy shall account for subsidiary-specific legal, regulatory, licensing, contractual, and operational requirements."
+  },
+  {
+   "citation": "6.06",
+   "title_num": "6",
+   "chapter": "Subsidiary Administration",
+   "heading": "Subsidiary Reporting",
+   "body_text": "Subsidiaries shall provide reports reasonably required for enterprise governance, including information concerning:\n1. Financial performance;\n2. Compliance;\n3. Material litigation;\n4. Regulatory matters;\n5. Cybersecurity;\n6. Significant operational risks;\n7. Material contracts;\n8. Capital expenditures;\n9. Internal-control deficiencies; and\n10. Other matters identified by Blevins Holdings.\nChapter 16. Intercompany Administration"
+  },
+  {
+   "citation": "6.20",
+   "title_num": "6",
+   "chapter": "Intercompany Administration",
+   "heading": "Shared Services",
+   "body_text": "Blevins Holdings may provide centralized services to subsidiaries, including:\n1. Finance and accounting;\n2. Human resources;\n3. Legal services;\n4. Compliance;\n5. Information technology;\n6. Cybersecurity;\n7. Procurement;\n8. Communications;\n9. Facilities;\n10. Internal audit and oversight;\n11. Risk management; and\n12. Administrative support."
+  },
+  {
+   "citation": "6.21",
+   "title_num": "6",
+   "chapter": "Intercompany Administration",
+   "heading": "Intercompany Arrangements",
+   "body_text": "Material intercompany services, loans, transfers, intellectual-property licenses, cost allocations, guarantees, and other intercompany arrangements shall be documented when required by law, accounting standards, tax requirements, financing arrangements, or Company policy."
+  },
+  {
+   "citation": "6.22",
+   "title_num": "6",
+   "chapter": "Intercompany Administration",
+   "heading": "Conflicts Among Enterprise Entities",
+   "body_text": "Material conflicts between departments or subsidiaries shall be escalated through the applicable management chain.\nLegal conflicts, fiduciary concerns, or matters involving potentially adverse interests among Company entities shall be referred to the General Counsel for appropriate handling, including consideration of separate counsel where warranted.\nT I T L E 7 External Communications and Representation\nChapter 17. Communications and Public Affairs"
+  },
+  {
+   "citation": "7.01",
+   "title_num": "7",
+   "chapter": "Communications and Public Affairs",
+   "heading": "Purpose",
+   "body_text": "The purpose of this Chapter is to establish standards for official Company communications and representation."
+  },
+  {
+   "citation": "7.02",
+   "title_num": "7",
+   "chapter": "Communications and Public Affairs",
+   "heading": "Authorized Spokespersons",
+   "body_text": "Only persons authorized by Communications and Public Affairs, executive management, the Board, or applicable policy may speak on behalf of the Company to news media or issue official public statements."
+  },
+  {
+   "citation": "7.03",
+   "title_num": "7",
+   "chapter": "Communications and Public Affairs",
+   "heading": "Government and Regulatory Communications",
+   "body_text": "Official communications with governmental or regulatory bodies shall be coordinated with Legal, Compliance, Government Affairs, or other responsible functions when required by policy or circumstances."
+  },
+  {
+   "citation": "7.04",
+   "title_num": "7",
+   "chapter": "Communications and Public Affairs",
+   "heading": "Public Disclosures",
+   "body_text": "Public disclosure of confidential, proprietary, privileged, nonpublic financial,\nsecurity-sensitive, personal, or — other restricted information is prohibited except as authorized or\nlegally required."
+  },
+  {
+   "citation": "7.05",
+   "title_num": "7",
+   "chapter": "Communications and Public Affairs",
+   "heading": "Brand and Identity",
+   "body_text": "Use of Company names, trademarks, logos, official seals, letterhead, domains, and other identifiers shall comply with applicable brand and authorization standards.\nT I T L E 8 Accountability and Enforcement\nChapter 18. Administrative Compliance"
+  },
+  {
+   "citation": "8.01",
+   "title_num": "8",
+   "chapter": "Administrative Compliance",
+   "heading": "Duty to Comply",
+   "body_text": "Persons subject to this Code shall comply with its applicable provisions and with lawful directives issued under it."
+  },
+  {
+   "citation": "8.02",
+   "title_num": "8",
+   "chapter": "Administrative Compliance",
+   "heading": "Supervisory Responsibility",
+   "body_text": "Managers and supervisors are responsible for taking reasonable measures to:\n1. Communicate applicable requirements;\n2. Maintain appropriate controls;\n3. Address known deficiencies;\n4. Escalate material concerns; and\n5. Prevent or correct repeated noncompliance."
+  },
+  {
+   "citation": "8.03",
+   "title_num": "8",
+   "chapter": "Administrative Compliance",
+   "heading": "Violations",
+   "body_text": "A violation of this Code may constitute grounds for administrative, contractual, disciplinary, financial, or other corrective action, subject to applicable law and Company policy."
+  },
+  {
+   "citation": "8.04",
+   "title_num": "8",
+   "chapter": "Administrative Compliance",
+   "heading": "Reporting Violations",
+   "body_text": "Suspected material violations should be reported through an appropriate channel, which may include:\n1. A supervisor or department head;\n2. Global Human Resources;\n3. Legal, Risk, and Compliance;\n4. The General Counsel;\n6. An authorized ethics or reporting channel;\n7. Executive management; or\n8. The Board or appropriate Board committee when warranted.\n5. OIG;"
+  },
+  {
+   "citation": "8.05",
+   "title_num": "8",
+   "chapter": "Administrative Compliance",
+   "heading": "Investigation Authority",
+   "body_text": "The Company may investigate suspected violations through an appropriately authorized department or external professional.\nInvestigations shall be conducted with due regard for confidentiality, legal privilege, fairness, evidence preservation, and applicable law.\nChapter 19. Waivers and Exceptions"
+  },
+  {
+   "citation": "8.20",
+   "title_num": "8",
+   "chapter": "Waivers and Exceptions",
+   "heading": "General Rule",
+   "body_text": "No waiver or exception may be granted if doing so would violate:\n1. Applicable law;\n2. Governing documents;\n3. A binding regulatory obligation;\n4. A contractual restriction;\n5. A Board-reserved requirement; or\n6. A requirement expressly designated as non-waivable."
+  },
+  {
+   "citation": "8.21",
+   "title_num": "8",
+   "chapter": "Waivers and Exceptions",
+   "heading": "Temporary Exceptions",
+   "body_text": "An authorized official may approve a temporary exception when:\n1. A legitimate business justification exists;\n2. Risks have been assessed;\n3. Appropriate compensating controls are implemented where practicable;\n4. The exception is documented;\n5. The exception has a defined duration; and\n6. Required legal, compliance, security, financial, or other review has occurred."
+  },
+  {
+   "citation": "8.22",
+   "title_num": "8",
+   "chapter": "Waivers and Exceptions",
+   "heading": "Emergency Action",
+   "body_text": "Nothing in this Code prevents an authorized official from taking reasonable emergency action necessary to protect:\n1. Human life or safety;\n2. Company facilities or property;\n3. Information systems or data;\n5. Legal rights;\n6. Regulatory standing; or\n7. Other substantial Company interests.\n4. Business continuity;\nEmergency action outside ordinary procedures shall be documented and reported to the appropriate authority as soon as practicable.\nT I T L E 9 Final Provisions\nChapter 20. Effective Date and Transition"
+  },
+  {
+   "citation": "9.01",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Effective Date",
+   "body_text": "This Administrative Code shall take effect on the date established by the adopting authority."
+  },
+  {
+   "citation": "9.02",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Existing Policies and Procedures",
+   "body_text": "Policies, procedures, directives, delegations, and\nother\nadministrative instruments in effect immediately before adoption of this Code shall remain in effect to the extent they:\n1. Are not inconsistent with this Code;\n2. Have not expired;\n3. Have not been superseded; and\n4. Were issued by competent authority."
+  },
+  {
+   "citation": "9.03",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Conflicting Administrative Instruments",
+   "body_text": "Departments shall identify\nexisting administrative\ninstruments that conflict with this Code and shall revise, repeal, or escalate those instruments for resolution."
+  },
+  {
+   "citation": "9.04",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Continuing Authority",
+   "body_text": "Adoption of this Code does not terminate lawful delegations, appointments, contracts, policies, procedures, or administrative actions unless expressly stated."
+  },
+  {
+   "citation": "9.05",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Periodic Review",
+   "body_text": "The Code Administrator, in consultation with appropriate departments, shall coordinate periodic review of this Code and recommend amendments necessary to address:\n1. Changes in law or regulation;\n2. Changes in Company organization;\n3. Audit or investigation findings;\n5. Identified control deficiencies;\n6. Changes in enterprise risk; and\n7. Obsolete or conflicting provisions.\n4. Material changes in operations;"
+  },
+  {
+   "citation": "9.06",
+   "title_num": "9",
+   "chapter": "Effective Date and Transition",
+   "heading": "Citation",
+   "body_text": "This Code may be cited as the “Blevins Holdings Administrative Code” or “BHAC.” Individual provisions may be cited in substantially the following form:\nBHAC § 3.24"
+  }
+ ]
+}

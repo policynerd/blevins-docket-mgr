@@ -1991,3 +1991,61 @@ test('users: the admin page names the linked governor, not just a number', () =>
     'an unlinked account should say why it cannot vote');
   assert.match(page, /Board member ids/, 'the ids to type should be on the same page as the field');
 });
+
+// --- Loading a codification --------------------------------------------------
+// The Code arrives whole; everything after adoption is amended one measure at a
+// time through the legislative path. This covers the first case only.
+
+test('the Board Code imports once, and a second run changes nothing', () => {
+  const { importCode } = require('../src/import-code');
+
+  const first = importCode();
+  assert.ok(first.inserted > 100, `only ${first.inserted} sections imported`);
+  assert.equal(first.skipped, 0);
+  assert.equal(first.inserted, first.total);
+
+  const again = importCode();
+  assert.equal(again.inserted, 0, 'a second run duplicated the Code');
+  assert.equal(again.updated, 0, 'a second run rewrote sections it should have left alone');
+  assert.equal(again.skipped, again.total);
+});
+
+test('the Board Code arrives with its structure intact', () => {
+  // Only the BAC's own sections. The application's native citation style is
+  // hyphenated (90-1 is Title 90) and other tests seed sections in that form;
+  // the two coexist because title_num is stored rather than inferred.
+  const sections = repo.code.sections().filter((s) => s.citation.includes('.'));
+
+  // The citation prefix is the Title: §3.24 is Title 3. Verified against the
+  // Code's own contents, where Title 3 is Financial and Commercial.
+  for (const s of sections) {
+    assert.equal(s.title_num, s.citation.split('.')[0],
+      `§${s.citation} filed under Title ${s.title_num}`);
+  }
+  assert.deepEqual(
+    [...new Set(sections.map((s) => s.title_num))].sort((a, b) => Number(a) - Number(b)),
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
+  );
+
+  // §2.22's list is set in two columns in the source — items 1-6 on the left,
+  // 7-10 on the right. Read by row it interleaves into nonsense
+  // ("4. Regulatory certification; department head; or"), so the order here is
+  // the thing worth pinning.
+  const delegations = repo.code.byCitation('2.22');
+  const items = delegations.body_text.split('\n').filter((l) => /^\d+\./.test(l));
+  assert.equal(items.length, 10);
+  items.forEach((line, i) => assert.ok(line.startsWith(`${i + 1}.`),
+    `§2.22 item ${i + 1} out of order: ${line.slice(0, 40)}`));
+  assert.match(delegations.body_text, /9\. Authority ordinarily reserved to an officer or department head; or/);
+
+  // §1.04 is a term/definition table, which has to be read the other way round.
+  const defs = repo.code.byCitation('1.04');
+  assert.match(defs.body_text, /^Board — The Board of Governors of Blevins Holdings LLC\.$/m);
+  assert.match(defs.body_text, /^Administrative Directive — A written instruction/m);
+
+  // §9.01–9.03 carry their section mark as a separate glyph in the PDF, which
+  // hid them inside §8.22 until it was reattached.
+  for (const c of ['9.01', '9.02', '9.03']) {
+    assert.ok(repo.code.byCitation(c), `§${c} is missing from the Code`);
+  }
+});
