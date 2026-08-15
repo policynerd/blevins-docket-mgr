@@ -1614,6 +1614,39 @@ route('GET', /^\/admin\/backup$/, (req, res, ctx) => {
 
 // Board membership workflow: Nominate -> Approve -> Seat (staff+) -------------
 route('GET', /^\/govern\/members\/?$/, (req, res, ctx) => sendHtml(res, govern.membersPage(ctx.user)));
+// Seating a governor: its own form, for the same reason retiring one has its
+// own. It also grants the term, which the old card did not — a seat with no
+// start date is a seat the roll cannot place in time.
+route('GET', /^\/govern\/members\/seat$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  sendHtml(res, govern.seatForm(repo.bodies.all(), repo.people.all().map((p) => ({
+    value: p.id, label: p.full_name,
+  })), { today: todayISO(), bodyId: ctx.query.body }));
+});
+route('POST', /^\/govern\/members\/seat$/, (req, res, ctx) => {
+  if (!auth.hasRole(ctx.user, 'clerk')) return sendHtml(res, forbidden(), 403);
+  const b = ctx.body;
+  const bodyId = b.body_id ? Number(b.body_id) : null;
+  if (!bodyId || !repo.bodies.get(bodyId)) return redirect(res, '/govern/members');
+  const personId = b.person_id ? Number(b.person_id) : null;
+  // Either an existing person or a name for a new one; without one of the two
+  // there is nobody to seat.
+  if (!personId && !String(b.nominee_name || '').trim()) return redirect(res, '/govern/members');
+  repo.memberMotions.nominate({
+    action: 'seat', body_id: bodyId, person_id: personId,
+    nominee_name: personId ? null : b.nominee_name,
+    nominee_title: b.nominee_title || null, nominee_email: b.nominee_email || null,
+    nominee_district: b.nominee_district || null,
+    seat_role: govern.SEAT_ROLES.includes(b.seat_role) ? b.seat_role : 'Member',
+    effective_date: b.effective_date || todayISO(),
+    term_end_date: b.term_end_date || null,
+    // An unchecked box posts nothing, so absence means a seat without a vote.
+    seat_voting: b.seat_voting ? 1 : 0,
+    reason: b.reason || null, nominated_by: ctx.user.id,
+  });
+  redirect(res, '/govern/members');
+});
+
 // Retiring a governor: its own form, because it is its own act. The roster
 // used to carry an inline "Propose removal" box — the same interaction as
 // editing a term date, for the thing that ends someone's service.

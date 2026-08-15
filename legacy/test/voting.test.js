@@ -1179,3 +1179,75 @@ test('the retirement form asks for the things the inline box could not', () => {
   assert.doesNotMatch(page, /Propose removal/);
   assert.match(page, /not deleted/, 'the form should say the record is preserved');
 });
+
+// --- Seating a governor ------------------------------------------------------
+// The counterpart to retiring one. It used to grant a seat and record no term
+// for it: addMember took neither date, so the dates were a separate inline
+// form afterwards and a governor seated properly still had no start date until
+// somebody remembered. The roll reads start_date to decide who was seated when.
+
+test('seating a governor grants the term along with the seat', () => {
+  const b = repo.bodies.insert({ name: 'Seating Body', type: 'Committee', seats: 5 });
+  const p = repo.people.insert({ full_name: 'Incoming Governor' });
+
+  const motion = repo.memberMotions.nominate({
+    action: 'seat', body_id: b, person_id: p, seat_role: 'Member',
+    effective_date: '2026-09-01', term_end_date: '2030-08-31',
+    seat_voting: 1, nominated_by: null,
+  });
+  repo.memberMotions.approve(motion, null, null);
+  repo.memberMotions.complete(motion, null);
+
+  const seat = repo.bodies.members(b).find((m) => m.person_id === p);
+  assert.ok(seat, 'nobody was seated');
+  assert.equal(seat.start_date, '2026-09-01', 'the seat was granted with no start date');
+  assert.equal(seat.end_date, '2030-08-31');
+  assert.equal(seat.voting, 1);
+});
+
+test('an ex-officio seat is granted without a vote', () => {
+  const b = repo.bodies.insert({ name: 'Ex Officio Body', type: 'Committee', seats: 4 });
+  const voting = repo.people.insert({ full_name: 'Voting Governor' });
+  const exo = repo.people.insert({ full_name: 'Ex Officio Attendee' });
+
+  for (const [person, votes] of [[voting, 1], [exo, 0]]) {
+    const m = repo.memberMotions.nominate({
+      action: 'seat', body_id: b, person_id: person,
+      seat_role: votes ? 'Member' : 'Ex-Officio',
+      effective_date: '2026-01-01', seat_voting: votes, nominated_by: null,
+    });
+    repo.memberMotions.approve(m, null, null);
+    repo.memberMotions.complete(m, null);
+  }
+
+  // They hold a seat; they are not in the arithmetic.
+  const roll = repo.bodies.votingRoll(b).map((r) => r.id);
+  assert.deepEqual(roll, [voting]);
+  assert.equal(repo.bodies.isSeated(b, exo), false,
+    'a ballot could be recorded for a seat that does not vote');
+  assert.equal(repo.bodies.members(b).length, 2, 'the ex-officio seat should still exist');
+});
+
+test('a term that has not begun is not yet a seat on the roll', () => {
+  const b = repo.bodies.insert({ name: 'Future Body', type: 'Committee', seats: 3 });
+  const now = repo.people.insert({ full_name: 'Sitting Governor' });
+  const later = repo.people.insert({ full_name: 'Governor Elect' });
+  repo.bodies.addMember(b, now, 'Member', 1, { start_date: '2020-01-01' });
+  repo.bodies.addMember(b, later, 'Member', 1, { start_date: '2099-01-01' });
+
+  const roll = repo.bodies.votingRoll(b).map((r) => r.id);
+  assert.deepEqual(roll, [now], 'a governor whose term has not started was counted');
+  assert.equal(repo.bodies.isSeated(b, later), false);
+});
+
+test('the seating form asks for the term and the vote', () => {
+  const govern = require('../src/views/govern');
+  const page = govern.seatForm(
+    [{ id: 1, name: 'Some Body' }], [{ value: 1, label: 'A Person' }], { today: '2026-08-14' },
+  );
+  assert.match(page, /Seat a governor/);
+  assert.match(page, /name="effective_date"/, 'the term start must be granted with the seat');
+  assert.match(page, /name="term_end_date"/, 'a fixed term must be recordable at appointment');
+  assert.match(page, /name="seat_voting"/, 'whether the seat votes must be settled here');
+  assert.match(page, /Nominate → Approve → Complete/);
+});

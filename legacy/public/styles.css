@@ -660,6 +660,11 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 /* The clerk's route to the wall screen. The display is deliberately not in the
    nav — it is not a page anyone browses — so the console is where it is found. */
 .live-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
+/* A checkbox whose consequence needs a sentence. The hint sits under the
+   label rather than beside it — inline, it ran into the next field. */
+.form label.check { display: block; margin: 4px 0 10px; font-weight: 600; }
+.form label.check input { margin-right: 8px; }
+.form label.check .muted { display: block; margin: 4px 0 0 26px; font-weight: 400; }
 .live-pill.on { background: var(--bad); animation: livepulse 1.6s infinite; }
 @keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 .live-active-card { border-top: 3px solid var(--bad); }

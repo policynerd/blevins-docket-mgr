@@ -788,6 +788,15 @@ const COLUMN_MIGRATIONS = {
     // a retirement announced in March and executed in April ends the term in
     // March. Seating has the same distinction between decision and effect.
     effective_date: 'TEXT',
+    // The end of a term being granted, where one is fixed at appointment.
+    // effective_date carries the start; without this the length of a term
+    // could only be recorded by editing the seat afterwards, which is how
+    // seatings ended up with no dates at all.
+    term_end_date: 'TEXT',
+    // Whether the seat being granted carries a vote. Ex-officio members hold a
+    // seat without one, and the roll excludes them from both quorum and the
+    // denominator, so it has to be settled when the seat is granted.
+    seat_voting: 'INTEGER',
     // How the service ended — retired, term expired, resigned, removed,
     // deceased. Retirement is the ordinary case and removal the rare one, and
     // conflating them is why the roster called an honourable exit a removal.
