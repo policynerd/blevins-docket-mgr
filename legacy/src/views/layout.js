@@ -6,15 +6,30 @@ const { getFooterHtml } = require('../footer-content');
 
 // Primary navigation, grouped into sidebar sections. Labels are resolved live
 // at render time (branding can rename the members label).
+// Primary navigation.
+//
+// This was filed by noun — Legislation, Finance, People & Bodies, Participate
+// — and none of those is a thing anyone sets out to do. Meetings, which is what
+// the application is actually for, appeared nowhere at all: the only ways in
+// were the Calendar and "Today's Docket", the latter filed under Legislation.
+//
+// Now the order is the work. Meetings first, because running one is the job;
+// then the measures that go through them; then the money; then the people and
+// the organization behind both. Reference material sits last, where you go
+// looking for it rather than past it.
 const NAV_GROUPS = [
   { label: null, items: [{ href: '/', label: 'Dashboard' }] },
+  { label: 'Meetings', items: [
+    { href: '/meetings', label: 'Meetings' },
+    { href: '/docket', label: "Today's Docket" },
+    { href: '/calendar', label: 'Calendar' },
+  ] },
   { label: 'Legislation', items: [
     { href: '/legislation', label: 'Legislation' },
-    { href: '/calendar', label: 'Calendar' },
-    { href: '/docket', label: "Today's Docket" },
     { href: '/policies', label: 'Policies' },
+    { href: '/accountability', label: 'Accountability' },
   ] },
-  { label: 'Finance', items: [
+  { label: 'Money', items: [
     { href: '/budget', label: 'Budget' },
     { href: '/procurement', label: 'Procurement' },
   ] },
@@ -25,7 +40,6 @@ const NAV_GROUPS = [
   ] },
   { label: 'Participate', items: [
     { href: '/proposals', label: 'Proposals' },
-    { href: '/accountability', label: 'Accountability' },
   ] },
 ];
 // Flat list kept for any consumer that iterates the whole nav.

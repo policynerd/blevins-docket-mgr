@@ -58,35 +58,63 @@ function adminHome(user) {
       <td><a class="btn-link" href="/admin/matters/${m.id}/edit">Edit</a></td>
     </tr>`);
 
+  // What is waiting on someone, first and by itself. This was buried among
+  // twenty-two buttons of equal weight, so a queue with items in it looked
+  // exactly like a settings link nobody had opened in a year.
+  const queues = [
+    { n: repo.comments.pendingCount(), label: 'Public comments', href: '/admin/comments' },
+    { n: repo.applications.pendingCount(), label: 'Applications', href: '/admin/applications' },
+    { n: repo.proposals.openCount(), label: 'Proposals', href: '/admin/proposals' },
+    { n: repo.procurement.openCount(), label: 'Procurement', href: '/admin/procurement' },
+  ];
+  const waiting = queues.filter((q) => q.n > 0);
+  const inbox = waiting.length
+    ? `<div class="stat-grid small">${waiting.map((q) => `
+        <a class="stat stat-flag" href="${q.href}">
+          <span class="stat-n">${q.n}</span><span class="stat-l">${escapeText(q.label)}</span>
+        </a>`).join('')}</div>`
+    : '<p class="muted">Nothing is waiting on you.</p>';
+
+  // Grouped by the job, and ordered by how often the job comes up: the daily
+  // work first, the occasional setup after it, the once-a-year settings last.
+  // "Schedule meeting" and "Terms & Privacy" were previously the same size,
+  // in the same row, three buttons apart.
+  const group = (title, links) => card(title,
+    `<div class="admin-actions">${links.filter(Boolean).join('')}</div>`);
+  const link = (href, label, opts = {}) => `<a class="btn${opts.primary ? ' primary' : ''}" `
+    + `href="${href}">${label}</a>`;
+
   const body = html`
-    <div class="admin-actions">
-      <a class="btn" href="/admin/matters/new">+ New legislative file</a>
-      <a class="btn" href="/admin/meetings/new">+ Schedule meeting</a>
-      <a class="btn" href="/govern/members">Board membership</a>
-      <a class="btn" href="/admin/bodies">Bodies &amp; committees</a>
-      <a class="btn" href="/admin/agenda-template">Agenda template</a>
-      <a class="btn" href="/admin/doc-templates">Document templates</a>
-      <a class="btn" href="/admin/comments">Public comments${repo.comments.pendingCount()
-        ? raw(` <span class="badge pending-badge">${repo.comments.pendingCount()}</span>`) : ''}</a>
-      <a class="btn" href="/admin/applications">Applications${repo.applications.pendingCount()
-        ? raw(` <span class="badge pending-badge">${repo.applications.pendingCount()}</span>`) : ''}</a>
-      <a class="btn" href="/admin/proposals">Proposals${repo.proposals.openCount()
-        ? raw(` <span class="badge pending-badge">${repo.proposals.openCount()}</span>`) : ''}</a>
-      <a class="btn" href="/admin/policies">Policies</a>
-      <a class="btn" href="/budget">Budget</a>
-      <a class="btn" href="/admin/procurement">Procurement${repo.procurement.openCount()
-        ? raw(` <span class="badge pending-badge">${repo.procurement.openCount()}</span>`) : ''}</a>
-      <a class="btn" href="/admin/org">Manage organization</a>
-      ${isAdmin ? raw(`
-      <a class="btn" href="/admin/users">Users &amp; roles</a>
-      <a class="btn" href="/admin/import">Import roster (CSV)</a>
-      <a class="btn" href="/admin/branding">Branding</a>
-      <a class="btn" href="/admin/integrations">Integrations</a>
-      <a class="btn" href="/admin/audit">Audit log</a>
-      <a class="btn" href="/admin/mail">Email</a>
-      <a class="btn" href="/admin/footer">Footer</a>
-      <a class="btn" href="/admin/legal">Terms &amp; Privacy</a>`) : ''}
-    </div>
+    ${raw(card('Waiting on you', inbox))}
+    ${raw(group('Do the work', [
+    link('/admin/matters/new', 'New legislative file', { primary: true }),
+    link('/admin/meetings/new', 'Schedule meeting', { primary: true }),
+    link('/meetings', 'Meetings'),
+    link('/legislation', 'Legislation'),
+    link('/budget', 'Budget'),
+    link('/admin/procurement', 'Procurement'),
+  ]))}
+    ${raw(group('The board and its people', [
+    link('/govern/members', 'Board membership'),
+    link('/admin/bodies', 'Bodies &amp; committees'),
+    link('/admin/org', 'Organization'),
+    link('/people', escapeText(ORG.membersLabel)),
+    isAdmin ? link('/admin/users', 'Users &amp; roles') : '',
+  ]))}
+    ${raw(group('Set up how things are drafted', [
+    link('/admin/agenda-template', 'Agenda template'),
+    link('/admin/doc-templates', 'Document templates'),
+    link('/admin/policies', 'Policies'),
+    isAdmin ? link('/admin/import', 'Import roster (CSV)') : '',
+  ]))}
+    ${isAdmin ? raw(group('Settings', [
+    link('/admin/branding', 'Branding'),
+    link('/admin/integrations', 'Integrations'),
+    link('/admin/mail', 'Email'),
+    link('/admin/footer', 'Footer'),
+    link('/admin/legal', 'Terms &amp; Privacy'),
+    link('/admin/audit', 'Audit log'),
+  ])) : ''}
     <div class="stat-grid small">
       <div class="stat"><span class="stat-n">${s.matters}</span><span class="stat-l">Files</span></div>
       <div class="stat"><span class="stat-n">${s.pending}</span><span class="stat-l">In progress</span></div>
@@ -94,16 +122,27 @@ function adminHome(user) {
       <div class="stat"><span class="stat-n">${s.people}</span><span class="stat-l">Officials</span></div>
     </div>
     ${raw(card('Run a meeting live', require('./live').liveLauncher()))}
-    ${raw(card('Manage legislation',
-      `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th></th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`))}
-    ${isAdmin ? raw(card('Danger zone', `
-      <p class="muted">Permanently delete <strong>all</strong> people, bodies, legislation, meetings, votes, and org units. Your user logins and branding settings are kept. Use this once to clear the demo/sample data.</p>
-      <form method="post" action="/admin/purge" onsubmit="return confirm('Permanently delete ALL legislative data (people, bodies, files, meetings, votes)? This cannot be undone.');">
-        <button type="submit" class="btn danger-btn">Clear all data</button>
-      </form>`)) : ''}
+    ${raw(card('Recent legislation',
+    `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th><th></th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`,
+    { actions: '<a class="btn-link" href="/legislation">All legislation →</a>' }))}
+    ${isAdmin ? raw(`<details class="danger-zone">
+      <summary>Danger zone</summary>
+      <div class="dz-body">
+        <p class="muted">Permanently delete <strong>all</strong> people, bodies, legislation,
+          meetings, votes, and org units. Your user logins and branding settings are kept.
+          Use this once to clear the demo/sample data.</p>
+        <form method="post" action="/admin/purge" onsubmit="return confirm('Permanently delete ALL legislative data (people, bodies, files, meetings, votes)? This cannot be undone.');">
+          <button type="submit" class="btn danger-btn">Clear all data</button>
+        </form>
+      </div>
+    </details>`) : ''}
   `;
-  return layout({ title: 'Clerk Workspace', active: '/admin',
-    subtitle: 'Create files, draft documents, build agendas, run live voting, and capture results.', body });
+  return layout({
+    title: 'Clerk Workspace',
+    subtitle: 'Create files, draft documents, build agendas, run live voting, and capture results.',
+    active: '/admin',
+    body,
+  });
 }
 
 function selectOptions(values, current, { includeBlank } = {}) {

@@ -2128,3 +2128,70 @@ test('the unit picker offers the tree, indented', () => {
   assert.ok(fleet, 'the child unit is not offered');
   assert.match(fleet.label, /└/, 'the child is not shown as nested');
 });
+
+// --- Getting around -----------------------------------------------------------
+
+test('every page opens with exactly one heading', () => {
+  // layout() rendered its page header only when a subtitle was passed, which
+  // two of ninety-one pages did. The rest either dropped a bare <h1> in the
+  // body or opened with nothing at all, so pages started three different ways
+  // and some started with no statement of where you were.
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({ title: 'A Page', body: '<p>x</p>' }));
+  assert.equal((out.match(/<h1/g) || []).length, 1, 'a page without a subtitle has no heading');
+  assert.match(out, /<h1>A Page<\/h1>/);
+});
+
+test('the page header carries a trail, and the current page is not a link to itself', () => {
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({
+    title: 'Packet',
+    crumbs: [{ href: '/meetings', label: 'Meetings' }, { label: 'Packet' }],
+    body: '',
+  }));
+  assert.match(out, /<a href="\/meetings">Meetings<\/a>/);
+  assert.ok(!/<a[^>]*>Packet<\/a>/.test(out), 'the current page links to itself');
+});
+
+test('a page can opt out of the header when it is itself a document', () => {
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({ title: 'Agenda Packet', heading: false, body: '<article>x</article>' }));
+  assert.equal((out.match(/<h1/g) || []).length, 0);
+});
+
+test('meetings are in the navigation', () => {
+  // The one object the application is built around was reachable only through
+  // the Calendar, or through Today's Docket, which was filed under Legislation.
+  const { navFor } = require('../src/views/layout');
+  const hrefs = navFor(null).flatMap((g) => g.items.map((i) => i.href));
+  assert.ok(hrefs.includes('/meetings'), 'there is no way to meetings from the nav');
+  const meetingsGroup = navFor(null).find((g) => g.label === 'Meetings');
+  assert.ok(meetingsGroup, 'meetings has no section of its own');
+  assert.ok(meetingsGroup.items.some((i) => i.href === '/docket'),
+    "Today's Docket is still filed away from meetings");
+});
+
+test('the meetings index reports the state of the work, not just the date', () => {
+  const pages = require('../src/views/pages');
+  const b = repo.bodies.insert({ name: 'Index Board', type: 'Governing Body', seats: 3 });
+  // One meeting held with nothing recorded, one scheduled with no agenda.
+  repo.meetings.insert({ body_id: b, meeting_date: '2020-01-02' });
+  repo.meetings.insert({ body_id: b, meeting_date: '2099-01-02' });
+
+  const out = String(pages.meetingsIndex({ role: 'clerk', id: 1 }));
+  assert.match(out, /No agenda yet/, 'a meeting with no agenda is not flagged');
+  assert.match(out, /Upcoming/);
+  assert.match(out, /Held/);
+});
+
+test('the meeting workflow states the whole path on every screen of it', () => {
+  const b = repo.bodies.insert({ name: 'Steps Board', type: 'Governing Body', seats: 3 });
+  const id = repo.meetings.insert({ body_id: b, meeting_date: '2099-03-03' });
+  const admin = require('../src/views/admin');
+  const out = String(admin.agendaManager(repo.meetings.get(id), {}));
+  for (const label of ['Schedule', 'Agenda', 'Packet', 'Run live', 'Minutes']) {
+    assert.ok(out.includes(label), `the step strip omits ${label}`);
+  }
+  assert.match(out, /aria-current="step"/, 'the strip does not say which step you are on');
+  assert.match(out, /Next: Packet/, 'the strip does not say what comes next');
+});

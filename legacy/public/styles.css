@@ -82,6 +82,11 @@
   --warn: #C9743A;                  /* blv-amber */
   --warn-dim: #FAF0E8;
   --warn-line: #EFD5BF;
+  /* Amber darkened for type, the same relationship --gold-ink has to --gold.
+     Eight rules referenced this and it was never defined, so each of them
+     silently inherited whatever colour it landed in — the warning stats on the
+     dashboard among them. 6.1:1 on --warn-dim, so it clears AA as body text. */
+  --warn-ink: #8A4A1E;
   /* Amber and brass are brand inks, not text inks: --warn on --warn-dim is
      3.09:1 and --gold-dark on --gold-dim is 4.40:1, both under WCAG AA for the
      11px badge type they were being used at. These darker steps clear it
@@ -1054,6 +1059,27 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .pb-bare .pb-empty { color: var(--warn-ink); font-style: normal; }
 .stat-flag { border-top-color: var(--warn); }
 .stat-flag .stat-n { color: var(--warn-ink); }
+/* A stat that is also a way in — the meetings index uses these to point at the
+   work outstanding, so they have to read as clickable. */
+a.stat:hover { text-decoration: none; background: var(--marble); }
+.stat-live { border-top-color: var(--bad); }
+.stat-live .stat-n { color: var(--bad); }
+/* A roll that is open right now. Distinct from every other status because it
+   is the one that means "go, the room is waiting". */
+.badge.st-live { background: var(--bad-dim); color: var(--bad); border-color: var(--bad-line); }
+.row-actions { white-space: nowrap; text-align: right; }
+/* The destructive action, folded away. It used to sit open on the workspace
+   landing page in the same visual register as "Agenda template". */
+.danger-zone { border: 1px solid var(--bad-line); border-radius: 4px; background: var(--bad-dim);
+  margin-top: 22px; }
+.danger-zone > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; color: var(--bad);
+  font-size: var(--t-small); }
+.danger-zone .dz-body { padding: 0 14px 14px; }
+/* The seal on an issued document: the mark of office at the head of a packet,
+   set above the body's name rather than beside it. */
+.doc-seal { display: block; margin: 0 auto 10px; width: 92px; height: 92px; }
+.link-list li { padding: 3px 0; }
+.person-contact { margin: 0 0 14px; }
 
 /* Official outputs on a legislative file — generated on request from the
    file's own record, so they are offered rather than listed as stored files. */

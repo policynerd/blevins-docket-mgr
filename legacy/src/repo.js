@@ -534,6 +534,31 @@ const meetings = {
       WHERE mt.meeting_date < ?
       ORDER BY mt.meeting_date DESC LIMIT ?`).all(fromDate, limit);
   },
+  /**
+   * Meetings with the state of the work on each, for the meetings index.
+   *
+   * The calendar answers "when"; this answers "what still needs doing". Those
+   * are different questions and the app only had the first one, which is why
+   * running a meeting meant remembering which of five screens you had reached
+   * for each of them.
+   */
+  board(today, { limit = 60 } = {}) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name, b.type AS body_type,
+        (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = mt.id) AS item_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.in_packet = 1) AS packet_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.result IS NOT NULL) AS decided_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.vote_status = 'open') AS open_rolls
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      ORDER BY (mt.meeting_date < ?) ASC,
+               CASE WHEN mt.meeting_date >= ? THEN mt.meeting_date END ASC,
+               mt.meeting_date DESC
+      LIMIT ?`).all(today, today, limit);
+  },
+
   // Filtered, paginated calendar query. view: upcoming | past | all.
   _calFilter({ bodyId, from, to, view, today } = {}) {
     const clauses = [];

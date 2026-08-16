@@ -960,6 +960,92 @@ function agendaPacket(meeting) {
   });
 }
 
+// --- Meetings -----------------------------------------------------------------
+//
+// The meeting had no home. /meetings/:id existed; /meetings did not, so there
+// was no list of meetings and no way into one except through the Calendar or
+// Today's Docket — the latter filed, for reasons lost to history, under
+// Legislation. Running a meeting is what this application is for, and it was
+// the one thing the navigation did not name.
+//
+// The calendar answers when a meeting is. This answers what state it is in:
+// what still needs an agenda, what has no packet, what has been held but has
+// no minutes. That is the clerk's actual working list.
+function meetingsIndex(user) {
+  const today = todayISO();
+  const rows = repo.meetings.board(today);
+  const isClerk = auth.hasRole(user, 'clerk');
+  const upcoming = rows.filter((m) => m.meeting_date >= today);
+  const past = rows.filter((m) => m.meeting_date < today);
+
+  // What is outstanding, stated rather than left to be inferred from a table.
+  const needsAgenda = upcoming.filter((m) => !m.item_count && m.status !== 'Cancelled');
+  const needsMinutes = past.filter((m) => m.minutes_status !== 'published' && m.status !== 'Cancelled');
+  const live = rows.filter((m) => m.open_rolls > 0);
+
+  const flag = (list, label, href) => (list.length
+    ? `<a class="stat stat-flag" href="${href}"><span class="stat-n">${list.length}</span>`
+      + `<span class="stat-l">${escapeText(label)}</span></a>`
+    : `<div class="stat"><span class="stat-n">0</span><span class="stat-l">${escapeText(label)}</span></div>`);
+
+  const attention = isClerk ? `<div class="stat-grid small">
+    ${live.length ? `<a class="stat stat-live" href="/meetings/${live[0].id}"><span class="stat-n">●</span><span class="stat-l">Roll open now</span></a>` : ''}
+    ${flag(needsAgenda, 'Need an agenda', '#upcoming')}
+    ${flag(needsMinutes, 'Awaiting minutes', '#past')}
+    <div class="stat"><span class="stat-n">${upcoming.length}</span><span class="stat-l">Upcoming</span></div>
+  </div>` : '';
+
+  // A meeting's state as one word, from the work rather than a status column:
+  // a meeting with no items needs an agenda whatever its status says.
+  const stage = (m) => {
+    if (m.status === 'Cancelled') return '<span class="badge st-failed">Cancelled</span>';
+    if (m.open_rolls) return '<span class="badge st-live">Roll open</span>';
+    if (m.minutes_status === 'published') return '<span class="badge st-passed">Minutes published</span>';
+    if (m.meeting_date < today) {
+      return m.decided_count
+        ? '<span class="badge st-on-agenda">Awaiting minutes</span>'
+        : '<span class="badge st-on-agenda">Held</span>';
+    }
+    if (!m.item_count) return '<span class="badge st-draft">No agenda yet</span>';
+    return `<span class="badge st-on-agenda">${m.item_count} item${m.item_count > 1 ? 's' : ''}</span>`;
+  };
+
+  const table = (list, emptyMsg) => (list.length
+    ? `<table class="data"><thead><tr><th>When</th><th>Body</th><th>Where</th>
+        <th>State</th>${isClerk ? '<th></th>' : ''}</tr></thead><tbody>${list.map((m) => `
+      <tr>
+        <td><a href="/meetings/${m.id}">${escapeText(formatDateTime(m.meeting_date, m.meeting_time))}</a></td>
+        <td>${escapeText(m.body_name)}</td>
+        <td class="muted">${escapeText(m.location || '—')}</td>
+        <td>${stage(m)}</td>
+        ${isClerk ? `<td class="row-actions">${m.meeting_date < today
+    ? `<a class="btn-link" href="/admin/meetings/${m.id}/minutes">Minutes</a>`
+    : `<a class="btn-link" href="/admin/meetings/${m.id}/agenda">Agenda</a>`
+}</td>` : ''}
+      </tr>`).join('')}</tbody></table>`
+    : emptyState(emptyMsg));
+
+  const body = html`
+    ${raw(attention)}
+    <div id="upcoming"></div>
+    ${raw(card('Upcoming', table(upcoming, 'Nothing scheduled.'), {
+    actions: '<a class="btn-link" href="/calendar">Calendar view →</a>',
+  }))}
+    <div id="past"></div>
+    ${raw(card('Held', table(past, 'No meetings on the record yet.')))}`;
+
+  return layout({
+    title: 'Meetings',
+    subtitle: 'Every meeting and what state the work on it is in.',
+    actions: isClerk
+      ? '<a class="btn" href="/docket">Today\'s docket</a>'
+        + ' <a class="btn primary" href="/admin/meetings/new">Schedule meeting</a>'
+      : '<a class="btn" href="/docket">Today\'s docket</a>',
+    active: '/meetings',
+    body,
+  });
+}
+
 // --- People ------------------------------------------------------------------
 function peopleList() {
   const list = repo.people.all();
@@ -1353,6 +1439,6 @@ function notFound() {
 
 module.exports = {
   dashboard, legislationList, matterDetail, matterVersionPage, matterComparePage, matterChangesPage,
-  calendar, meetingDetail, agendaPacket, accountabilityPage,
+  calendar, meetingsIndex, meetingDetail, agendaPacket, accountabilityPage,
   peopleList, personDetail, bodiesList, bodyDetail, topicsList, docket, notFound, acceptsSpeakers,
 };

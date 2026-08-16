@@ -578,6 +578,9 @@ route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
 });
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
+// The meetings index. /meetings/:id existed without it, so the one object this
+// application is built around had no list and no way in but the calendar.
+route('GET', /^\/meetings\/?$/, (req, res, ctx) => sendHtml(res, pages.meetingsIndex(ctx.user)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
