@@ -16,6 +16,19 @@ function signedMoney(n) {
   return (v >= 0 ? '+' : '−') + money(Math.abs(v));
 }
 
+// The organizational unit that holds an appropriation.
+//
+// `category` is the accounting grouping and stays as it is; this is the part
+// of the organization answerable for the money. Without it the budget and the
+// org chart were two lists of department names that could disagree with each
+// other, and neither could be asked what the other knew.
+function unitOpts(current) {
+  return '<option value="">— unassigned —</option>'
+    + repo.org.options().map((o) => `<option value="${o.value}"`
+      + `${String(o.value) === String(current) ? ' selected' : ''}>`
+      + `${escapeText(o.label)}</option>`).join('');
+}
+
 function selectOptions(values, current) {
   return values.map((v) => `<option value="${escapeText(v)}"${String(v) === String(current) ? ' selected' : ''}>${escapeText(v)}</option>`).join('');
 }
@@ -83,8 +96,13 @@ function lineSection(lines) {
       const codeTag = l.appropriation_code
         ? `<div class="sub muted"><a href="/budget/appropriations/${encodeURIComponent(l.appropriation_code)}">${escapeText(l.appropriation_code)}</a>${l.project_code ? ' · ' + escapeText(l.project_code) : ''}</div>`
         : '';
+      // Who holds the money, linked. The budget and the org chart are the same
+      // organization seen from two sides, and this is the seam between them.
+      const unitTag = l.org_unit_id
+        ? `<div class="sub muted">Held by <a href="/org/${l.org_unit_id}">${escapeText(l.org_unit_name || 'unit')}</a></div>`
+        : '';
       return `<tr><td><a href="/budget/lines/${l.id}">${escapeText(l.name)}</a>${l.item_count
-        ? ` <span class="muted">· ${l.item_count} file${l.item_count > 1 ? 's' : ''}</span>` : ''}${codeTag}</td>`
+        ? ` <span class="muted">· ${l.item_count} file${l.item_count > 1 ? 's' : ''}</span>` : ''}${codeTag}${unitTag}</td>`
         + `<td class="num">${money(l.amount)}</td>`
         + `<td class="num">${l.amended ? signedMoney(l.amended) : '<span class="muted">—</span>'}</td>`
         + `<td class="num">${money(current)}</td>`
@@ -165,6 +183,7 @@ function budgetDetail(b, user) {
           <label>Appropriation code<input type="text" name="appropriation_code" placeholder="100-4200-51000"></label>
           <label>Project code<input type="text" name="project_code" placeholder="CIP-2027-014"></label>
         </div>
+        <label>Held by<select name="org_unit_id">${unitOpts('')}</select></label>
         <button type="submit" class="btn">Add line</button>
       </form>`;
     const editRows = lines.length ? lines.map((l) => `
@@ -173,6 +192,7 @@ function budgetDetail(b, user) {
         <input type="text" name="name" value="${escapeText(l.name)}" required aria-label="Name">
         <input type="text" name="appropriation_code" value="${escapeText(l.appropriation_code || '')}" placeholder="Approp. code" aria-label="Appropriation code">
         <input type="text" name="project_code" value="${escapeText(l.project_code || '')}" placeholder="Project code" aria-label="Project code">
+        <select name="org_unit_id" aria-label="Held by">${unitOpts(l.org_unit_id)}</select>
         <select name="kind" aria-label="Kind">${selectOptions(repo.BUDGET_KINDS, l.kind)}</select>
         ${isDraft
     ? `<input type="number" step="0.01" name="amount" value="${escapeText(l.amount)}" aria-label="Amount">`

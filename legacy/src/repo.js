@@ -18,7 +18,19 @@ const MATTER_STATUSES = [
   'Passed', 'Failed', 'Enacted', 'Vetoed', 'Tabled', 'Withdrawn',
 ];
 
-const VOTE_VALUES = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent'];
+// The ballot, taken from the ledger rather than restated here.
+//
+// These two lists used to disagree, and the disagreement reached the room: the
+// chamber offered an "Absent" button, this list accepted it, and the ledger —
+// which is the authority — threw `Not a vote: Absent` and the member got a 500
+// instead of a vote. Absence is not a choice anyone makes at the rail; it is
+// what is left over once everyone who did vote has, and the board already
+// derives it that way (seated minus present). "Present" is the choice that was
+// missing: a member declining the merits while still being counted.
+//
+// Sourced from the ledger so the two cannot drift apart again. Anything this
+// list admits, the ledger must be willing to seal.
+const VOTE_VALUES = ledger.CHOICES;
 const ITEM_TYPES = ['Action', 'Discussion', 'Information'];
 
 const AGENDA_SECTIONS = [
@@ -469,6 +481,51 @@ const matters = {
   clearSponsors(matterId) {
     db.prepare('DELETE FROM matter_sponsors WHERE matter_id = ?').run(matterId);
   },
+  /**
+   * The status an action implies, so the clerk does not have to say it twice.
+   *
+   * Recording one event used to take three fields: the action, its result, and
+   * then, separately, the new status. That is not merely extra typing — the
+   * status field was optional, so a clerk who recorded "Adopted / Pass" and
+   * tabbed past it left a file whose history said it had carried and whose
+   * status still said Introduced. The record disagreed with itself, and
+   * nothing anywhere would say so.
+   *
+   * An action and a result already determine the status in every ordinary
+   * case, so this derives it. It is a suggestion, not a seizure: the form
+   * pre-selects what this returns and the clerk can override it, because the
+   * unusual case is exactly the one a rule like this gets wrong.
+   *
+   * @returns {string|null} a status from MATTER_STATUSES, or null if the
+   *   action does not imply one and the current status should stand.
+   */
+  statusFromAction(action, result, currentStatus = null) {
+    const a = String(action || '').toLowerCase();
+    const r = String(result || '').toLowerCase();
+
+    // A recorded failure is a failure whatever the verb was.
+    if (r === 'fail') {
+      if (/veto/.test(a)) return 'Vetoed';
+      return 'Failed';
+    }
+    // Disposals that are neither pass nor fail, checked before the pass rules
+    // because "motion to table" carries a result of Pass when the tabling
+    // succeeds — and a tabled measure is Tabled, not Passed.
+    if (/withdraw/.test(a)) return 'Withdrawn';
+    if (/\btabl/.test(a)) return 'Tabled';
+    if (/refer|committed to|sent to committee/.test(a)) return 'In Committee';
+    if (/veto/.test(a)) return 'Vetoed';
+    if (/enact|sign(ed)? into|chaptered/.test(a)) return 'Enacted';
+    if (/introduc|first reading|filed/.test(a)) return 'Introduced';
+    if (/placed on|set for|agenda/.test(a)) return 'On Agenda';
+    if (/adopt|pass|approv|carri/.test(a)) return 'Passed';
+    // A bare Pass on an action with no verb we recognise still means it
+    // carried; a bare result with no action at all implies nothing.
+    if (r === 'pass' && a) return 'Passed';
+    void currentStatus;
+    return null;
+  },
+
   addHistory(h) {
     const id = db.prepare(`INSERT INTO matter_history
       (matter_id, action_date, body_id, action, result, notes, meeting_id, agenda_item_id)
@@ -522,6 +579,31 @@ const meetings = {
       WHERE mt.meeting_date < ?
       ORDER BY mt.meeting_date DESC LIMIT ?`).all(fromDate, limit);
   },
+  /**
+   * Meetings with the state of the work on each, for the meetings index.
+   *
+   * The calendar answers "when"; this answers "what still needs doing". Those
+   * are different questions and the app only had the first one, which is why
+   * running a meeting meant remembering which of five screens you had reached
+   * for each of them.
+   */
+  board(today, { limit = 60 } = {}) {
+    return db.prepare(`
+      SELECT mt.*, b.name AS body_name, b.type AS body_type,
+        (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = mt.id) AS item_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.in_packet = 1) AS packet_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.result IS NOT NULL) AS decided_count,
+        (SELECT COUNT(*) FROM agenda_items ai
+           WHERE ai.meeting_id = mt.id AND ai.vote_status = 'open') AS open_rolls
+      FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      ORDER BY (mt.meeting_date < ?) ASC,
+               CASE WHEN mt.meeting_date >= ? THEN mt.meeting_date END ASC,
+               mt.meeting_date DESC
+      LIMIT ?`).all(today, today, limit);
+  },
+
   // Filtered, paginated calendar query. view: upcoming | past | all.
   _calFilter({ bodyId, from, to, view, today } = {}) {
     const clauses = [];
@@ -926,7 +1008,10 @@ const votes = {
     const rows = db.prepare(
       'SELECT vote, COUNT(*) AS n FROM votes WHERE agenda_item_id = ? GROUP BY vote')
       .all(agendaItemId);
-    const t = { Yea: 0, Nay: 0, Abstain: 0, Recused: 0, Absent: 0 };
+    // Absent stays in the shape even though it can no longer be cast: rows
+    // recorded before the ballot was reconciled still carry it, and a reader
+    // asking for last year's tally should get the number that was announced.
+    const t = { Yea: 0, Nay: 0, Present: 0, Abstain: 0, Recused: 0, Absent: 0 };
     for (const r of rows) t[r.vote] = r.n;
     return t;
   },
@@ -957,7 +1042,7 @@ const votes = {
   personSummary(personId) {
     const rows = db.prepare(
       'SELECT vote, COUNT(*) AS n FROM votes WHERE person_id = ? GROUP BY vote').all(personId);
-    const t = { Yea: 0, Nay: 0, Abstain: 0, Recused: 0, Absent: 0, total: 0 };
+    const t = { Yea: 0, Nay: 0, Present: 0, Abstain: 0, Recused: 0, Absent: 0, total: 0 };
     for (const r of rows) { t[r.vote] = r.n; t.total += r.n; }
     return t;
   },
@@ -1115,8 +1200,11 @@ const budget = {
       COALESCE((SELECT SUM(a.amount) FROM budget_amendments a WHERE a.budget_line_id = bl.id), 0) AS amended,
       (SELECT COUNT(*) FROM budget_amendments a WHERE a.budget_line_id = bl.id) AS amendment_count,
       COALESCE((SELECT SUM(t.amount) FROM budget_transactions t WHERE t.budget_line_id = bl.id), 0) AS actual,
-      (SELECT COUNT(*) FROM budget_transactions t WHERE t.budget_line_id = bl.id) AS tx_count
-      FROM budget_lines bl WHERE bl.budget_id = ?
+      (SELECT COUNT(*) FROM budget_transactions t WHERE t.budget_line_id = bl.id) AS tx_count,
+      ou.name AS org_unit_name
+      FROM budget_lines bl
+      LEFT JOIN org_units ou ON ou.id = bl.org_unit_id
+      WHERE bl.budget_id = ?
       ORDER BY bl.category IS NULL, bl.category, bl.sort_order, bl.id`).all(budgetId);
   },
   // A single line with the same rollups (for the drill-down page).
@@ -1231,22 +1319,29 @@ const budget = {
     });
   },
   getLine(id) {
-    return db.prepare(`SELECT bl.*, b.fiscal_year FROM budget_lines bl
-      JOIN budgets b ON b.id = bl.budget_id WHERE bl.id = ?`).get(id);
+    return db.prepare(`SELECT bl.*, b.fiscal_year, ou.name AS org_unit_name
+      FROM budget_lines bl
+      JOIN budgets b ON b.id = bl.budget_id
+      LEFT JOIN org_units ou ON ou.id = bl.org_unit_id
+      WHERE bl.id = ?`).get(id);
   },
   addLine(l) {
     const max = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM budget_lines WHERE budget_id = ?')
       .get(l.budget_id).m;
     return db.prepare(`INSERT INTO budget_lines
-      (budget_id, category, name, kind, amount, notes, sort_order, appropriation_code, project_code)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(l.budget_id, l.category || null, l.name, l.kind || 'Expense',
+      (budget_id, category, name, kind, amount, notes, sort_order, appropriation_code,
+       project_code, org_unit_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(l.budget_id, l.category || null, l.name, l.kind || 'Expense',
       Number(l.amount) || 0, l.notes || null, l.sort_order || (max + 1),
-      l.appropriation_code || null, l.project_code || null).lastInsertRowid;
+      l.appropriation_code || null, l.project_code || null,
+      l.org_unit_id || null).lastInsertRowid;
   },
   updateLine(id, l) {
-    db.prepare(`UPDATE budget_lines SET category=?, name=?, kind=?, amount=?, notes=?, appropriation_code=?, project_code=?
-      WHERE id=?`).run(l.category || null, l.name, l.kind || 'Expense', Number(l.amount) || 0,
-      l.notes || null, l.appropriation_code || null, l.project_code || null, id);
+    db.prepare(`UPDATE budget_lines SET category=?, name=?, kind=?, amount=?, notes=?,
+      appropriation_code=?, project_code=?, org_unit_id=? WHERE id=?`)
+      .run(l.category || null, l.name, l.kind || 'Expense', Number(l.amount) || 0,
+        l.notes || null, l.appropriation_code || null, l.project_code || null,
+        l.org_unit_id || null, id);
   },
   removeLine(id) { db.prepare('DELETE FROM budget_lines WHERE id = ?').run(id); },
   // Selectable lines for the matter fiscal-impact field (open budgets only).
@@ -1449,20 +1544,119 @@ const org = {
   },
   insert(u) {
     return db.prepare(`INSERT INTO org_units
-      (parent_id, level, name, leader_name, leader_title, leader_email, leader_phone, description, sort_order)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(
-      u.parent_id || null, u.level, u.name, u.leader_name || null, u.leader_title || null,
+      (parent_id, level, name, leader_person_id, leader_name, leader_title, leader_email,
+       leader_phone, description, sort_order)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+      u.parent_id || null, u.level, u.name, u.leader_person_id || null,
+      u.leader_name || null, u.leader_title || null,
       u.leader_email || null, u.leader_phone || null, u.description || null,
       u.sort_order || 0).lastInsertRowid;
   },
   update(id, u) {
-    db.prepare(`UPDATE org_units SET parent_id=?, level=?, name=?, leader_name=?, leader_title=?,
-      leader_email=?, leader_phone=?, description=?, sort_order=? WHERE id=?`).run(
-      u.parent_id || null, u.level, u.name, u.leader_name || null, u.leader_title || null,
+    db.prepare(`UPDATE org_units SET parent_id=?, level=?, name=?, leader_person_id=?,
+      leader_name=?, leader_title=?, leader_email=?, leader_phone=?, description=?,
+      sort_order=? WHERE id=?`).run(
+      u.parent_id || null, u.level, u.name, u.leader_person_id || null,
+      u.leader_name || null, u.leader_title || null,
       u.leader_email || null, u.leader_phone || null, u.description || null, u.sort_order || 0, id);
   },
   remove(id) {
     db.prepare('DELETE FROM org_units WHERE id = ?').run(id);
+  },
+
+  // --- What a unit actually holds ------------------------------------------
+  //
+  // The queries below are the difference between an org chart and a directory.
+  // Until org_units was referenced by anything there was nothing to ask it, so
+  // its page could only repeat the name and the leader back at you.
+
+  /**
+   * The leader as a person record where one is linked, falling back to the
+   * loose text for units led by someone not in the roster.
+   * @returns {{id:number|null, full_name:string, title:string, email:string, phone:string}|null}
+   */
+  leader(unit) {
+    if (!unit) return null;
+    if (unit.leader_person_id) {
+      const p = db.prepare('SELECT id, full_name, title, email, phone FROM people WHERE id = ?')
+        .get(unit.leader_person_id);
+      if (p) {
+        return {
+          id: p.id,
+          full_name: p.full_name,
+          title: unit.leader_title || p.title || '',
+          email: p.email || unit.leader_email || '',
+          phone: p.phone || unit.leader_phone || '',
+        };
+      }
+    }
+    if (!unit.leader_name) return null;
+    return {
+      id: null,
+      full_name: unit.leader_name,
+      title: unit.leader_title || '',
+      email: unit.leader_email || '',
+      phone: unit.leader_phone || '',
+    };
+  },
+
+  /** Appropriations this unit holds, across every budget. */
+  budgetLines(unitId) {
+    return db.prepare(`
+      SELECT bl.*, b.fiscal_year, b.status AS budget_status
+      FROM budget_lines bl JOIN budgets b ON b.id = bl.budget_id
+      WHERE bl.org_unit_id = ?
+      ORDER BY b.fiscal_year DESC, bl.sort_order, bl.name`).all(unitId);
+  },
+
+  /**
+   * What the unit is budgeted, and what it has actually spent.
+   *
+   * Expense and revenue are kept apart: netting them would let a department
+   * that collects fees appear to spend nothing.
+   */
+  budgetTotals(unitId) {
+    const t = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN bl.kind = 'Revenue' THEN bl.amount ELSE 0 END), 0) AS revenue,
+        COALESCE(SUM(CASE WHEN bl.kind != 'Revenue' THEN bl.amount ELSE 0 END), 0) AS expense
+      FROM budget_lines bl WHERE bl.org_unit_id = ?`).get(unitId);
+    const spent = db.prepare(`
+      SELECT COALESCE(SUM(tx.amount), 0) AS spent
+      FROM budget_transactions tx JOIN budget_lines bl ON bl.id = tx.budget_line_id
+      WHERE bl.org_unit_id = ? AND bl.kind != 'Revenue'`).get(unitId);
+    return { revenue: t.revenue, expense: t.expense, spent: spent.spent };
+  },
+
+  /** Measures this unit has brought to the Board. */
+  matters(unitId, limit = 25) {
+    return db.prepare(`
+      SELECT id, file_number, title, type, status, intro_date
+      FROM matters WHERE org_unit_id = ?
+      ORDER BY COALESCE(intro_date, '') DESC, id DESC
+      LIMIT ?`).all(unitId, limit);
+  },
+
+  /** Everyone recorded as leading this unit or one directly beneath it. */
+  staff(unitId) {
+    return db.prepare(`
+      SELECT p.id, p.full_name, p.title, p.email, u.id AS unit_id, u.name AS unit_name
+      FROM org_units u JOIN people p ON p.id = u.leader_person_id
+      WHERE u.id = ? OR u.parent_id = ?
+      ORDER BY (u.id = ?) DESC, u.sort_order, u.name`).all(unitId, unitId, unitId);
+  },
+
+  /** Unit options for a select, indented to show the tree. */
+  options() {
+    const out = [];
+    const walk = (nodes, depth) => {
+      for (const n of nodes) {
+        out.push({ value: n.id, label: `${'  '.repeat(depth)}${depth ? '└ ' : ''}${n.name}` });
+        if (n.children && n.children.length) walk(n.children, depth + 1);
+      }
+    };
+    walk(org.tree(), 0);
+    return out;
   },
 };
 

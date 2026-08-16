@@ -578,6 +578,9 @@ route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
 });
 route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
+// The meetings index. /meetings/:id existed without it, so the one object this
+// application is built around had no list and no way in but the calendar.
+route('GET', /^\/meetings\/?$/, (req, res, ctx) => sendHtml(res, pages.meetingsIndex(ctx.user)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
@@ -896,6 +899,7 @@ route('POST', /^\/admin\/budget\/(\d+)\/lines$/, (req, res, ctx) => {
       budget_id: b.id, category: ctx.body.category, name: ctx.body.name,
       kind: ctx.body.kind, amount: ctx.body.amount,
       appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
+      org_unit_id: ctx.body.org_unit_id ? Number(ctx.body.org_unit_id) : null,
     });
   }
   redirect(res, `/budget/${b.id}`);
@@ -907,6 +911,7 @@ route('POST', /^\/admin\/budget-lines\/(\d+)$/, (req, res, ctx) => {
     repo.budget.updateLine(l.id, {
       category: ctx.body.category, name: ctx.body.name, kind: ctx.body.kind, amount: ctx.body.amount,
       appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
+      org_unit_id: ctx.body.org_unit_id ? Number(ctx.body.org_unit_id) : null,
     });
   }
   redirect(res, `/budget/${l.budget_id}`);
@@ -999,6 +1004,7 @@ route('POST', /^\/admin\/org$/, (req, res, ctx) => {
   if (!b.name || !b.level) return redirect(res, '/admin/org/new');
   const id = repo.org.insert({
     parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_person_id: b.leader_person_id ? Number(b.leader_person_id) : null,
     leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
     leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
   });
@@ -1020,6 +1026,7 @@ route('POST', /^\/admin\/org\/(\d+)$/, (req, res, ctx) => {
   const b = ctx.body;
   repo.org.update(id, {
     parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_person_id: b.leader_person_id ? Number(b.leader_person_id) : null,
     leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
     leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
   });
@@ -1773,12 +1780,20 @@ route('POST', /^\/admin\/matters\/(\d+)\/actions$/, (req, res, ctx) => {
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
   repo.matters.addHistory({
-    matter_id: id, action_date: b.action_date, body_id: b.body_id || null,
+    // The body defaults to the one the file is in control of. It was a
+    // required dropdown listing every body, on a form that already knew.
+    matter_id: id, action_date: b.action_date, body_id: b.body_id || m.body_id || null,
     action: b.action, result: b.result || null, notes: b.notes || null,
   });
-  if (b.new_status) {
-    repo.matters.setStatus(id, b.new_status);
-    const notice = applyEnactment(id, b.new_status, b.action_date);
+  // The status follows from the action unless the clerk overrides it. It used
+  // to be a third field they had to fill for the same event, and leaving it
+  // blank left a file whose history said it had carried and whose status still
+  // said Introduced.
+  const status = b.new_status
+    || repo.matters.statusFromAction(b.action, b.result, m.status);
+  if (status && status !== m.status) {
+    repo.matters.setStatus(id, status);
+    const notice = applyEnactment(id, status, b.action_date);
     if (notice) return redirect(res, `/admin/matters/${id}/edit${notice}`);
   }
   redirect(res, `/admin/matters/${id}/edit`);

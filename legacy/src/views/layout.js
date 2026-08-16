@@ -6,15 +6,30 @@ const { getFooterHtml } = require('../footer-content');
 
 // Primary navigation, grouped into sidebar sections. Labels are resolved live
 // at render time (branding can rename the members label).
+// Primary navigation.
+//
+// This was filed by noun — Legislation, Finance, People & Bodies, Participate
+// — and none of those is a thing anyone sets out to do. Meetings, which is what
+// the application is actually for, appeared nowhere at all: the only ways in
+// were the Calendar and "Today's Docket", the latter filed under Legislation.
+//
+// Now the order is the work. Meetings first, because running one is the job;
+// then the measures that go through them; then the money; then the people and
+// the organization behind both. Reference material sits last, where you go
+// looking for it rather than past it.
 const NAV_GROUPS = [
   { label: null, items: [{ href: '/', label: 'Dashboard' }] },
+  { label: 'Meetings', items: [
+    { href: '/meetings', label: 'Meetings' },
+    { href: '/docket', label: "Today's Docket" },
+    { href: '/calendar', label: 'Calendar' },
+  ] },
   { label: 'Legislation', items: [
     { href: '/legislation', label: 'Legislation' },
-    { href: '/calendar', label: 'Calendar' },
-    { href: '/docket', label: "Today's Docket" },
     { href: '/policies', label: 'Policies' },
+    { href: '/accountability', label: 'Accountability' },
   ] },
-  { label: 'Finance', items: [
+  { label: 'Money', items: [
     { href: '/budget', label: 'Budget' },
     { href: '/procurement', label: 'Procurement' },
   ] },
@@ -25,7 +40,6 @@ const NAV_GROUPS = [
   ] },
   { label: 'Participate', items: [
     { href: '/proposals', label: 'Proposals' },
-    { href: '/accountability', label: 'Accountability' },
   ] },
 ];
 // Flat list kept for any consumer that iterates the whole nav.
@@ -206,6 +220,49 @@ function sideNav(user, active) {
   }).join('');
 }
 
+// The official-system banner.
+//
+// Modelled on the strip every US federal site carries — "An official website
+// of the United States government · Here's how you know" — because it does a
+// job no other element does: it states, before anything else, what this system
+// is and why what it shows can be relied on. For a board's record of its own
+// proceedings that claim is the whole point of the application.
+//
+// A <details> rather than a script: it works with JavaScript off, it is
+// keyboard-operable for free, and the closed state is one slim line so it
+// costs almost nothing at the top of every page.
+function officialBanner() {
+  return `<details class="gov-banner">
+    <summary class="gb-bar">
+      <span class="gb-seal" aria-hidden="true">${brandMark({ size: 20, variant: 'light', cls: 'gb-logo' })}</span>
+      <span class="gb-text">An official system of the ${escapeText(ORG.name)}</span>
+      <span class="gb-toggle">Here&rsquo;s how you know</span>
+    </summary>
+    <div class="gb-body">
+      <div class="gb-cols">
+        <div class="gb-col">
+          <strong>This is the Board&rsquo;s own record</strong>
+          <p>Agendas, votes and minutes shown here are produced by the
+            ${escapeText(ORG.clerkOffice)} from the proceedings themselves — not copied
+            from another system. What you see is the record, not a report about it.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Votes are sealed as they are cast</strong>
+          <p>Every ballot is written to an append-only, hash-chained ledger the moment it
+            is recorded. A vote is never overwritten: a change is a new entry naming the
+            one it supersedes, so altering the history would break the chain visibly.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Internal use</strong>
+          <p>Access is limited to authenticated members and staff of
+            ${escapeText(ORG.name)}. Actions that change the record are attributed and
+            written to the audit log.</p>
+        </div>
+      </div>
+    </div>
+  </details>`;
+}
+
 function announcementBanner() {
   let a;
   try { a = require('../announcement').get(); } catch (_) { return ''; }
@@ -215,7 +272,47 @@ function announcementBanner() {
     + `<span class="announce-text">${escapeText(a.text)}</span></div>`;
 }
 
-function layout({ title, active, body, subtitle, head }) {
+// The one page header.
+//
+// There used to be three. `layout` rendered a `.page-head` — but only when a
+// subtitle was passed, which two of ninety-one pages did. Detail pages built
+// their own `.crumbs` + `.detail-head` + `.head-actions`. Everything else
+// dropped a bare `<h1>` at the top of the body, or nothing at all, so a good
+// number of pages opened with no heading whatsoever and no way back.
+//
+// Three conventions means every page starts differently, and that is most of
+// what "choppy" turns out to be: nothing tells you where you are, what you can
+// do here, or how you got in. So the header is assembled here for every page,
+// from the same four parts, and views supply the parts rather than the markup.
+//
+//   crumbs   [{ href, label }] — the trail in. The last item is the current
+//            page and renders unlinked, so callers pass the whole path.
+//   title    the <h1>. Always rendered.
+//   subtitle one line on what this page is for.
+//   actions  page-level buttons, right-aligned on the title row.
+function pageHead({ title, subtitle, crumbs, actions }) {
+  const trail = Array.isArray(crumbs) && crumbs.length
+    ? `<nav class="crumbs" aria-label="Breadcrumb">${crumbs.map((c, i) => {
+      const last = i === crumbs.length - 1;
+      const label = escapeText(c.label);
+      // The current page is not a link to itself.
+      const node = (c.href && !last) ? `<a href="${escapeText(c.href)}">${label}</a>` : label;
+      return i === 0 ? node : ` <span class="crumb-sep" aria-hidden="true">/</span> ${node}`;
+    }).join('')}</nav>`
+    : '';
+  return `<div class="page-head">
+    ${trail}
+    <div class="page-head-row">
+      <div class="page-head-text">
+        <h1>${escapeText(title || '')}</h1>
+        ${subtitle ? `<p class="muted page-sub">${escapeText(subtitle)}</p>` : ''}
+      </div>
+      ${actions ? `<div class="page-actions">${actions}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function layout({ title, active, body, subtitle, head, crumbs, actions, heading = true }) {
   const user = _user;
   const authArea = user
     ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
@@ -236,6 +333,7 @@ function layout({ title, active, body, subtitle, head }) {
   ${head || ''}
 </head>
 <body>
+  ${officialBanner()}
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
   <div class="app">
     <aside class="sidebar" aria-label="Primary navigation">
@@ -257,7 +355,7 @@ function layout({ title, active, body, subtitle, head }) {
       </div>
       ${announcementBanner()}
       <main class="main-area">
-        ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
+        ${heading ? pageHead({ title, subtitle, crumbs, actions }) : ''}
         ${body}
       </main>
       <footer class="site-footer">

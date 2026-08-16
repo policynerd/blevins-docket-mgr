@@ -63,14 +63,15 @@ function bodiesAdmin() {
     ? `<table class="data"><thead><tr><th>Name</th><th>Type</th><th>Members</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`
     : emptyState('No bodies yet. Add the board and its committees.');
 
-  const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Bodies &amp; committees</p>
-    <div class="detail-head">
-      <h1>Bodies &amp; committees</h1>
-      <span class="head-actions"><a class="btn" href="/admin/bodies/new">+ New body</a></span>
-    </div>
-    ${raw(card('All bodies', table))}`;
-  return layout({ title: 'Bodies & committees', active: '/admin', body });
+  const body = html`${raw(card('All bodies', table))}`;
+  return layout({
+    title: 'Bodies & committees',
+    subtitle: 'The board and every committee it has constituted, with their seats.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Bodies & committees' }],
+    actions: '<a class="btn primary" href="/admin/bodies/new">New body</a>',
+    active: '/admin',
+    body,
+  });
 }
 
 /**
@@ -156,12 +157,20 @@ function seatForm(bodies, people, opts = {}) {
       </div>
     </form>`;
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/govern/members">Membership</a> / Seat</p>
-    <h1>Seat a governor</h1>
     <p class="muted">Changes follow <strong>Nominate → Approve → Complete</strong>. This proposes the
       appointment; someone other than you approves it, and the seat is granted when completed.</p>
     ${raw(card('Appointment', form))}`;
-  return layout({ title: 'Seat a governor', active: '/govern/members', body });
+  return layout({
+    title: 'Seat a governor',
+    subtitle: 'Grant a seat, with the term it is granted for.',
+    crumbs: [
+      { href: '/admin', label: 'Clerk Workspace' },
+      { href: '/govern/members', label: 'Membership' },
+      { label: 'Seat a governor' },
+    ],
+    active: '/govern/members',
+    body,
+  });
 }
 
 function retireForm(member, body, opts = {}) {
@@ -194,12 +203,21 @@ function retireForm(member, body, opts = {}) {
       </div>
     </form>`;
   const bodyHtml = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/govern/members">Membership</a> / Retire</p>
-    <h1>Retire ${escapeText((person && person.full_name) || 'a governor')}</h1>
     <p class="muted">Changes follow <strong>Nominate → Approve → Complete</strong>. This proposes the
       retirement; someone other than you approves it, and it takes effect when completed.</p>
     ${raw(card('Retirement', form))}`;
-  return layout({ title: 'Retire a governor', active: '/govern/members', body: bodyHtml });
+  const who = (person && person.full_name) || 'a governor';
+  return layout({
+    title: `Retire ${who}`,
+    subtitle: 'Close the term and keep the service on the record.',
+    crumbs: [
+      { href: '/admin', label: 'Clerk Workspace' },
+      { href: '/govern/members', label: 'Membership' },
+      { label: 'Retire' },
+    ],
+    active: '/govern/members',
+    body: bodyHtml,
+  });
 }
 
 function bodyForm(b) {
@@ -226,11 +244,17 @@ function bodyForm(b) {
         <a class="btn-link" href="/admin/bodies">Cancel</a>
       </div>
     </form>`;
-  const body = html`
-    <p class="crumbs"><a href="/admin/bodies">Bodies</a> / ${isEdit ? b.name : 'New body'}</p>
-    <h1>${isEdit ? 'Edit ' + b.name : 'New body'}</h1>
-    ${raw(card(isEdit ? 'Body details' : 'Create body', form))}`;
-  return layout({ title: isEdit ? 'Edit body' : 'New body', active: '/admin', body });
+  const body = html`${raw(card(isEdit ? 'Body details' : 'Create body', form))}`;
+  return layout({
+    title: isEdit ? `Edit ${b.name}` : 'New body',
+    subtitle: isEdit ? '' : 'Constitute a committee or another body of the Board.',
+    crumbs: [
+      { href: '/admin/bodies', label: 'Bodies & committees' },
+      { label: isEdit ? b.name : 'New body' },
+    ],
+    active: '/admin',
+    body,
+  });
 }
 
 // ===========================================================================
@@ -357,15 +381,20 @@ function membersPage(user) {
     <p><a class="btn primary" href="/govern/members/seat">Seat a governor →</a></p>`) : '';
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Membership</p>
-    <h1>Board membership</h1>
     <p class="muted">Changes follow <strong>Nominate → Approve → Seat</strong>. The Clerk nominates and executes; approval must come from someone other than the nominator.</p>
     ${raw(card('Pending changes', pendingHtml))}
     ${raw(termsCard)}
     ${raw(seatLink)}
     <h2 class="section-title">Current rosters</h2>
     ${raw(rosterCards)}`;
-  return layout({ title: 'Board membership', active: '/govern/members', body });
+  return layout({
+    title: 'Board membership',
+    subtitle: 'Who holds which seat, on what term, and what changes are in flight.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Membership' }],
+    actions: '<a class="btn primary" href="/govern/members/seat">Seat a governor</a>',
+    active: '/govern/members',
+    body,
+  });
 }
 
 // ===========================================================================
@@ -429,11 +458,15 @@ function brandingPage({ saved = false } = {}) {
     </form>`;
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Branding</p>
-    <h1>Branding &amp; identity</h1>
     ${saved ? raw('<p class="form-ok">Branding saved.</p>') : ''}
     ${raw(card('Edit branding', form))}`;
-  return layout({ title: 'Branding', active: '/admin', body });
+  return layout({
+    title: 'Branding & identity',
+    subtitle: 'The name, mark and colours the application and its documents are issued under.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Branding' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // ===========================================================================
@@ -490,13 +523,17 @@ John Doe,john.doe@blevinsholdings.com,member,Committee on Enterprise Operations,
     </details>`;
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Import roster</p>
-    <h1>Import roster (CSV)</h1>
-    <p class="muted">Importing legislative files instead? <a href="/admin/import/matters">Import legislative files</a>.</p>
     ${result ? raw(summary) : ''}
     ${raw(card('Bulk import', form))}
     <script src="/assets/csv-fill.js" defer></script>`;
-  return layout({ title: 'Import roster', active: '/admin', body });
+  return layout({
+    title: 'Import roster (CSV)',
+    subtitle: 'Load people in bulk from a spreadsheet.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Import roster' }],
+    actions: '<a class="btn" href="/admin/import/matters">Import legislative files instead</a>',
+    active: '/admin',
+    body,
+  });
 }
 
 function mattersImportPage({ result = null } = {}) {
@@ -555,12 +592,20 @@ function mattersImportPage({ result = null } = {}) {
     </details>`;
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/admin/import">Import</a> / Legislative files</p>
-    <h1>Import legislative files (CSV)</h1>
     ${result ? raw(summary) : ''}
     ${raw(card('Bulk import', form))}
     <script src="/assets/csv-fill.js" defer></script>`;
-  return layout({ title: 'Import legislative files', active: '/admin', body });
+  return layout({
+    title: 'Import legislative files (CSV)',
+    subtitle: 'Load measures in bulk from a spreadsheet.',
+    crumbs: [
+      { href: '/admin', label: 'Clerk Workspace' },
+      { href: '/admin/import', label: 'Import' },
+      { label: 'Legislative files' },
+    ],
+    active: '/admin',
+    body,
+  });
 }
 
 function announcementPage({ saved = false } = {}) {
@@ -584,12 +629,16 @@ function announcementPage({ saved = false } = {}) {
     <p class="muted">Clear the message or uncheck the box to take the banner down. It shows on every page, above the content.</p>`;
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Announcement</p>
-    <h1>Site announcement banner</h1>
     ${saved ? raw('<p class="saved-banner">Announcement saved.</p>') : ''}
     ${raw(card('Current banner', preview))}
     ${raw(card('Edit', form))}`;
-  return layout({ title: 'Announcement', active: '/admin', body });
+  return layout({
+    title: 'Site announcement banner',
+    subtitle: 'A notice shown on every page, above the content.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Announcement' }],
+    active: '/admin',
+    body,
+  });
 }
 
 function integrationsPage({ status: flash = '' } = {}) {
@@ -641,13 +690,17 @@ function integrationsPage({ status: flash = '' } = {}) {
   </ol>`;
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Integrations</p>
-    <h1>Integrations — Adobe Acrobat Sign</h1>
     ${raw(flashMsg)}
     ${raw(card('Status', statusLine + `<div class="head-actions" style="margin-top:10px">${connectBtn} ${disconnectBtn}</div>`))}
     ${raw(card('Setup', setup))}
     ${raw(card('API application credentials', form))}`;
-  return layout({ title: 'Integrations', active: '/admin', body });
+  return layout({
+    title: 'Adobe Acrobat Sign',
+    subtitle: 'Electronic signature for written consents and executed instruments.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Integrations' }],
+    active: '/admin',
+    body,
+  });
 }
 
 module.exports = {

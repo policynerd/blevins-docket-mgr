@@ -123,6 +123,74 @@ test('a choice outside the vocabulary is refused', () => {
   assert.throws(() => repo.voteLedger.append(itemId, people[0], 'Maybe'), /Not a vote/);
 });
 
+test('every choice the app offers is one the ledger will seal', () => {
+  // These were two lists that disagreed. The chamber offered Absent, the
+  // route's validation admitted it, and the ledger refused it — so a member
+  // pressing the button got a 500 and no vote. Anything offered has to be
+  // sealable, or the ballot lies about what it will accept.
+  const { itemId } = newItem();
+  for (const choice of repo.VOTE_VALUES) {
+    assert.doesNotThrow(
+      () => repo.voteLedger.append(itemId, people[0], choice),
+      `the ledger refused ${choice}, which the app offers`,
+    );
+  }
+});
+
+test('the buttons in the chamber offer exactly the ledger vocabulary', () => {
+  // The chamber's list is a literal in a browser script, so it cannot import
+  // the ledger's. Reading it back is the only thing standing between the two
+  // drifting apart again — which is the bug this test exists for.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'assets', 'live.js'), 'utf8');
+  const m = src.match(/var VOTES = \[([^\]]*)\]/);
+  assert.ok(m, 'could not find the VOTES list in the chamber script');
+  const offered = m[1].split(',').map((s) => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+  assert.deepEqual(offered.slice().sort(), ledger.CHOICES.slice().sort(),
+    'the chamber offers a different ballot from the one the ledger accepts');
+});
+
+test('Absent is not a ballot choice — it is what is left over', () => {
+  // Nobody walks to the rail to record their own absence. The board derives it
+  // from the seats that did not answer.
+  assert.ok(!repo.VOTE_VALUES.includes('Absent'),
+    'Absent is on the ballot again, and the ledger will refuse it');
+  const { itemId } = newItem();
+  assert.throws(() => repo.voteLedger.append(itemId, people[0], 'Absent'), /Not a vote/);
+});
+
+test('voting Present is on the merits neither way, but still holds the seat', () => {
+  // Present is the choice that was missing: the member is at the rail and
+  // counted, and declines to support or oppose. Under majority_full that has
+  // the weight of a No, because the base is everyone eligible — which is the
+  // whole reason a member votes it.
+  const { itemId } = newItem({ threshold: 'majority_full' });
+  repo.voteLedger.append(itemId, people[0], 'Yea');
+  repo.voteLedger.append(itemId, people[1], 'Yea');
+  repo.voteLedger.append(itemId, people[2], 'Present');
+  repo.voteLedger.append(itemId, people[3], 'Present');
+  repo.voteLedger.append(itemId, people[4], 'Present');
+
+  const o = repo.eligibility.outcome(itemId);
+  assert.equal(o.yea, 2);
+  assert.equal(o.nay, 0, 'Present was counted as a No');
+  assert.equal(o.eligible, 5, 'voting Present dropped the member from the base');
+  assert.equal(o.required, 3);
+  assert.equal(o.passes, false, 'two Yeas carried a body of five');
+  assert.equal(o.notVoted, 0, 'a member who voted Present was listed as not having voted');
+});
+
+test('a Present vote does not tip a majority of those voting', () => {
+  const { itemId } = newItem({ threshold: 'majority' });
+  repo.voteLedger.append(itemId, people[0], 'Yea');
+  repo.voteLedger.append(itemId, people[1], 'Nay');
+  repo.voteLedger.append(itemId, people[2], 'Present');
+
+  const o = repo.eligibility.outcome(itemId);
+  assert.equal(o.passes, false, 'Present broke a tie it has no business breaking');
+  assert.equal(o.yea, 1);
+  assert.equal(o.nay, 1);
+});
+
 /* --------------------------------------------------------- eligibility ---- */
 
 test('a recused member leaves the denominator', () => {

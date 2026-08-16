@@ -2049,3 +2049,190 @@ test('the Board Code arrives with its structure intact', () => {
     assert.ok(repo.code.byCitation(c), `§${c} is missing from the Code`);
   }
 });
+
+// --- The organization, as something that holds things -------------------------
+//
+// org_units had exactly one foreign key — parent_id, pointing at itself — and
+// nothing in the schema referenced it. A tree that nothing points at and that
+// points at nothing can only be a directory, and that is why the sections read
+// as unconnected: the relationships were text, so there was nothing to follow.
+
+test('a unit leads to the person who leads it, not a retyped name', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Public Works' });
+  const person = repo.people.insert({ full_name: 'Dana Reyes', email: 'dana@test.gov', title: 'Director' });
+  repo.org.update(unit, { level: 'Department', name: 'Public Works', leader_person_id: person });
+
+  const leader = repo.org.leader(repo.org.get(unit));
+  assert.equal(leader.id, person, 'the unit does not reach the person record');
+  assert.equal(leader.full_name, 'Dana Reyes');
+  // Contact details come from the person, so they cannot drift from the roster.
+  assert.equal(leader.email, 'dana@test.gov');
+});
+
+test('a leader who is not in the roster is still named', () => {
+  // Not every unit is led by someone with a people row — a vacancy filled by an
+  // outside administrator, say. The text columns stay for exactly that.
+  const unit = repo.org.insert({
+    level: 'Office', name: 'Interim Office', leader_name: 'A Contractor', leader_title: 'Interim',
+  });
+  const leader = repo.org.leader(repo.org.get(unit));
+  assert.equal(leader.id, null);
+  assert.equal(leader.full_name, 'A Contractor');
+});
+
+test('a unit reports the appropriations it holds and what it has spent', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Parks' });
+  const budgetId = repo.budget.create({ fiscal_year: 'FY2027', status: 'Adopted' });
+  const line = repo.budget.addLine({
+    budget_id: budgetId, name: 'Grounds maintenance', kind: 'Expense', amount: 50000,
+    org_unit_id: unit,
+  });
+  repo.budget.addTransaction({ budget_line_id: line, tx_date: '2026-08-01', amount: 12000, description: 'Q1' });
+
+  const totals = repo.org.budgetTotals(unit);
+  assert.equal(totals.expense, 50000, 'the unit does not know what it was appropriated');
+  assert.equal(totals.spent, 12000, 'the unit does not know what it has spent');
+
+  const lines = repo.org.budgetLines(unit);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].fiscal_year, 'FY2027');
+});
+
+test('revenue is not netted against spending', () => {
+  // A department that collects fees would otherwise appear to spend nothing.
+  const unit = repo.org.insert({ level: 'Department', name: 'Licensing' });
+  const budgetId = repo.budget.create({ fiscal_year: 'FY2027', status: 'Adopted' });
+  repo.budget.addLine({ budget_id: budgetId, name: 'Permit fees', kind: 'Revenue', amount: 80000, org_unit_id: unit });
+  repo.budget.addLine({ budget_id: budgetId, name: 'Inspectors', kind: 'Expense', amount: 30000, org_unit_id: unit });
+
+  const t = repo.org.budgetTotals(unit);
+  assert.equal(t.revenue, 80000);
+  assert.equal(t.expense, 30000, 'revenue was folded into the expense total');
+});
+
+test('a unit lists what it has brought before the Board', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Transport' });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Bridge repair', status: 'Introduced' });
+  db.prepare('UPDATE matters SET org_unit_id = ? WHERE id = ?').run(unit, m.id);
+
+  const brought = repo.org.matters(unit);
+  assert.equal(brought.length, 1);
+  assert.equal(brought[0].title, 'Bridge repair');
+});
+
+test('the unit picker offers the tree, indented', () => {
+  const parent = repo.org.insert({ level: 'Division', name: 'Operations Division' });
+  repo.org.insert({ level: 'Department', name: 'Fleet', parent_id: parent });
+  const opts = repo.org.options();
+  const fleet = opts.find((o) => o.label.includes('Fleet'));
+  assert.ok(fleet, 'the child unit is not offered');
+  assert.match(fleet.label, /└/, 'the child is not shown as nested');
+});
+
+// --- Getting around -----------------------------------------------------------
+
+test('every page opens with exactly one heading', () => {
+  // layout() rendered its page header only when a subtitle was passed, which
+  // two of ninety-one pages did. The rest either dropped a bare <h1> in the
+  // body or opened with nothing at all, so pages started three different ways
+  // and some started with no statement of where you were.
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({ title: 'A Page', body: '<p>x</p>' }));
+  assert.equal((out.match(/<h1/g) || []).length, 1, 'a page without a subtitle has no heading');
+  assert.match(out, /<h1>A Page<\/h1>/);
+});
+
+test('the page header carries a trail, and the current page is not a link to itself', () => {
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({
+    title: 'Packet',
+    crumbs: [{ href: '/meetings', label: 'Meetings' }, { label: 'Packet' }],
+    body: '',
+  }));
+  assert.match(out, /<a href="\/meetings">Meetings<\/a>/);
+  assert.ok(!/<a[^>]*>Packet<\/a>/.test(out), 'the current page links to itself');
+});
+
+test('a page can opt out of the header when it is itself a document', () => {
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({ title: 'Agenda Packet', heading: false, body: '<article>x</article>' }));
+  assert.equal((out.match(/<h1/g) || []).length, 0);
+});
+
+test('meetings are in the navigation', () => {
+  // The one object the application is built around was reachable only through
+  // the Calendar, or through Today's Docket, which was filed under Legislation.
+  const { navFor } = require('../src/views/layout');
+  const hrefs = navFor(null).flatMap((g) => g.items.map((i) => i.href));
+  assert.ok(hrefs.includes('/meetings'), 'there is no way to meetings from the nav');
+  const meetingsGroup = navFor(null).find((g) => g.label === 'Meetings');
+  assert.ok(meetingsGroup, 'meetings has no section of its own');
+  assert.ok(meetingsGroup.items.some((i) => i.href === '/docket'),
+    "Today's Docket is still filed away from meetings");
+});
+
+test('the meetings index reports the state of the work, not just the date', () => {
+  const pages = require('../src/views/pages');
+  const b = repo.bodies.insert({ name: 'Index Board', type: 'Governing Body', seats: 3 });
+  // One meeting held with nothing recorded, one scheduled with no agenda.
+  repo.meetings.insert({ body_id: b, meeting_date: '2020-01-02' });
+  repo.meetings.insert({ body_id: b, meeting_date: '2099-01-02' });
+
+  const out = String(pages.meetingsIndex({ role: 'clerk', id: 1 }));
+  assert.match(out, /No agenda yet/, 'a meeting with no agenda is not flagged');
+  assert.match(out, /Upcoming/);
+  assert.match(out, /Held/);
+});
+
+test('the meeting workflow states the whole path on every screen of it', () => {
+  const b = repo.bodies.insert({ name: 'Steps Board', type: 'Governing Body', seats: 3 });
+  const id = repo.meetings.insert({ body_id: b, meeting_date: '2099-03-03' });
+  const admin = require('../src/views/admin');
+  const out = String(admin.agendaManager(repo.meetings.get(id), {}));
+  for (const label of ['Schedule', 'Agenda', 'Packet', 'Run live', 'Minutes']) {
+    assert.ok(out.includes(label), `the step strip omits ${label}`);
+  }
+  assert.match(out, /aria-current="step"/, 'the strip does not say which step you are on');
+  assert.match(out, /Next: Packet/, 'the strip does not say what comes next');
+});
+
+// --- Not making the clerk say the same thing three times ----------------------
+
+test('the status follows from the action that was recorded', () => {
+  // Recording one event took three fields: the action, its result, and then
+  // the status, separately. The status was optional, so "Adopted / Pass" with
+  // the third field left alone produced a file whose history said it had
+  // carried and whose status still said Introduced -- a record disagreeing
+  // with itself, with nothing to notice.
+  const cases = [
+    ['Adopted', 'Pass', 'Passed'],
+    ['Passed on second reading', 'Pass', 'Passed'],
+    ['Referred to Finance Committee', '', 'In Committee'],
+    ['Withdrawn by sponsor', '', 'Withdrawn'],
+    ['Enacted', '', 'Enacted'],
+    ['Introduced', '', 'Introduced'],
+    ['Motion to adopt', 'Fail', 'Failed'],
+    ['Vetoed by the Chair', '', 'Vetoed'],
+  ];
+  for (const [action, result, expected] of cases) {
+    assert.equal(repo.matters.statusFromAction(action, result), expected,
+      `"${action}" (${result || 'no result'}) should imply ${expected}`);
+  }
+});
+
+test('tabling is not passing, even when the motion to table carries', () => {
+  // The motion succeeds, so the result is Pass -- but the measure is Tabled.
+  // Checking the pass verbs first would have called this one Passed.
+  assert.equal(repo.matters.statusFromAction('Motion to table', 'Pass'), 'Tabled');
+  assert.equal(repo.matters.statusFromAction('Tabled indefinitely', 'Pass'), 'Tabled');
+});
+
+test('an action that implies nothing leaves the status alone', () => {
+  assert.equal(repo.matters.statusFromAction('Discussed', ''), null);
+  assert.equal(repo.matters.statusFromAction('', 'Pass'), null,
+    'a result with no action should not move the file');
+});
+
+test('a failed vote on a veto is a veto, not a plain failure', () => {
+  assert.equal(repo.matters.statusFromAction('Veto override', 'Fail'), 'Vetoed');
+});
