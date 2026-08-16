@@ -896,6 +896,7 @@ route('POST', /^\/admin\/budget\/(\d+)\/lines$/, (req, res, ctx) => {
       budget_id: b.id, category: ctx.body.category, name: ctx.body.name,
       kind: ctx.body.kind, amount: ctx.body.amount,
       appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
+      org_unit_id: ctx.body.org_unit_id ? Number(ctx.body.org_unit_id) : null,
     });
   }
   redirect(res, `/budget/${b.id}`);
@@ -907,6 +908,7 @@ route('POST', /^\/admin\/budget-lines\/(\d+)$/, (req, res, ctx) => {
     repo.budget.updateLine(l.id, {
       category: ctx.body.category, name: ctx.body.name, kind: ctx.body.kind, amount: ctx.body.amount,
       appropriation_code: ctx.body.appropriation_code, project_code: ctx.body.project_code,
+      org_unit_id: ctx.body.org_unit_id ? Number(ctx.body.org_unit_id) : null,
     });
   }
   redirect(res, `/budget/${l.budget_id}`);
@@ -999,6 +1001,7 @@ route('POST', /^\/admin\/org$/, (req, res, ctx) => {
   if (!b.name || !b.level) return redirect(res, '/admin/org/new');
   const id = repo.org.insert({
     parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_person_id: b.leader_person_id ? Number(b.leader_person_id) : null,
     leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
     leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
   });
@@ -1020,6 +1023,7 @@ route('POST', /^\/admin\/org\/(\d+)$/, (req, res, ctx) => {
   const b = ctx.body;
   repo.org.update(id, {
     parent_id: b.parent_id ? Number(b.parent_id) : null, level: b.level, name: b.name,
+    leader_person_id: b.leader_person_id ? Number(b.leader_person_id) : null,
     leader_name: b.leader_name, leader_title: b.leader_title, leader_email: b.leader_email,
     leader_phone: b.leader_phone, description: b.description, sort_order: Number(b.sort_order) || 0,
   });

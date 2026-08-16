@@ -770,6 +770,10 @@ const COLUMN_MIGRATIONS = {
     body_html: 'TEXT',
     fiscal_impact: 'REAL',                         // dollar impact of this item
     budget_line_id: 'INTEGER REFERENCES budget_lines(id) ON DELETE SET NULL',
+    // The part of the organization that brought the measure. A department's
+    // page can then show what it has before the Board, which is most of what
+    // makes an org chart worth opening.
+    org_unit_id: 'INTEGER REFERENCES org_units(id) ON DELETE SET NULL',
     fiscal_recurring: 'INTEGER NOT NULL DEFAULT 0', // 1 = ongoing annual cost, 0 = one-time
     fiscal_note: 'TEXT',                            // narrative fiscal note
     amends_policy_id: 'INTEGER REFERENCES policies(id) ON DELETE SET NULL', // comparative print target
@@ -815,6 +819,11 @@ const COLUMN_MIGRATIONS = {
   budget_lines: {
     appropriation_code: 'TEXT', // legal appropriation account (e.g. 100-4200-51000)
     project_code: 'TEXT',       // capital project / grant tracking code
+    // Which unit holds this appropriation. `category` remains the accounting
+    // grouping; this is the part of the organization answerable for spending
+    // it, and it is what lets a department page state its own budget instead
+    // of the budget being a separate island keyed by a typed-in string.
+    org_unit_id: 'INTEGER REFERENCES org_units(id) ON DELETE SET NULL',
   },
   attachments: {
     file_path: 'TEXT',      // relative path under the uploads dir (uploaded files)
@@ -835,6 +844,26 @@ const COLUMN_MIGRATIONS = {
   },
   workflow_steps: {
     assignee_id: 'INTEGER REFERENCES users(id)',  // who this approval is routed to
+  },
+  // The organization chart, given something to be about.
+  //
+  // org_units had exactly one foreign key: parent_id, pointing at itself.
+  // Nothing else in fifty-two tables referenced it, and it referenced nothing
+  // — the unit's leader was three loose text columns, so the person running a
+  // department was a typed-in name rather than the people row sitting two
+  // tables away. A tree that nothing points at and that points at nothing can
+  // only be a directory, however it is presented.
+  //
+  // That is also why the sections read as unconnected: the relationships were
+  // stored as text instead of references, so there was nothing to traverse.
+  // The same department existed twice — once as an org_unit and once as a
+  // budget_lines.category string — and the two could disagree without anything
+  // noticing.
+  org_units: {
+    // The leader as the person record, not a retyped name. The text columns
+    // stay for units led by someone who is not in the roster (a vacancy, an
+    // outside administrator), and the person wins where both are set.
+    leader_person_id: 'INTEGER REFERENCES people(id) ON DELETE SET NULL',
   },
 };
 

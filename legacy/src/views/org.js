@@ -10,9 +10,15 @@ function levelBadge(level) {
 }
 
 function leaderLine(u) {
-  if (!u.leader_name) return '<span class="muted">Leader: vacant</span>';
-  const title = u.leader_title ? ` <span class="muted">— ${escapeText(u.leader_title)}</span>` : '';
-  return `<span class="org-leader">👤 ${escapeText(u.leader_name)}${title}</span>`;
+  const l = repo.org.leader(u);
+  if (!l) return '<span class="muted">Leader: vacant</span>';
+  const title = l.title ? ` <span class="muted">— ${escapeText(l.title)}</span>` : '';
+  // Linked where the leader is a person of record, so the chart reaches the
+  // rest of the system instead of repeating a name back at you.
+  const who = l.id
+    ? `<a href="/people/${l.id}">${escapeText(l.full_name)}</a>`
+    : escapeText(l.full_name);
+  return `<span class="org-leader">${who}${title}</span>`;
 }
 
 // --- Public directory (nested tree) -----------------------------------------
@@ -74,34 +80,80 @@ function unitLockup(unit, ancestors = []) {
 }
 
 function orgUnitDetail(unit) {
+  const { money } = require('./budget');
   const ancestors = repo.org.ancestors(unit.id);
   const children = repo.org.children(unit.id);
-  const crumbs = [`<a href="/org">Organization</a>`]
-    .concat(ancestors.map((a) => `<a href="/org/${a.id}">${escapeText(a.name)}</a>`))
-    .concat([escapeText(unit.name)]).join(' / ');
+  const leader = repo.org.leader(unit);
+  const lines = repo.org.budgetLines(unit.id);
+  const totals = repo.org.budgetTotals(unit.id);
+  const matters = repo.org.matters(unit.id);
 
-  const leaderCard = unit.leader_name ? `
+  const leaderCard = leader ? `
     <dl class="meta record-header">
-      <dt>Leader</dt><dd>${escapeText(unit.leader_name)}</dd>
-      ${unit.leader_title ? `<dt>Title</dt><dd>${escapeText(unit.leader_title)}</dd>` : ''}
-      ${unit.leader_email ? `<dt>Email</dt><dd><a href="mailto:${escapeText(unit.leader_email)}">${escapeText(unit.leader_email)}</a></dd>` : ''}
-      ${unit.leader_phone ? `<dt>Phone</dt><dd>${escapeText(unit.leader_phone)}</dd>` : ''}
+      <dt>Leader</dt><dd>${leader.id
+    ? `<a href="/people/${leader.id}">${escapeText(leader.full_name)}</a>`
+    : escapeText(leader.full_name)}</dd>
+      ${leader.title ? `<dt>Title</dt><dd>${escapeText(leader.title)}</dd>` : ''}
+      ${leader.email ? `<dt>Email</dt><dd><a href="mailto:${escapeText(leader.email)}">${escapeText(leader.email)}</a></dd>` : ''}
+      ${leader.phone ? `<dt>Phone</dt><dd>${escapeText(leader.phone)}</dd>` : ''}
     </dl>` : emptyState('Leadership position is currently vacant.');
+
+  // What the unit is answerable for. This is the whole point of linking the
+  // chart to the rest of the record: a department page that cannot say what it
+  // spends or what it has before the Board is a name in a list.
+  const remaining = totals.expense - totals.spent;
+  const budgetCard = (lines.length || totals.expense || totals.revenue) ? `
+    <div class="stat-grid small">
+      <div class="stat"><span class="stat-n">${money(totals.expense)}</span><span class="stat-l">Appropriated</span></div>
+      <div class="stat"><span class="stat-n">${money(totals.spent)}</span><span class="stat-l">Spent</span></div>
+      <div class="stat${remaining < 0 ? ' stat-flag' : ''}"><span class="stat-n">${money(remaining)}</span><span class="stat-l">Remaining</span></div>
+      ${totals.revenue ? `<div class="stat"><span class="stat-n">${money(totals.revenue)}</span><span class="stat-l">Revenue</span></div>` : ''}
+    </div>
+    ${lines.length ? `<table class="data"><thead><tr><th>FY</th><th>Appropriation</th><th>Code</th>
+      <th class="num">Amount</th></tr></thead><tbody>${lines.map((l) => `
+      <tr>
+        <td>${escapeText(l.fiscal_year)}</td>
+        <td><a href="/budget/${l.budget_id}">${escapeText(l.name)}</a></td>
+        <td class="muted">${escapeText(l.appropriation_code || '—')}</td>
+        <td class="num">${money(l.amount)}</td>
+      </tr>`).join('')}</tbody></table>` : ''}`
+    : emptyState('No appropriation is held by this unit.');
+
+  const mattersCard = matters.length
+    ? `<table class="data"><thead><tr><th>File #</th><th>Title</th><th>Type</th><th>Status</th></tr></thead>
+       <tbody>${matters.map((m) => `
+        <tr>
+          <td><a href="/legislation/${encodeURIComponent(m.file_number)}">${escapeText(m.file_number)}</a></td>
+          <td class="title-cell">${escapeText(m.title)}</td>
+          <td>${escapeText(m.type)}</td>
+          <td>${escapeText(m.status)}</td>
+        </tr>`).join('')}</tbody></table>`
+    : emptyState('This unit has brought nothing before the Board.');
 
   const childRows = children.length
     ? `<ul class="org-tree">${children.map((c) => `<li class="org-node"><div class="org-row">${levelBadge(c.level)}<a class="org-name" href="/org/${c.id}">${escapeText(c.name)}</a>${leaderLine(c)}</div></li>`).join('')}</ul>`
     : emptyState('No sub-units.');
 
   const body = html`
-    <p class="crumbs">${raw(crumbs)}</p>
     ${raw(unitLockup(unit, ancestors))}
-    <div class="detail-head">
-      <a class="btn" href="/admin/org/${unit.id}/edit">Manage this ${escapeText(unit.level.toLowerCase())}</a>
-    </div>
+    ${raw(card('Budget', budgetCard, {
+    actions: `<a class="btn-link" href="/budget">All budgets →</a>`,
+  }))}
+    ${raw(card('Before the Board', mattersCard))}
     ${raw(card('Leadership', leaderCard))}
     ${unit.description ? raw(card('About', `<p>${escapeText(unit.description)}</p>`)) : ''}
     ${raw(card('Sub-units', childRows))}`;
-  return layout({ title: unit.name, active: '/org', body });
+
+  return layout({
+    title: unit.name,
+    subtitle: unit.level,
+    crumbs: [{ href: '/org', label: 'Organization' }]
+      .concat(ancestors.map((a) => ({ href: `/org/${a.id}`, label: a.name })))
+      .concat([{ label: unit.name }]),
+    actions: `<a class="btn" href="/admin/org/${unit.id}/edit">Manage this ${escapeText(unit.level.toLowerCase())}</a>`,
+    active: '/org',
+    body,
+  });
 }
 
 // --- Admin: manage tree ------------------------------------------------------
@@ -167,6 +219,11 @@ function orgForm(unit, opts = {}) {
   const parentOpts = '<option value="">— none (top level) —</option>' + repo.org.all()
     .filter((u) => !unit || u.id !== unit.id)
     .map((u) => `<option value="${u.id}"${String(u.id) === String(parentId) ? ' selected' : ''}>${escapeText(u.level + ': ' + u.name)}</option>`).join('');
+  const leaderId = unit ? unit.leader_person_id : null;
+  const personOpts = '<option value="">— not linked to a person of record —</option>'
+    + repo.people.all().map((p) => `<option value="${p.id}"`
+      + `${String(p.id) === String(leaderId) ? ' selected' : ''}>`
+      + `${escapeText(p.full_name)}${p.title ? ' — ' + escapeText(p.title) : ''}</option>`).join('');
 
   const form = html`
     <form class="form" method="post" action="${action}">
@@ -177,8 +234,14 @@ function orgForm(unit, opts = {}) {
       <label>Name<input type="text" name="name" required value="${unit ? unit.name : ''}" placeholder="e.g. Department of Public Works"></label>
       <fieldset>
         <legend>Leader</legend>
+        <label>Person of record
+          <select name="leader_person_id">${raw(personOpts)}</select>
+          <small class="muted">Linking a person connects this unit to their profile, their
+            seats and their voting record. Use the fields below only for a leader who is not
+            in the roster.</small>
+        </label>
         <div class="form-row">
-          <label>Name<input type="text" name="leader_name" value="${unit ? (unit.leader_name || '') : ''}" placeholder="Individual leader"></label>
+          <label>Name (if not in the roster)<input type="text" name="leader_name" value="${unit ? (unit.leader_name || '') : ''}" placeholder="Individual leader"></label>
           <label>Title<input type="text" name="leader_title" value="${unit ? (unit.leader_title || '') : ''}" placeholder="e.g. Director"></label>
         </div>
         <div class="form-row">
@@ -194,11 +257,17 @@ function orgForm(unit, opts = {}) {
         ${isEdit ? raw(`<a class="btn-link" href="/org/${unit.id}">View</a>`) : ''}
       </div>
     </form>`;
-  const body = html`
-    <p class="crumbs"><a href="/admin/org">Manage organization</a> / ${isEdit ? escapeText(unit.name) : 'New unit'}</p>
-    <h1>${isEdit ? 'Edit ' + escapeText(unit.name) : 'New organizational unit'}</h1>
-    ${raw(card(isEdit ? 'Unit details' : 'Create unit', form))}`;
-  return layout({ title: isEdit ? 'Edit unit' : 'New unit', active: '/admin', body });
+  const body = html`${raw(card(isEdit ? 'Unit details' : 'Create unit', form))}`;
+  return layout({
+    title: isEdit ? `Edit ${unit.name}` : 'New organizational unit',
+    subtitle: isEdit ? unit.level : 'A division, department, office or unit of the organization.',
+    crumbs: [
+      { href: '/admin/org', label: 'Manage organization' },
+      { label: isEdit ? unit.name : 'New unit' },
+    ],
+    active: '/admin',
+    body,
+  });
 }
 
 module.exports = { orgDirectory, orgUnitDetail, orgAdmin, orgForm };

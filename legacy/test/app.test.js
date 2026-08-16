@@ -2049,3 +2049,82 @@ test('the Board Code arrives with its structure intact', () => {
     assert.ok(repo.code.byCitation(c), `§${c} is missing from the Code`);
   }
 });
+
+// --- The organization, as something that holds things -------------------------
+//
+// org_units had exactly one foreign key — parent_id, pointing at itself — and
+// nothing in the schema referenced it. A tree that nothing points at and that
+// points at nothing can only be a directory, and that is why the sections read
+// as unconnected: the relationships were text, so there was nothing to follow.
+
+test('a unit leads to the person who leads it, not a retyped name', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Public Works' });
+  const person = repo.people.insert({ full_name: 'Dana Reyes', email: 'dana@test.gov', title: 'Director' });
+  repo.org.update(unit, { level: 'Department', name: 'Public Works', leader_person_id: person });
+
+  const leader = repo.org.leader(repo.org.get(unit));
+  assert.equal(leader.id, person, 'the unit does not reach the person record');
+  assert.equal(leader.full_name, 'Dana Reyes');
+  // Contact details come from the person, so they cannot drift from the roster.
+  assert.equal(leader.email, 'dana@test.gov');
+});
+
+test('a leader who is not in the roster is still named', () => {
+  // Not every unit is led by someone with a people row — a vacancy filled by an
+  // outside administrator, say. The text columns stay for exactly that.
+  const unit = repo.org.insert({
+    level: 'Office', name: 'Interim Office', leader_name: 'A Contractor', leader_title: 'Interim',
+  });
+  const leader = repo.org.leader(repo.org.get(unit));
+  assert.equal(leader.id, null);
+  assert.equal(leader.full_name, 'A Contractor');
+});
+
+test('a unit reports the appropriations it holds and what it has spent', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Parks' });
+  const budgetId = repo.budget.create({ fiscal_year: 'FY2027', status: 'Adopted' });
+  const line = repo.budget.addLine({
+    budget_id: budgetId, name: 'Grounds maintenance', kind: 'Expense', amount: 50000,
+    org_unit_id: unit,
+  });
+  repo.budget.addTransaction({ budget_line_id: line, tx_date: '2026-08-01', amount: 12000, description: 'Q1' });
+
+  const totals = repo.org.budgetTotals(unit);
+  assert.equal(totals.expense, 50000, 'the unit does not know what it was appropriated');
+  assert.equal(totals.spent, 12000, 'the unit does not know what it has spent');
+
+  const lines = repo.org.budgetLines(unit);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].fiscal_year, 'FY2027');
+});
+
+test('revenue is not netted against spending', () => {
+  // A department that collects fees would otherwise appear to spend nothing.
+  const unit = repo.org.insert({ level: 'Department', name: 'Licensing' });
+  const budgetId = repo.budget.create({ fiscal_year: 'FY2027', status: 'Adopted' });
+  repo.budget.addLine({ budget_id: budgetId, name: 'Permit fees', kind: 'Revenue', amount: 80000, org_unit_id: unit });
+  repo.budget.addLine({ budget_id: budgetId, name: 'Inspectors', kind: 'Expense', amount: 30000, org_unit_id: unit });
+
+  const t = repo.org.budgetTotals(unit);
+  assert.equal(t.revenue, 80000);
+  assert.equal(t.expense, 30000, 'revenue was folded into the expense total');
+});
+
+test('a unit lists what it has brought before the Board', () => {
+  const unit = repo.org.insert({ level: 'Department', name: 'Transport' });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Bridge repair', status: 'Introduced' });
+  db.prepare('UPDATE matters SET org_unit_id = ? WHERE id = ?').run(unit, m.id);
+
+  const brought = repo.org.matters(unit);
+  assert.equal(brought.length, 1);
+  assert.equal(brought[0].title, 'Bridge repair');
+});
+
+test('the unit picker offers the tree, indented', () => {
+  const parent = repo.org.insert({ level: 'Division', name: 'Operations Division' });
+  repo.org.insert({ level: 'Department', name: 'Fleet', parent_id: parent });
+  const opts = repo.org.options();
+  const fleet = opts.find((o) => o.label.includes('Fleet'));
+  assert.ok(fleet, 'the child unit is not offered');
+  assert.match(fleet.label, /└/, 'the child is not shown as nested');
+});
