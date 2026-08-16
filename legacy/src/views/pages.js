@@ -67,11 +67,6 @@ function dashboard() {
   const body = html`
     ${sessionBanner}
     ${nextCard}
-    <div class="hero">
-      <h1>Legislative Docket</h1>
-      <p>Track ordinances, resolutions, and motions from introduction through final action.
-         Browse the public record of meetings, agendas, votes, and council members.</p>
-    </div>
     <div class="stat-grid">${raw(statCards.join(''))}</div>
     <div class="grid-2">
       ${raw(card('Upcoming meetings',
@@ -86,7 +81,13 @@ function dashboard() {
       `<table class="data"><thead><tr><th>File #</th><th>Type</th><th>Title</th><th>Status</th></tr></thead><tbody>${recentRows.join('')}</tbody></table>`,
       { actions: '<a class="btn-link" href="/legislation">All legislation →</a>' }))}
   `;
-  return layout({ title: 'Dashboard', active: '/', body });
+  return layout({
+    title: 'Legislative Docket',
+    subtitle: 'Ordinances, resolutions and motions from introduction through final action, '
+      + 'with the public record of meetings, agendas and votes.',
+    active: '/',
+    body,
+  });
 }
 
 // --- Legislation list --------------------------------------------------------
@@ -463,33 +464,35 @@ function matterDetail(matter, query = {}, user = null) {
     : '';
 
   const body = html`
-    <p class="crumbs"><a href="/legislation">Legislation</a> / ${matter.file_number}</p>
     ${codifyNotice}
     ${commentedNotice}
     ${raw(tracker)}
-    <div class="detail-head">
-      <h1>${matter.title}</h1>
-      <span class="head-actions">
-        ${user ? raw(`
-        <form method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/watch" class="inline">
-          <button type="submit" class="btn">${repo.watches.isWatching(user.id, matter.id) ? '★ Watching' : '☆ Watch'}</button>
-        </form>`) : ''}
-        <a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}.rss" title="Activity feed">RSS</a>
-        ${auth.hasRole(user, 'clerk') ? raw(`
-        <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft" title="Structured drafting, validation and the provision outline">Draft text</a>
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter" title="Write the board letter as its standard sections">Board letter</a>
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare" title="Compare versions, or this measure against current law">Comparative print</a>
-        <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
-          <button type="submit" class="btn">+ Draft staff report</button>
-        </form>`) : ''}
-      </span>
-    </div>
     ${raw(card('Record', meta))}
     ${raw(tabbed)}
     <script src="/assets/tabs.js" defer></script>
   `;
-  return layout({ title: matter.file_number, active: '/legislation', body });
+  const actions = `
+    ${user ? `
+    <form method="post" action="/legislation/${encodeURIComponent(matter.file_number)}/watch" class="inline">
+      <button type="submit" class="btn">${repo.watches.isWatching(user.id, matter.id) ? '★ Watching' : '☆ Watch'}</button>
+    </form>` : ''}
+    <a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}.rss" title="Activity feed">RSS</a>
+    ${auth.hasRole(user, 'clerk') ? `
+    <a class="btn" href="/admin/matters/${matter.id}/edit">Manage</a>
+    <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft" title="Structured drafting, validation and the provision outline">Draft text</a>
+    <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter" title="Write the board letter as its standard sections">Board letter</a>
+    <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare" title="Compare versions, or this measure against current law">Comparative print</a>
+    <form method="post" action="/admin/matters/${matter.id}/reports/draft" class="inline">
+      <button type="submit" class="btn">+ Draft staff report</button>
+    </form>` : ''}`;
+  return layout({
+    title: matter.title,
+    subtitle: `${matter.type} ${matter.file_number}`,
+    crumbs: [{ href: '/legislation', label: 'Legislation' }, { label: matter.file_number }],
+    actions,
+    active: '/legislation',
+    body,
+  });
 }
 
 // Amendment comparison: inline redline between two text versions.
@@ -526,11 +529,18 @@ function matterComparePage(matter, query = {}) {
       <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>`;
 
   const body = html`
-    <p class="crumbs"><a href="/legislation">Legislation</a> /
-      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Compare</p>
-    <h1>${matter.title}</h1>
     ${raw(card('Compare versions', picker + `<div class="doc-body redline">${diff.diffHtml(from.text, to.text) || emptyState('Neither version has text.')}</div>`))}`;
-  return layout({ title: `${matter.file_number} — compare`, active: '/legislation', body });
+  return layout({
+    title: matter.title,
+    subtitle: `Comparing versions of ${matter.file_number}`,
+    crumbs: [
+      { href: '/legislation', label: 'Legislation' },
+      { href: `/legislation/${encodeURIComponent(matter.file_number)}`, label: matter.file_number },
+      { label: 'Compare' },
+    ],
+    active: '/legislation',
+    body,
+  });
 }
 
 // Comparative print: the proposed text as a redline against the current
@@ -541,15 +551,22 @@ function matterChangesPage(matter, policy) {
   const proposed = matter.body_html ? diff.stripHtml(matter.body_html) : (matter.full_text || '');
   const st = diff.stats(current, proposed);
   const body = html`
-    <p class="crumbs"><a href="/legislation">Legislation</a> /
-      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Changes to existing policy</p>
-    <h1>${matter.title}</h1>
     <p class="muted">Showing ${matter.file_number} as changes to
       <a href="/policies/${policy.id}">${policy.policy_number ? policy.policy_number + ' — ' : ''}${policy.title}</a>:
       <ins class="df-ins">added</ins> and <del class="df-del">removed</del> text ·
       <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>
     ${raw(card('Comparative print', `<div class="doc-body redline">${diff.diffHtml(current, proposed) || emptyState('No text to compare.')}</div>`))}`;
-  return layout({ title: `${matter.file_number} — changes`, active: '/legislation', body });
+  return layout({
+    title: matter.title,
+    subtitle: `${matter.file_number} as changes to existing policy`,
+    crumbs: [
+      { href: '/legislation', label: 'Legislation' },
+      { href: `/legislation/${encodeURIComponent(matter.file_number)}`, label: matter.file_number },
+      { label: 'Changes to existing policy' },
+    ],
+    active: '/legislation',
+    body,
+  });
 }
 
 // Archived text version of a matter (public record, like the current text).
@@ -559,14 +576,21 @@ function matterVersionPage(matter, ver) {
     ? `<div class="doc-body">${ver.body_html}</div>`
     : (ver.full_text ? `<pre class="fulltext">${escapeText(ver.full_text)}</pre>` : emptyState('This version had no text.'));
   const body = html`
-    <p class="crumbs"><a href="/legislation">Legislation</a> /
-      <a href="/legislation/${encodeURIComponent(matter.file_number)}">${matter.file_number}</a> / Version ${ver.version}</p>
-    <h1>${matter.title}</h1>
     <div class="form-warn">You are viewing <strong>archived version ${ver.version}</strong> of ${matter.file_number}
       (archived ${raw(formatDate(ver.created_at))}). The current text is
       <a href="/legislation/${encodeURIComponent(matter.file_number)}">version ${currentVersion}</a>.</div>
     ${raw(card(`Text — version ${ver.version}`, text))}`;
-  return layout({ title: `${matter.file_number} v${ver.version}`, active: '/legislation', body });
+  return layout({
+    title: matter.title,
+    subtitle: `Archived version ${ver.version} of ${matter.file_number}`,
+    crumbs: [
+      { href: '/legislation', label: 'Legislation' },
+      { href: `/legislation/${encodeURIComponent(matter.file_number)}`, label: matter.file_number },
+      { label: `Version ${ver.version}` },
+    ],
+    active: '/legislation',
+    body,
+  });
 }
 
 // --- Calendar ----------------------------------------------------------------
@@ -689,13 +713,14 @@ function accountabilityPage() {
           <td>${m.last_note ? raw(`${escapeText(m.last_note)} <span class="muted">· ${escapeText(formatDate(m.last_update))}</span>`) : ''}</td>
         </tr>`).join('')}</tbody></table>`
     : emptyState('No enacted legislation to track yet.');
-  const body = html`
-    <h1>Accountability</h1>
-    <p class="muted">What happened after adoption: implementation progress for enacted and passed legislation,
-      updated by the ${ORG.clerkOffice}.</p>
-    ${raw(card('Implementation tracker', table))}`;
-  return layout({ title: 'Accountability', active: '/accountability',
-    subtitle: 'Following legislation through to delivery.', body });
+  const body = html`${raw(card('Implementation tracker', table))}`;
+  return layout({
+    title: 'Accountability',
+    subtitle: `What happened after adoption: implementation progress for enacted and passed `
+      + `legislation, updated by the ${ORG.clerkOffice}.`,
+    active: '/accountability',
+    body,
+  });
 }
 
 // Reading a relation from the other end: "A supersedes B" reads on B's page
@@ -783,16 +808,6 @@ function meetingDetail(meeting, query = {}) {
   ].filter(Boolean).join(' · ');
 
   const body = html`
-    <p class="crumbs"><a href="/calendar">Calendar</a> / Meeting</p>
-    <div class="detail-head">
-      <h1>${meeting.body_name}</h1>
-      <span class="head-actions">
-        <a class="btn" href="/live/${meeting.id}">● Live</a>
-        <a class="btn" href="/meetings/${meeting.id}/packet">📄 Agenda packet</a>
-        <a class="btn" href="/meetings/${meeting.id}/minutes">🧾 Minutes</a>
-        <a class="btn" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>
-      </span>
-    </div>
     ${raw(card('Meeting details', html`
       <dl class="meta record-header">
         <dt>Name</dt><dd>${meeting.body_name}</dd>
@@ -809,7 +824,22 @@ function meetingDetail(meeting, query = {}) {
     ${raw(card('Meeting items', itemsGrid))}
     ${raw(speakCard(meeting, items, query))}
   `;
-  return layout({ title: meeting.body_name + ' Meeting', active: '/calendar', body });
+  return layout({
+    title: meeting.body_name,
+    subtitle: [formatDate(meeting.meeting_date), meeting.meeting_time, meeting.location]
+      .filter(Boolean).join(' · '),
+    crumbs: [
+      { href: '/meetings', label: 'Meetings' },
+      { label: formatDate(meeting.meeting_date) || 'Meeting' },
+    ],
+    actions: `
+      <a class="btn" href="/live/${meeting.id}">● Live</a>
+      <a class="btn" href="/meetings/${meeting.id}/packet">Agenda packet</a>
+      <a class="btn" href="/meetings/${meeting.id}/minutes">Minutes</a>
+      <a class="btn" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>`,
+    active: '/meetings',
+    body,
+  });
 }
 
 // Public request-to-speak sign-up, shown while a meeting still accepts
@@ -912,14 +942,22 @@ function agendaPacket(meeting) {
     </div>
     <article class="packet">
       <header class="pk-head">
+        ${raw(documentSeal())}
         <h1>${meeting.body_name}</h1>
         <p class="pk-sub">Agenda Packet</p>
         <p class="pk-when">${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))}${meeting.location ? ' · ' + meeting.location : ''}</p>
       </header>
       ${raw(blocks || emptyState('No agenda items posted.'))}
-      <footer class="pk-foot">Generated by Legislative Docket Manager</footer>
+      <footer class="pk-foot">Issued by the ${escapeText(ORG.clerkOffice)} · ${escapeText(ORG.name)}</footer>
     </article>`;
-  return layout({ title: 'Agenda Packet', active: '/calendar', body });
+  // A document supplies its own masthead, so the page header would be a second
+  // heading above it — and on paper the page header is not there at all.
+  return layout({
+    title: 'Agenda Packet',
+    heading: false,
+    active: '/meetings',
+    body,
+  });
 }
 
 // --- People ------------------------------------------------------------------
@@ -1024,24 +1062,23 @@ function personDetail(person, user) {
   ];
 
   const body = html`
-    <p class="crumbs"><a href="/people">${ORG.membersLabel}</a> / ${person.full_name}</p>
-    <div class="person-head">
-      <span class="avatar lg">${initials(person.full_name)}</span>
-      <div>
-        <h1>${person.full_name}</h1>
-        <p class="muted">${[person.title, person.district, person.party].filter(Boolean).join(' · ')}</p>
-        <p class="contact">
-          ${person.email ? raw(`<a href="mailto:${escapeText(person.email)}">${escapeText(person.email)}</a>`) : ''}
-          ${person.phone ? raw(` · ${escapeText(person.phone)}`) : ''}
-          ${person.website ? raw(` · <a href="${escapeText(person.website)}">website</a>`) : ''}
-        </p>
-        ${isClerk ? raw(`<p><a class="btn-link" href="/admin/people/${person.id}/edit">✎ Edit profile</a></p>`) : ''}
-      </div>
-    </div>
+    <p class="contact person-contact">
+      ${person.email ? raw(`<a href="mailto:${escapeText(person.email)}">${escapeText(person.email)}</a>`) : ''}
+      ${person.phone ? raw(` · ${escapeText(person.phone)}`) : ''}
+      ${person.website ? raw(` · <a href="${escapeText(person.website)}">website</a>`) : ''}
+    </p>
     ${raw(tabs(tabItems))}
     <script src="/assets/tabs.js" defer></script>
   `;
-  return layout({ title: person.full_name, active: '/people', body });
+  return layout({
+    title: person.full_name,
+    subtitle: [person.title, person.district, person.party].filter(Boolean).join(' · '),
+    crumbs: [{ href: '/people', label: ORG.membersLabel }, { label: person.full_name }],
+    actions: isClerk
+      ? `<a class="btn" href="/admin/people/${person.id}/edit">Edit profile</a>` : '',
+    active: '/people',
+    body,
+  });
 }
 
 // --- Bodies ------------------------------------------------------------------
@@ -1149,16 +1186,18 @@ function bodyDetail(b, query = {}) {
     </dl>`;
 
   const body = html`
-    <p class="crumbs"><a href="/bodies">Bodies & Committees</a> / ${b.name}</p>
-    <div class="detail-head">
-      <h1>${b.name}</h1>
-    </div>
     ${b.description ? raw(`<p class="body-desc">${escapeText(b.description)}</p>`) : ''}
     ${raw(card('Body details', meta))}
     ${raw(tabbed)}
     <script src="/assets/tabs.js" defer></script>
   `;
-  return layout({ title: b.name, active: '/bodies', body });
+  return layout({
+    title: b.name,
+    subtitle: [b.type, b.meets].filter(Boolean).join(' · '),
+    crumbs: [{ href: '/bodies', label: 'Bodies & Committees' }, { label: b.name }],
+    active: '/bodies',
+    body,
+  });
 }
 
 // --- Topics / indexes --------------------------------------------------------
@@ -1223,19 +1262,44 @@ function docket() {
     : '';
 
   const body = html`
-    <div class="detail-head">
-      <h1>Daily Docket</h1>
-      <span class="head-actions"><a class="btn-link" href="/calendar">Full calendar →</a></span>
-    </div>
-    <p class="muted">${raw(formatDate(today))}</p>
     ${raw(noMeetings)}
     ${upcomingNote}
     ${raw(meetingBlocks.join(''))}
   `;
-  return layout({ title: "Today's Docket", active: '/docket', body });
+  return layout({
+    title: "Today's Docket",
+    subtitle: formatDate(today),
+    crumbs: [{ href: '/meetings', label: 'Meetings' }, { label: 'Today' }],
+    actions: '<a class="btn" href="/meetings">All meetings</a>'
+      + ' <a class="btn" href="/calendar">Full calendar</a>',
+    active: '/docket',
+    body,
+  });
 }
 
 // --- helpers -----------------------------------------------------------------
+
+// The mark of office, for the head of anything the Board issues.
+//
+// A packet, a set of minutes or a board letter is an instrument of the Board,
+// and an instrument carries its seal. These pages print — the packet is handed
+// round the table on paper — so the seal is set on a light ground and drawn at
+// a size where the legend is still legible, which the seal itself enforces by
+// falling back to the cipher below 64px.
+//
+// An uploaded mark wins where one is supplied, on the same reasoning as the
+// rail: a board that has real artwork should see its own.
+function documentSeal(size = 92) {
+  const { sealSvg, dataUri } = require('../seal');
+  const supplied = ORG.logoUrl;
+  const { isBrandSrc } = require('./layout');
+  if (isBrandSrc(supplied)) {
+    return `<img class="doc-seal" src="${escapeText(supplied)}" width="${size}" height="${size}" alt="">`;
+  }
+  return `<img class="doc-seal" src="${escapeText(dataUri(sealSvg({ size: 512, ground: 'light' })))}" `
+    + `width="${size}" height="${size}" alt="">`;
+}
+
 function initials(name) {
   return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
     .map((p) => p[0].toUpperCase()).join('');
@@ -1266,8 +1330,24 @@ function votingRecordHtml(record, summary) {
 
 function notFound() {
   return layout({
-    title: 'Not found', active: '',
-    body: '<div class="hero"><h1>404</h1><p>The page you requested could not be found.</p><p><a class="btn" href="/">Back to dashboard</a></p></div>',
+    title: 'Page not found',
+    subtitle: 'The page you asked for is not here. It may have been moved, or the link may be wrong.',
+    active: '',
+    actions: '<a class="btn primary" href="/">Back to the docket</a>',
+    body: `<div class="grid-2">
+      ${card('Where you might be going', `<ul class="plain link-list">
+        <li><a href="/meetings">Meetings</a> — agendas, packets, minutes and the live chamber</li>
+        <li><a href="/legislation">Legislation</a> — ordinances, resolutions and motions</li>
+        <li><a href="/people">${escapeText(ORG.membersLabel)}</a> — members of record</li>
+        <li><a href="/bodies">Bodies &amp; committees</a></li>
+      </ul>`)}
+      ${card('Search', `<form class="form" action="/legislation" method="get" role="search">
+        <label>Find a measure
+          <input type="search" name="q" placeholder="File number, title or sponsor" aria-label="Search legislation">
+        </label>
+        <div class="form-actions"><button type="submit" class="btn primary">Search legislation</button></div>
+      </form>`)}
+    </div>`,
   });
 }
 

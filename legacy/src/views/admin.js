@@ -8,6 +8,43 @@ const repo = require('../repo');
 const docTemplates = require('../doc-templates');
 const { editorField } = require('./reports');
 
+// Running a meeting, as one path rather than four unrelated screens.
+//
+// The work has a fixed order — schedule it, build the agenda, assemble the
+// packet, run the roll, write the minutes — but each step lived on its own
+// page reached from its own link, so the clerk had to already know the order
+// and navigate it from memory. Nothing on the agenda screen said a packet came
+// next, and nothing on the packet screen said you were three steps into
+// something.
+//
+// So the sequence is stated on every screen in it: where you are, what is
+// behind you, what is next, and which steps are already done. `done` is read
+// from the meeting itself rather than tracked separately — a packet either has
+// material or it does not.
+function meetingSteps(meeting, current) {
+  const items = repo.meetings.items(meeting.id).length;
+  const packet = repo.meetings.packet(meeting.id).filter((r) => r.included).length;
+  const voted = repo.meetings.items(meeting.id).some((i) => i.result);
+  const steps = [
+    { id: 'details', label: 'Schedule', href: `/admin/meetings/${meeting.id}/edit`, done: true },
+    { id: 'agenda', label: 'Agenda', href: `/admin/meetings/${meeting.id}/agenda`, done: items > 0 },
+    { id: 'packet', label: 'Packet', href: `/admin/meetings/${meeting.id}/packet`, done: packet > 0 },
+    { id: 'live', label: 'Run live', href: `/admin/meetings/${meeting.id}/live`, done: voted },
+    { id: 'minutes', label: 'Minutes', href: `/admin/meetings/${meeting.id}/minutes`,
+      done: meeting.minutes_status === 'published' },
+  ];
+  const at = steps.findIndex((s) => s.id === current);
+  return `<nav class="steps" aria-label="Meeting workflow">${steps.map((s, i) => {
+    const state = s.id === current ? 'here' : (s.done ? 'done' : 'todo');
+    const mark = s.done && s.id !== current ? '✓' : String(i + 1);
+    return `<a class="step step-${state}" href="${escapeText(s.href)}"`
+      + `${s.id === current ? ' aria-current="step"' : ''}>`
+      + `<span class="step-n">${mark}</span><span class="step-l">${escapeText(s.label)}</span></a>`;
+  }).join('')}${at >= 0 && at < steps.length - 1
+    ? `<a class="step-next" href="${escapeText(steps[at + 1].href)}">Next: ${escapeText(steps[at + 1].label)} →</a>`
+    : ''}</nav>`;
+}
+
 function adminHome(user) {
   const s = repo.stats();
   const isAdmin = auth.hasRole(user, 'admin');
@@ -172,11 +209,22 @@ function matterForm(matter, opts = {}) {
   }
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / ${isEdit ? matter.file_number : 'New file'}</p>
-    <h1>${isEdit ? 'Edit ' + matter.file_number : 'New legislative file'}</h1>
     ${raw(card(isEdit ? 'File details' : 'Create file', form))}
     ${raw(extras)}`;
-  return layout({ title: isEdit ? 'Edit ' + matter.file_number : 'New file', active: '/admin', body });
+  return layout({
+    title: isEdit ? `Edit ${matter.file_number}` : 'New legislative file',
+    subtitle: isEdit ? matter.title : 'Open a file for a measure before it is drafted.',
+    crumbs: [
+      { href: '/admin', label: 'Clerk Workspace' },
+      { label: isEdit ? matter.file_number : 'New file' },
+    ],
+    actions: isEdit
+      ? `<a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}">View public record</a>`
+        + ` <a class="btn primary" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Draft the text</a>`
+      : '',
+    active: '/admin',
+    body,
+  });
 }
 
 function actionRecorder(matter) {
@@ -275,12 +323,20 @@ function matterTextForm(matter) {
       <p class="muted">Saving over existing text archives the previous text as a numbered version.</p>
     </form>
     <script src="/assets/editor.js" defer></script>`;
-  const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> /
-      <a href="/admin/matters/${matter.id}/edit">${matter.file_number}</a> / Text</p>
-    <h1>${matter.file_number} — legislation text</h1>
-    ${raw(card('Word processor', form))}`;
-  return layout({ title: `${matter.file_number} text`, active: '/admin', body });
+  const body = html`${raw(card('Word processor', form))}`;
+  return layout({
+    title: matter.title,
+    subtitle: `Legislation text — ${matter.file_number}`,
+    crumbs: [
+      { href: '/admin', label: 'Clerk Workspace' },
+      { href: `/admin/matters/${matter.id}/edit`, label: matter.file_number },
+      { label: 'Text' },
+    ],
+    actions: `<a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">`
+      + 'Structured drafting</a>',
+    active: '/admin',
+    body,
+  });
 }
 
 // --- Document form templates (per matter type) --------------------------------
@@ -302,14 +358,17 @@ function docTemplatesAdmin(type, { saved = false } = {}) {
     </form>
     <script src="/assets/editor.js" defer></script>`;
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Document templates</p>
-    <h1>Document form templates</h1>
-    <p class="muted">The boilerplate a drafter starts from for each file type — applied when drafting
-      a new file or opening a file's text for the first time.</p>
     ${saved ? raw('<p class="form-ok">Template saved.</p>') : ''}
     <div class="admin-actions">${raw(pills)}</div>
     ${raw(card(`Edit the ${active} form`, form))}`;
-  return layout({ title: 'Document templates', active: '/admin', body });
+  return layout({
+    title: 'Document form templates',
+    subtitle: 'The boilerplate a drafter starts from for each file type — applied when drafting '
+      + "a new file or opening a file's text for the first time.",
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Document templates' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // Link related files (companion / amends / supersedes) — Congress.gov-style.
@@ -415,11 +474,15 @@ function meetingForm(meeting) {
         ${isEdit ? raw(`<a class="btn-link" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>`) : ''}
       </div>
     </form>`;
-  const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / ${isEdit ? 'Edit meeting' : 'Schedule meeting'}</p>
-    <h1>${isEdit ? 'Edit meeting' : 'Schedule meeting'}</h1>
-    ${raw(card('Meeting details', form))}`;
-  return layout({ title: isEdit ? 'Edit meeting' : 'Schedule meeting', active: '/admin', body });
+  const body = html`${raw(card('Meeting details', form))}`;
+  return layout({
+    title: isEdit ? 'Edit meeting' : 'Schedule meeting',
+    subtitle: isEdit ? '' : 'Set the body, date and place. The agenda is built after.',
+    crumbs: [{ href: '/meetings', label: 'Meetings' },
+      { label: isEdit ? 'Edit' : 'Schedule' }],
+    active: '/meetings',
+    body,
+  });
 }
 
 // --- Person form (edit a board member / official) ---------------------------
@@ -449,11 +512,17 @@ function personForm(person) {
         <a class="btn-link" href="/people/${person.id}">Cancel</a>
       </div>
     </form>`;
-  const body = html`
-    <p class="crumbs"><a href="/people/${person.id}">${person.full_name}</a> / Edit</p>
-    <h1>Edit ${person.full_name}</h1>
-    ${raw(card('Profile', form))}`;
-  return layout({ title: 'Edit ' + person.full_name, active: '/people', body });
+  const body = html`${raw(card('Profile', form))}`;
+  return layout({
+    title: `Edit ${person.full_name}`,
+    crumbs: [
+      { href: '/people', label: ORG.membersLabel },
+      { href: `/people/${person.id}`, label: person.full_name },
+      { label: 'Edit' },
+    ],
+    active: '/people',
+    body,
+  });
 }
 
 // --- Agenda manager (add items + record votes) ------------------------------
@@ -519,17 +588,7 @@ function agendaManager(meeting, query) {
     : '';
 
   const body = html`
-    <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> / Manage agenda</p>
-    <div class="detail-head">
-      <h1>Agenda — ${meeting.body_name}</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/meetings/${meeting.id}/edit">✎ Edit</a>
-        <a class="btn" href="/admin/meetings/${meeting.id}/live">● Run live</a>
-        <a class="btn" href="/admin/meetings/${meeting.id}/minutes">🧾 Minutes</a>
-        <a class="btn" href="/admin/meetings/${meeting.id}/packet">📄 Packet</a>
-      </span>
-    </div>
-    <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''}</p>
+    ${raw(meetingSteps(meeting, 'agenda'))}
     ${raw(placementBanner(query))}
     ${raw(readyQueue(meeting))}
     ${raw(card('Add an item by hand', addItemForm))}
@@ -539,7 +598,19 @@ function agendaManager(meeting, query) {
     <script src="/assets/agenda-reorder.js" defer></script>
     <script src="/assets/check-all.js" defer></script>
   `;
-  return layout({ title: 'Manage agenda', active: '/calendar', body });
+  return layout({
+    title: `Agenda — ${meeting.body_name}`,
+    subtitle: [formatDate(meeting.meeting_date), meeting.meeting_time].filter(Boolean).join(' · '),
+    crumbs: [
+      { href: '/meetings', label: 'Meetings' },
+      { href: `/meetings/${meeting.id}`, label: formatDate(meeting.meeting_date) || 'Meeting' },
+      { label: 'Agenda' },
+    ],
+    actions: `<a class="btn" href="/admin/meetings/${meeting.id}/edit">Edit meeting</a>`
+      + ` <a class="btn primary" href="/admin/meetings/${meeting.id}/live">Run live</a>`,
+    active: '/meetings',
+    body,
+  });
 }
 
 // The docket waiting to be heard: files this body can take up that are not
@@ -623,22 +694,25 @@ function packetBuilder(meeting) {
   const blocks = rows.map((r) => packetRow(meeting, r)).join('');
 
   const body = html`
-    <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> /
-      <a href="/admin/meetings/${meeting.id}/agenda">Agenda</a> / Packet</p>
-    <div class="detail-head">
-      <h1>Packet — ${meeting.body_name}</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/meetings/${meeting.id}/agenda">← Agenda</a>
-        <a class="btn primary" href="/meetings/${meeting.id}/packet">📄 Download packet</a>
-      </span>
-    </div>
-    <p class="muted">${raw(formatDate(meeting.meeting_date))} ${meeting.meeting_time || ''} · ${meeting.location || ''}</p>
+    ${raw(meetingSteps(meeting, 'packet'))}
     ${raw(summary)}
     ${raw(warning)}
     ${raw(card('Contents, in binding order', rows.length
       ? `<div class="packet-list">${blocks}</div>`
       : emptyState('No agenda items yet — build the agenda first.')))}`;
-  return layout({ title: 'Packet', active: '/calendar', body });
+  return layout({
+    title: `Packet — ${meeting.body_name}`,
+    subtitle: [formatDate(meeting.meeting_date), meeting.meeting_time, meeting.location]
+      .filter(Boolean).join(' · '),
+    crumbs: [
+      { href: '/meetings', label: 'Meetings' },
+      { href: `/meetings/${meeting.id}`, label: formatDate(meeting.meeting_date) || 'Meeting' },
+      { label: 'Packet' },
+    ],
+    actions: `<a class="btn primary" href="/meetings/${meeting.id}/packet">Download packet</a>`,
+    active: '/meetings',
+    body,
+  });
 }
 
 function packetRow(meeting, r) {
@@ -827,8 +901,6 @@ function agendaTemplateAdmin(saved) {
 
   const savedBanner = saved ? '<p class="saved-banner">Template saved.</p>' : '';
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Agenda template</p>
-    <h1>Standard agenda template</h1>
     ${raw(savedBanner)}
     ${raw(card('Edit template', html`
       <p class="muted">One item per line. Format: <code>Section | Title | Type</code> where Type is <em>Action</em>, <em>Discussion</em>, or <em>Information</em> (optional).<br>
@@ -839,7 +911,13 @@ function agendaTemplateAdmin(saved) {
         </label>
         <div class="form-actions"><button type="submit" class="btn primary">Save template</button></div>
       </form>`))}`;
-  return layout({ title: 'Agenda template', active: '/admin', body });
+  return layout({
+    title: 'Standard agenda template',
+    subtitle: 'The running order a new meeting starts from.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Agenda template' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // --- Public comment moderation ------------------------------------------------
@@ -885,13 +963,16 @@ function commentsAdmin() {
     : emptyState('No decided comments yet.');
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Public comments</p>
-    <h1>Public comment review</h1>
-    <p class="muted">Comments submitted on legislative files are held here until approved. Approved comments
-      are published on the file's public page; email addresses are never shown publicly.</p>
     ${raw(card(`Awaiting review (${pending.length})`, pendingList))}
     ${raw(card('Recently decided', decidedList))}`;
-  return layout({ title: 'Public comments', active: '/admin', body });
+  return layout({
+    title: 'Public comment review',
+    subtitle: "Comments on legislative files are held here until approved. Approved comments are "
+      + "published on the file's public page; email addresses are never shown publicly.",
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Public comments' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // --- Board/commission application review --------------------------------------
@@ -926,13 +1007,16 @@ function applicationsAdmin() {
         ? ` <a class="btn-link" href="/govern/members">view nomination</a>` : ''}</div>`)).join('')}</ul>`
     : emptyState('No decided applications yet.');
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Applications</p>
-    <h1>Board &amp; commission applications</h1>
-    <p class="muted">Citizen applications submitted from body pages. Nominating an applicant creates a
-      seat nomination in the membership workflow (Nominate → Approve → Seat).</p>
     ${raw(card(`Awaiting review (${pending.length})`, pendingList))}
     ${raw(card('Recently decided', decidedList))}`;
-  return layout({ title: 'Applications', active: '/admin', body });
+  return layout({
+    title: 'Board & commission applications',
+    subtitle: 'Citizen applications submitted from body pages. Nominating an applicant creates a '
+      + 'seat nomination in the membership workflow (Nominate \u2192 Approve \u2192 Seat).',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Applications' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // --- Audit log ------------------------------------------------------------------
@@ -949,12 +1033,15 @@ function auditAdmin() {
         </tr>`).join('')}</tbody></table>`
     : emptyState('No recorded actions yet.');
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Audit log</p>
-    <h1>Audit log</h1>
-    <p class="muted">Every state-changing request by a signed-in user (most recent 200 shown;
-      the log keeps the last 20,000 entries). Timestamps are UTC.</p>
     ${raw(card('Recent actions', table))}`;
-  return layout({ title: 'Audit log', active: '/admin', body });
+  return layout({
+    title: 'Audit log',
+    subtitle: 'Every state-changing request by a signed-in user (most recent 200 shown; the log '
+      + 'keeps the last 20,000 entries). Timestamps are UTC.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Audit log' }],
+    active: '/admin',
+    body,
+  });
 }
 
 // --- Email / notifications ------------------------------------------------------
@@ -993,11 +1080,15 @@ function mailAdmin({ sent = false } = {}) {
          <td class="muted">${m.last_error || ''}</td></tr>`).join('')}</tbody></table>`
     : emptyState('No messages queued yet.');
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Email</p>
-    <h1>Email notifications</h1>
     ${raw(card('Status', statusCard + testForm))}
     ${raw(card('Outbox (most recent 50)', outbox))}`;
-  return layout({ title: 'Email', active: '/admin', body });
+  return layout({
+    title: 'Email notifications',
+    subtitle: 'Delivery status and what has been sent.',
+    crumbs: [{ href: '/admin', label: 'Clerk Workspace' }, { label: 'Email' }],
+    active: '/admin',
+    body,
+  });
 }
 
 module.exports = {

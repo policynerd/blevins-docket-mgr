@@ -215,7 +215,47 @@ function announcementBanner() {
     + `<span class="announce-text">${escapeText(a.text)}</span></div>`;
 }
 
-function layout({ title, active, body, subtitle, head }) {
+// The one page header.
+//
+// There used to be three. `layout` rendered a `.page-head` — but only when a
+// subtitle was passed, which two of ninety-one pages did. Detail pages built
+// their own `.crumbs` + `.detail-head` + `.head-actions`. Everything else
+// dropped a bare `<h1>` at the top of the body, or nothing at all, so a good
+// number of pages opened with no heading whatsoever and no way back.
+//
+// Three conventions means every page starts differently, and that is most of
+// what "choppy" turns out to be: nothing tells you where you are, what you can
+// do here, or how you got in. So the header is assembled here for every page,
+// from the same four parts, and views supply the parts rather than the markup.
+//
+//   crumbs   [{ href, label }] — the trail in. The last item is the current
+//            page and renders unlinked, so callers pass the whole path.
+//   title    the <h1>. Always rendered.
+//   subtitle one line on what this page is for.
+//   actions  page-level buttons, right-aligned on the title row.
+function pageHead({ title, subtitle, crumbs, actions }) {
+  const trail = Array.isArray(crumbs) && crumbs.length
+    ? `<nav class="crumbs" aria-label="Breadcrumb">${crumbs.map((c, i) => {
+      const last = i === crumbs.length - 1;
+      const label = escapeText(c.label);
+      // The current page is not a link to itself.
+      const node = (c.href && !last) ? `<a href="${escapeText(c.href)}">${label}</a>` : label;
+      return i === 0 ? node : ` <span class="crumb-sep" aria-hidden="true">/</span> ${node}`;
+    }).join('')}</nav>`
+    : '';
+  return `<div class="page-head">
+    ${trail}
+    <div class="page-head-row">
+      <div class="page-head-text">
+        <h1>${escapeText(title || '')}</h1>
+        ${subtitle ? `<p class="muted page-sub">${escapeText(subtitle)}</p>` : ''}
+      </div>
+      ${actions ? `<div class="page-actions">${actions}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function layout({ title, active, body, subtitle, head, crumbs, actions, heading = true }) {
   const user = _user;
   const authArea = user
     ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
@@ -257,7 +297,7 @@ function layout({ title, active, body, subtitle, head }) {
       </div>
       ${announcementBanner()}
       <main class="main-area">
-        ${subtitle ? `<div class="page-head"><h1>${escapeText(title)}</h1><p class="muted">${escapeText(subtitle)}</p></div>` : ''}
+        ${heading ? pageHead({ title, subtitle, crumbs, actions }) : ''}
         ${body}
       </main>
       <footer class="site-footer">
