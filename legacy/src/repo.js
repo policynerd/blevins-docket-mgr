@@ -18,7 +18,19 @@ const MATTER_STATUSES = [
   'Passed', 'Failed', 'Enacted', 'Vetoed', 'Tabled', 'Withdrawn',
 ];
 
-const VOTE_VALUES = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent'];
+// The ballot, taken from the ledger rather than restated here.
+//
+// These two lists used to disagree, and the disagreement reached the room: the
+// chamber offered an "Absent" button, this list accepted it, and the ledger —
+// which is the authority — threw `Not a vote: Absent` and the member got a 500
+// instead of a vote. Absence is not a choice anyone makes at the rail; it is
+// what is left over once everyone who did vote has, and the board already
+// derives it that way (seated minus present). "Present" is the choice that was
+// missing: a member declining the merits while still being counted.
+//
+// Sourced from the ledger so the two cannot drift apart again. Anything this
+// list admits, the ledger must be willing to seal.
+const VOTE_VALUES = ledger.CHOICES;
 const ITEM_TYPES = ['Action', 'Discussion', 'Information'];
 
 const AGENDA_SECTIONS = [
@@ -926,7 +938,10 @@ const votes = {
     const rows = db.prepare(
       'SELECT vote, COUNT(*) AS n FROM votes WHERE agenda_item_id = ? GROUP BY vote')
       .all(agendaItemId);
-    const t = { Yea: 0, Nay: 0, Abstain: 0, Recused: 0, Absent: 0 };
+    // Absent stays in the shape even though it can no longer be cast: rows
+    // recorded before the ballot was reconciled still carry it, and a reader
+    // asking for last year's tally should get the number that was announced.
+    const t = { Yea: 0, Nay: 0, Present: 0, Abstain: 0, Recused: 0, Absent: 0 };
     for (const r of rows) t[r.vote] = r.n;
     return t;
   },
@@ -957,7 +972,7 @@ const votes = {
   personSummary(personId) {
     const rows = db.prepare(
       'SELECT vote, COUNT(*) AS n FROM votes WHERE person_id = ? GROUP BY vote').all(personId);
-    const t = { Yea: 0, Nay: 0, Abstain: 0, Recused: 0, Absent: 0, total: 0 };
+    const t = { Yea: 0, Nay: 0, Present: 0, Abstain: 0, Recused: 0, Absent: 0, total: 0 };
     for (const r of rows) { t[r.vote] = r.n; t.total += r.n; }
     return t;
   },

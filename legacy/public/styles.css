@@ -371,7 +371,7 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .vote-summary .v.nay { background: var(--bad-dim); color: var(--bad); border-color: var(--bad-line); }
 .vote-list { display: flex; flex-wrap: wrap; gap: var(--s3) 16px; list-style: none; padding: 0; margin: 8px 0 0 56px; font-size: var(--t-small); }
 .vt { font-weight: 700; font-size: var(--t-micro); padding: 0 5px; border-radius: 3px; }
-.vt-yea { color: var(--good); } .vt-nay { color: var(--bad); } .vt-absent, .vt-abstain, .vt-recused { color: var(--muted); }
+.vt-yea { color: var(--good); } .vt-nay { color: var(--bad); } .vt-absent, .vt-abstain, .vt-recused, .vt-present { color: var(--muted); }
 
 /* Attachments */
 .attach-list { list-style: none; padding: 0; margin: 0; }

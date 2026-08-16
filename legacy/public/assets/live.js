@@ -19,7 +19,9 @@
   var agendaEl = root.querySelector('[data-live-agenda]');
   var pill = document.querySelector('[data-live-pill]');
 
-  var VOTES = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent'];
+  // Must match ledger.CHOICES. Offering a button the ledger will not seal is
+  // how "Absent" used to hand a member a 500 at the rail.
+  var VOTES = ['Yea', 'Nay', 'Present', 'Abstain', 'Recused'];
   var THRESHOLD_LABELS = {
     majority: 'Majority of votes cast',
     two_thirds: 'Two-thirds (⅔)',
@@ -39,7 +41,10 @@
     }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json().catch(function () { return {}; }); });
   }
 
-  function notVoting(t) { return (t.Recused || 0) + (t.Absent || 0); }
+  // Everyone seated lands in exactly one column of the board, so a choice the
+  // board does not name has to be gathered here or the arithmetic stops adding
+  // up. Voting Present declines the merits, which is what this column means.
+  function notVoting(t) { return (t.Recused || 0) + (t.Absent || 0) + (t.Present || 0); }
 
   function tallyBoard(t) {
     return '<div class="vote-board">' +

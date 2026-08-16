@@ -58,6 +58,7 @@ function generate(meetingId) {
         const t = repo.votes.tally(it.id);
         const byVote = (v) => votes.filter((x) => x.vote === v).map((x) => x.full_name);
         out.push(`<p>Vote: Yea ${t.Yea}, Nay ${t.Nay}`
+          + (t.Present ? `, Present ${t.Present}` : '')
           + (t.Abstain ? `, Abstain ${t.Abstain}` : '')
           + (t.Recused ? `, Recused ${t.Recused}` : '')
           + (t.Absent ? `, Absent ${t.Absent}` : '') + '.');

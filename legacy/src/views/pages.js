@@ -880,7 +880,7 @@ function agendaPacket(meeting) {
         : '';
       const voteLine = itemVotes.length
         ? `<p class="pk-meta"><strong>Vote:</strong> Yea ${tally.Yea}, Nay ${tally.Nay}` +
-          `${tally.Abstain ? `, Abstain ${tally.Abstain}` : ''}${tally.Absent ? `, Absent ${tally.Absent}` : ''}` +
+          `${tally.Present ? `, Present ${tally.Present}` : ''}${tally.Abstain ? `, Abstain ${tally.Abstain}` : ''}${tally.Absent ? `, Absent ${tally.Absent}` : ''}` +
           ` — ${itemVotes.map((v) => `${escapeText(v.full_name)} (${v.vote})`).join('; ')}</p>`
         : '';
       const attachLine = attachments.length
@@ -1243,7 +1243,9 @@ function initials(name) {
 
 function votingRecordHtml(record, summary) {
   if (!record.length) return emptyState('No recorded votes.');
-  const chips = ['Yea', 'Nay', 'Abstain', 'Recused', 'Absent']
+  // Absent is still listed: it cannot be cast any more, but it was, and a
+  // member's record has to show the votes as they were recorded.
+  const chips = ['Yea', 'Nay', 'Present', 'Abstain', 'Recused', 'Absent']
     .filter((k) => summary[k])
     .map((k) => `<span class="v ${k === 'Yea' ? 'yea' : k === 'Nay' ? 'nay' : ''}">${k} ${summary[k]}</span>`)
     .join(' ');
