@@ -156,6 +156,33 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 .muted { color: var(--muted); }
 h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; }
 
+/* ============ Official-system banner ============
+   The slim strip above everything, after the federal pattern. Closed it is one
+   line; open it explains why the record here can be relied on. It sits outside
+   .app so it spans the sidebar too — it is a statement about the whole system,
+   not about the page. */
+.gov-banner { background: var(--stone); border-bottom: 1px solid var(--line);
+  font-size: var(--t-micro); color: var(--muted); }
+.gb-bar { display: flex; align-items: center; gap: var(--s4); padding: 5px 18px; cursor: pointer;
+  list-style: none; }
+.gb-bar::-webkit-details-marker { display: none; }
+.gb-seal { display: flex; flex: none; }
+.gb-seal svg, .gb-logo { width: 16px; height: 16px; display: block; }
+.gb-text { color: var(--ink); }
+.gb-toggle { color: var(--link); text-decoration: underline; }
+.gb-toggle::after { content: ' ▾'; text-decoration: none; display: inline-block; }
+.gov-banner[open] .gb-toggle::after { content: ' ▴'; }
+.gb-body { padding: 4px 18px 16px; background: var(--marble); border-top: 1px solid var(--line-soft); }
+.gb-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
+  max-width: 1200px; }
+.gb-col strong { display: block; color: var(--ink); font-size: var(--t-small); margin-bottom: 3px; }
+.gb-col p { margin: 0; line-height: 1.5; }
+@media (max-width: 860px) {
+  .gb-bar { flex-wrap: wrap; padding: 5px 14px; }
+  .gb-body { padding: 4px 14px 14px; }
+}
+@media print { .gov-banner { display: none !important; } }
+
 /* ============ Official left sidebar rail + content ============ */
 .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 
@@ -209,7 +236,14 @@ h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; line-height: 
 .util-right > a { color: var(--on-navy); }
 .util-right > a:hover { color: #fff; }
 
-.main-area { padding: 24px; width: 100%; max-width: 1360px; flex: 1 0 auto; }
+/* Use the screen.
+   This was capped at 1360px, so on a wide monitor the application ran in a
+   column down the left and left a third of the display empty — tables scrolled
+   and forms wrapped while there was room to spare beside them. The cap now only
+   stops line lengths becoming unreadable on very wide displays, and prose is
+   held to a comfortable measure where it appears rather than by starving the
+   whole layout. */
+.main-area { padding: 24px 28px; width: 100%; max-width: 2100px; flex: 1 0 auto; }
 /* The one page header. Every page opens with this block and nothing else, so
    the eye lands in the same place on every screen: trail, title, what the page
    is for, and what you can do from here. */
@@ -265,24 +299,25 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 /* Cards / panels */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin-bottom: 18px; box-shadow: var(--shadow); }
-/* Section header: a rule down the leading edge, the heading, and the band all
-   drawn from one hue — dark ink for the rule and type, the dim tint of that
-   same hue for the band behind them. That relationship is the treatment; a
-   neutral band under a coloured rule reads as a toolbar instead, because
-   nothing ties the two together.
-   Brass because it is already this app's accent (footer rule, primary button,
-   active nav marker). --gold-ink rather than --gold so 17px type clears AA on
-   the tint at 5.66:1. */
-/* The top corners are rounded to the card's own radius so the brass rule
-   curves with it. Clipping the card instead (overflow:hidden) would do the
-   same job but would also cut off any table wider than its card. */
+/* Section header.
+   This used to be a filled brass band with a brass rule down its leading edge.
+   The reasoning was sound in isolation — rule and band drawn from one hue —
+   but on the page it put a cream bar directly above the navy table header and
+   the white body beneath it, so every card read as three stacked stripes and
+   the loudest of the three carried the least information.
+   A card title is a title. It gets weight from type and a hairline, not from a
+   fill, and the navy grid header below it is left to do the work of separating
+   the data from the frame. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
-  padding: 12px 16px; border-bottom: 1px solid var(--line);
-  border-left: 4px solid var(--gold-ink); background: var(--gold-dim);
+  padding: 13px 16px 11px; border-bottom: 1px solid var(--line);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
-.card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0; color: var(--gold-ink); font-weight: 700; }
+.card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0; color: var(--ink);
+  font-weight: 700; font-family: var(--serif); }
 .card-body { padding: 15px; }
-.grid-2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; }
+/* Cards in a row size to their own content. Stretching them to a common height
+   left the shorter one with a couple of hundred pixels of empty card under its
+   last row, which reads as something failing to load. */
+.grid-2 { display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start; }
 
 /* Data grids — authoritative solid header band */
 table.data { width: 100%; border-collapse: collapse; font-size: var(--t-body); border: 1px solid var(--line); }

@@ -220,6 +220,49 @@ function sideNav(user, active) {
   }).join('');
 }
 
+// The official-system banner.
+//
+// Modelled on the strip every US federal site carries — "An official website
+// of the United States government · Here's how you know" — because it does a
+// job no other element does: it states, before anything else, what this system
+// is and why what it shows can be relied on. For a board's record of its own
+// proceedings that claim is the whole point of the application.
+//
+// A <details> rather than a script: it works with JavaScript off, it is
+// keyboard-operable for free, and the closed state is one slim line so it
+// costs almost nothing at the top of every page.
+function officialBanner() {
+  return `<details class="gov-banner">
+    <summary class="gb-bar">
+      <span class="gb-seal" aria-hidden="true">${brandMark({ size: 20, variant: 'light', cls: 'gb-logo' })}</span>
+      <span class="gb-text">An official system of the ${escapeText(ORG.name)}</span>
+      <span class="gb-toggle">Here&rsquo;s how you know</span>
+    </summary>
+    <div class="gb-body">
+      <div class="gb-cols">
+        <div class="gb-col">
+          <strong>This is the Board&rsquo;s own record</strong>
+          <p>Agendas, votes and minutes shown here are produced by the
+            ${escapeText(ORG.clerkOffice)} from the proceedings themselves — not copied
+            from another system. What you see is the record, not a report about it.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Votes are sealed as they are cast</strong>
+          <p>Every ballot is written to an append-only, hash-chained ledger the moment it
+            is recorded. A vote is never overwritten: a change is a new entry naming the
+            one it supersedes, so altering the history would break the chain visibly.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Internal use</strong>
+          <p>Access is limited to authenticated members and staff of
+            ${escapeText(ORG.name)}. Actions that change the record are attributed and
+            written to the audit log.</p>
+        </div>
+      </div>
+    </div>
+  </details>`;
+}
+
 function announcementBanner() {
   let a;
   try { a = require('../announcement').get(); } catch (_) { return ''; }
@@ -290,6 +333,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, heading 
   ${head || ''}
 </head>
 <body>
+  ${officialBanner()}
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
   <div class="app">
     <aside class="sidebar" aria-label="Primary navigation">

@@ -1780,12 +1780,20 @@ route('POST', /^\/admin\/matters\/(\d+)\/actions$/, (req, res, ctx) => {
   if (!m) return sendHtml(res, pages.notFound(), 404);
   const b = ctx.body;
   repo.matters.addHistory({
-    matter_id: id, action_date: b.action_date, body_id: b.body_id || null,
+    // The body defaults to the one the file is in control of. It was a
+    // required dropdown listing every body, on a form that already knew.
+    matter_id: id, action_date: b.action_date, body_id: b.body_id || m.body_id || null,
     action: b.action, result: b.result || null, notes: b.notes || null,
   });
-  if (b.new_status) {
-    repo.matters.setStatus(id, b.new_status);
-    const notice = applyEnactment(id, b.new_status, b.action_date);
+  // The status follows from the action unless the clerk overrides it. It used
+  // to be a third field they had to fill for the same event, and leaving it
+  // blank left a file whose history said it had carried and whose status still
+  // said Introduced.
+  const status = b.new_status
+    || repo.matters.statusFromAction(b.action, b.result, m.status);
+  if (status && status !== m.status) {
+    repo.matters.setStatus(id, status);
+    const notice = applyEnactment(id, status, b.action_date);
     if (notice) return redirect(res, `/admin/matters/${id}/edit${notice}`);
   }
   redirect(res, `/admin/matters/${id}/edit`);

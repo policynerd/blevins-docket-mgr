@@ -280,12 +280,24 @@ function actionRecorder(matter) {
         <label>Body<select name="body_id">${raw(selectOptions(allBodies, matter.body_id, { includeBlank: '—' }))}</select></label>
       </div>
       <label>Action
-        <input type="text" name="action" required placeholder="Referred to Finance Committee / Passed / Adopted…">
+        <input type="text" name="action" required list="action-verbs"
+          placeholder="Referred to Finance Committee / Passed / Adopted…">
       </label>
+      <datalist id="action-verbs">
+        ${raw(['Introduced', 'Referred to committee', 'Reported out of committee',
+    'Placed on the agenda', 'Adopted', 'Passed', 'Failed', 'Tabled',
+    'Withdrawn', 'Enacted', 'Vetoed']
+    .map((v) => `<option value="${escapeText(v)}">`).join(''))}
+      </datalist>
       <div class="form-row">
         <label>Result<select name="result">${raw(selectOptions(['', 'Pass', 'Fail', 'Approved', 'Adopted', 'Held'], ''))}</select></label>
-        <label>Set status to
-          <select name="new_status">${raw(selectOptions(['', ...repo.MATTER_STATUSES], ''))}</select>
+        <label>Status
+          <select name="new_status">
+            <option value="">Follow the action</option>
+            ${raw(selectOptions(repo.MATTER_STATUSES, ''))}
+          </select>
+          <small class="muted">The status follows from what you recorded. Set it here only to
+            override.</small>
         </label>
       </div>
       <label>Notes<input type="text" name="notes" placeholder="Optional"></label>

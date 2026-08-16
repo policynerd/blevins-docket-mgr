@@ -481,6 +481,51 @@ const matters = {
   clearSponsors(matterId) {
     db.prepare('DELETE FROM matter_sponsors WHERE matter_id = ?').run(matterId);
   },
+  /**
+   * The status an action implies, so the clerk does not have to say it twice.
+   *
+   * Recording one event used to take three fields: the action, its result, and
+   * then, separately, the new status. That is not merely extra typing — the
+   * status field was optional, so a clerk who recorded "Adopted / Pass" and
+   * tabbed past it left a file whose history said it had carried and whose
+   * status still said Introduced. The record disagreed with itself, and
+   * nothing anywhere would say so.
+   *
+   * An action and a result already determine the status in every ordinary
+   * case, so this derives it. It is a suggestion, not a seizure: the form
+   * pre-selects what this returns and the clerk can override it, because the
+   * unusual case is exactly the one a rule like this gets wrong.
+   *
+   * @returns {string|null} a status from MATTER_STATUSES, or null if the
+   *   action does not imply one and the current status should stand.
+   */
+  statusFromAction(action, result, currentStatus = null) {
+    const a = String(action || '').toLowerCase();
+    const r = String(result || '').toLowerCase();
+
+    // A recorded failure is a failure whatever the verb was.
+    if (r === 'fail') {
+      if (/veto/.test(a)) return 'Vetoed';
+      return 'Failed';
+    }
+    // Disposals that are neither pass nor fail, checked before the pass rules
+    // because "motion to table" carries a result of Pass when the tabling
+    // succeeds — and a tabled measure is Tabled, not Passed.
+    if (/withdraw/.test(a)) return 'Withdrawn';
+    if (/\btabl/.test(a)) return 'Tabled';
+    if (/refer|committed to|sent to committee/.test(a)) return 'In Committee';
+    if (/veto/.test(a)) return 'Vetoed';
+    if (/enact|sign(ed)? into|chaptered/.test(a)) return 'Enacted';
+    if (/introduc|first reading|filed/.test(a)) return 'Introduced';
+    if (/placed on|set for|agenda/.test(a)) return 'On Agenda';
+    if (/adopt|pass|approv|carri/.test(a)) return 'Passed';
+    // A bare Pass on an action with no verb we recognise still means it
+    // carried; a bare result with no action at all implies nothing.
+    if (r === 'pass' && a) return 'Passed';
+    void currentStatus;
+    return null;
+  },
+
   addHistory(h) {
     const id = db.prepare(`INSERT INTO matter_history
       (matter_id, action_date, body_id, action, result, notes, meeting_id, agenda_item_id)

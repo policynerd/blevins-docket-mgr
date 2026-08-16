@@ -2195,3 +2195,44 @@ test('the meeting workflow states the whole path on every screen of it', () => {
   assert.match(out, /aria-current="step"/, 'the strip does not say which step you are on');
   assert.match(out, /Next: Packet/, 'the strip does not say what comes next');
 });
+
+// --- Not making the clerk say the same thing three times ----------------------
+
+test('the status follows from the action that was recorded', () => {
+  // Recording one event took three fields: the action, its result, and then
+  // the status, separately. The status was optional, so "Adopted / Pass" with
+  // the third field left alone produced a file whose history said it had
+  // carried and whose status still said Introduced -- a record disagreeing
+  // with itself, with nothing to notice.
+  const cases = [
+    ['Adopted', 'Pass', 'Passed'],
+    ['Passed on second reading', 'Pass', 'Passed'],
+    ['Referred to Finance Committee', '', 'In Committee'],
+    ['Withdrawn by sponsor', '', 'Withdrawn'],
+    ['Enacted', '', 'Enacted'],
+    ['Introduced', '', 'Introduced'],
+    ['Motion to adopt', 'Fail', 'Failed'],
+    ['Vetoed by the Chair', '', 'Vetoed'],
+  ];
+  for (const [action, result, expected] of cases) {
+    assert.equal(repo.matters.statusFromAction(action, result), expected,
+      `"${action}" (${result || 'no result'}) should imply ${expected}`);
+  }
+});
+
+test('tabling is not passing, even when the motion to table carries', () => {
+  // The motion succeeds, so the result is Pass -- but the measure is Tabled.
+  // Checking the pass verbs first would have called this one Passed.
+  assert.equal(repo.matters.statusFromAction('Motion to table', 'Pass'), 'Tabled');
+  assert.equal(repo.matters.statusFromAction('Tabled indefinitely', 'Pass'), 'Tabled');
+});
+
+test('an action that implies nothing leaves the status alone', () => {
+  assert.equal(repo.matters.statusFromAction('Discussed', ''), null);
+  assert.equal(repo.matters.statusFromAction('', 'Pass'), null,
+    'a result with no action should not move the file');
+});
+
+test('a failed vote on a veto is a veto, not a plain failure', () => {
+  assert.equal(repo.matters.statusFromAction('Veto override', 'Fail'), 'Vetoed');
+});
