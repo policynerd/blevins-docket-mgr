@@ -1,0 +1,87 @@
+name: Deploy legacy app
+
+# Deploys the legislative docket manager (beg-docket-manager) — the app serving
+# app.blevinsholdings.com today.
+#
+# It has its own fly.toml and Dockerfile under legacy/, and they are not the
+# ones at the repository root: the root pair builds the rebuild
+# (Next.js + Fastify + Postgres) into a different Fly app, blevins-drafting.
+# A deploy that runs from the root therefore builds the wrong application
+# against the wrong database, which is why every deploy of this app had been
+# failing. Every flyctl step below runs inside legacy/ so fly.toml, Dockerfile
+# and .dockerignore all resolve to that app's own copies.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'legacy/**'
+      - '.github/workflows/legacy-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two deploys of the same app overlap, but do not cancel one that is
+# already mid-release: a half-applied migration is worse than a slow queue.
+concurrency:
+  group: fly-deploy-legacy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The suite is the only gate on a deploy that goes straight to
+      # production, so it runs here as well as on the pull request.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test
+        working-directory: legacy
+        run: |
+          npm ci --omit=dev
+          npm test
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Confirm the config really names the app being deployed before pushing
+      # an image. Deploying the root config to this app is the exact failure
+      # this workflow exists to prevent, so it is worth asserting rather than
+      # trusting the working directory.
+      - name: Check the config targets beg-docket-manager
+        working-directory: legacy
+        run: |
+          set -euo pipefail
+          app=$(grep -E "^app\s*=" fly.toml | head -1 | sed "s/.*=\s*'\{0,1\}\([^']*\)'\{0,1\}.*/\1/" | tr -d '"')
+          echo "fly.toml declares app: $app"
+          if [ "$app" != "beg-docket-manager" ]; then
+            echo "::error::legacy/fly.toml targets '$app', not beg-docket-manager"
+            exit 1
+          fi
+
+      - name: Deploy to Fly
+        working-directory: legacy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only
+
+      # A green deploy is not the same as a running app: the image can ship and
+      # the machine still crashloop on a startup error. Ask the app itself.
+      - name: Smoke check
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 \
+              https://beg-docket-manager.fly.dev/ || echo 000)
+            echo "attempt $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "The deployed app is answering."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The app did not return 200 after the deploy"
+          exit 1
