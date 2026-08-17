@@ -300,19 +300,21 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin-bottom: 18px; box-shadow: var(--shadow); }
 /* Section header.
-   This used to be a filled brass band with a brass rule down its leading edge.
-   The reasoning was sound in isolation — rule and band drawn from one hue —
-   but on the page it put a cream bar directly above the navy table header and
-   the white body beneath it, so every card read as three stacked stripes and
-   the loudest of the three carried the least information.
-   A card title is a title. It gets weight from type and a hairline, not from a
-   fill, and the navy grid header below it is left to do the work of separating
-   the data from the frame. */
+   A filled band with a rule down its leading edge — the section header of
+   institutional desktop software, and correct for this application. It was
+   briefly flattened to a hairline on the grounds that it looked dated; that
+   was the wrong reason to change it. Density and explicit labelling are the
+   point here, and a section of a screen should announce itself.
+   What was actually wrong was the hue. Drawn in brass, the band sat directly
+   above the navy grid header and read as an unrelated third stripe. Drawn in
+   the slate the grid header already uses, the head and the table below it read
+   as one component. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
-  padding: 13px 16px 11px; border-bottom: 1px solid var(--line);
+  padding: 11px 16px 10px; background: var(--accent-soft);
+  border-bottom: 1px solid var(--line); border-left: 4px solid var(--blv-navy);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
-.card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0; color: var(--ink);
-  font-weight: 700; font-family: var(--serif); }
+.card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0.01em;
+  color: var(--blv-navy-deep); font-weight: 700; font-family: var(--serif); }
 .card-body { padding: 15px; }
 /* Cards in a row size to their own content. Stretching them to a common height
    left the shorter one with a couple of hundred pixels of empty card under its

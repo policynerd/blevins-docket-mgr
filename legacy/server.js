@@ -50,6 +50,8 @@ const { sanitizeHtml } = require('./src/sanitize');
 const {
   sendHtml, sendJson, redirect, sendText, baseUrl, parseBody, parseQuery, asArray, todayISO,
 } = require('./src/util');
+const kernel = require('./src/http/kernel');
+const { need, clientIp } = kernel;
 
 init();
 // Apply any saved in-app branding overrides on top of env/defaults.
@@ -135,10 +137,6 @@ route('GET', /^\/login$/, (req, res, ctx) => {
   if (ctx.user) return redirect(res, auth.hasRole(ctx.user, 'clerk') ? '/admin' : '/member');
   sendHtml(res, authView.loginPage({ next: safeNext(ctx.query.next) || '' }));
 });
-function clientIp(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  return (fwd ? String(fwd).split(',')[0].trim() : '') || req.socket.remoteAddress || '';
-}
 route('POST', /^\/login$/, (req, res, ctx) => {
   const { email, password, next } = ctx.body;
   const ip = clientIp(req);
@@ -2334,29 +2332,6 @@ route('GET', /^\/api\/v1\/people\/?$/, (req, res) => api.persons(res));
 route('GET', /^\/api\/v1\/people\/(\d+)$/, (req, res, ctx) => api.person(res, ctx.params[0]));
 
 // --- helpers ----------------------------------------------------------------
-// Centralized access control. Returns false (and writes a response) when the
-// request should be blocked. /admin requires clerk; /member requires member+.
-function gate(req, res, pathname, user) {
-  let need = null;
-  if (pathname.startsWith('/admin')) need = 'clerk';
-  else if (pathname.startsWith('/govern')) need = 'staff';
-  else if (pathname.startsWith('/member')) need = 'member';
-  if (!need) return true;
-  if (auth.hasRole(user, need)) return true;
-  if (!user) { redirect(res, '/login?next=' + encodeURIComponent(pathname)); return false; }
-  sendHtml(res, forbidden(), 403);
-  return false;
-}
-
-// Finer-grained guard for routes that need more than the path-prefix gate
-// (e.g. system-admin features under the clerk-gated /admin area). Returns false
-// and writes a 403 when the user lacks the role.
-function need(ctx, res, role) {
-  if (auth.hasRole(ctx.user, role)) return true;
-  sendHtml(res, forbidden(), 403);
-  return false;
-}
-
 // A body's accent, or nothing. The colour input always posts a value, so the
 // Board's own slate is stored as "no accent chosen" rather than as a colour
 // this body picked — otherwise every body ever saved would look deliberate.
@@ -2407,112 +2382,11 @@ function applySponsors(matterId, sponsorIds) {
   });
 }
 
-function serveStatic(req, res, pathname) {
-  const rel = pathname.replace(/^\//, '');
-  const filePath = path.join(PUBLIC_DIR, rel);
-  if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Not found'); }
-    const ext = path.extname(filePath);
-    // Brand art is often uploaded without an extension. Serving it as
-    // application/octet-stream would be fatal: we send X-Content-Type-Options:
-    // nosniff, so the browser is forbidden from recovering the real type and
-    // the image simply does not render. Identify it from its own header bytes.
-    res.writeHead(200, { 'Content-Type': mimetype.typeFor(ext, data) });
-    res.end(data);
-  });
-}
-
-
-// Baseline security headers on every response. Inline scripts/styles are part
-// of the rendering approach (small per-page enhancement scripts), hence
-// 'unsafe-inline'; images allow https: for externally hosted seals/photos.
-function securityHeaders(req, res) {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
-    + "img-src 'self' data: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
-  if ((req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  }
-}
-
 // --- Server -----------------------------------------------------------------
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = url.pathname;
-
-  securityHeaders(req, res);
-
-  // Static assets
-  if (pathname === '/styles.css' || pathname.startsWith('/assets/')
-      || pathname.startsWith('/brand/') || pathname === '/favicon.ico') {
-    return serveStatic(req, res, pathname === '/styles.css' ? '/styles.css' : pathname);
-  }
-
-  // CSRF guard: state-changing requests must originate from this site. All
-  // mutating routes are same-origin browser forms/fetches, which always carry
-  // an Origin (or Referer) header; cross-site submissions are rejected.
-  // Inbound provider webhooks are server-to-server (no Origin) and are
-  // authenticated by their own handshake, so they're exempt from the CSRF gate.
-  if (req.method !== 'GET' && req.method !== 'HEAD'
-      && !pathname.startsWith('/webhooks/') && !sameOrigin(req)) {
-    return sendHtml(res, forbidden(), 403);
-  }
-
-  const query = parseQuery(url.search.replace(/^\?/, ''));
-  let body = {};
-  let files = [];
-  if (req.method === 'POST' || req.method === 'PUT') {
-    if ((req.headers['content-type'] || '').startsWith('multipart/form-data')) {
-      const mp = await upload.parseMultipart(req);
-      body = mp.fields;
-      files = mp.files;
-      if (mp.tooLarge) body.__too_large = true;
-    } else {
-      body = await parseBody(req);
-    }
-  }
-
-  // Resolve the current user and gate protected areas. Set the user for the
-  // layout synchronously here — handlers render without an intervening await.
-  const user = auth.currentUser(req);
-  setUser(user);
-
-  if (!gate(req, res, pathname, user)) return;
-
-  // Audit trail: record state-changing requests by signed-in users.
-  if (req.method !== 'GET' && req.method !== 'HEAD' && user) {
-    try {
-      repo.audit.record({
-        userId: user.id, userName: user.name,
-        method: req.method, path: pathname, ip: clientIp(req),
-      });
-    } catch (e) { console.error('Audit record failed:', e.message); }
-  }
-
-  for (const r of routes) {
-    if (r.method !== req.method) continue;
-    const match = pathname.match(r.pattern);
-    if (match) {
-      const params = match.slice(1);
-      try {
-        return r.handler(req, res, { params, query, body, files, user, pathname });
-      } catch (err) {
-        console.error('Handler error:', err);
-        if (pathname.startsWith('/api/')) return sendJson(res, { error: 'Internal error' }, 500);
-        return sendHtml(res, '<h1>500 — Internal error</h1><pre>' +
-          String(err.message).replace(/</g, '&lt;') + '</pre>', 500);
-      }
-    }
-  }
-
-  // Fallbacks
-  if (pathname.startsWith('/api/')) return sendJson(res, { error: 'Not found' }, 404);
-  sendHtml(res, pages.notFound(), 404);
-});
+// Dispatch, authorization, CSRF, security headers and static serving live in
+// src/http/kernel.js. This file registers routes; the kernel decides who gets
+// to reach them.
+const server = http.createServer(kernel.createDispatcher({ routes, publicDir: PUBLIC_DIR }));
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Legislative Docket Manager running at http://localhost:${PORT}`);
