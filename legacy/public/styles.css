@@ -112,9 +112,14 @@
   --on-navy: rgba(255, 255, 255, .80);
   --on-navy-dim: rgba(255, 255, 255, .56);
   --on-navy-line: rgba(255, 255, 255, .14);
-  --radius: 4px;
-  --shadow: 0 2px 6px rgba(26, 30, 40, .09);
-  --shadow-lg: 0 8px 32px rgba(26, 30, 40, .13);
+  /* Corners and shadow are where a stylesheet gives away its decade. A soft,
+     wide, low-opacity blur is a 2015-onwards signature; institutional desktop
+     software sat on the page with a hard one-pixel edge and barely rounded at
+     all. Kept at 2px rather than 0 — fully square reads as deliberate
+     brutalism, which is a later fashion again. */
+  --radius: 2px;
+  --shadow: 0 1px 0 rgba(26, 30, 40, .10);
+  --shadow-lg: 0 2px 5px rgba(26, 30, 40, .22);
   /* House type. Denton sets display, Denton Text long-form, FT Sterling the
      interface — the same stack as the corporate stylesheet. Each degrades to
      the same fallback the intranet uses, so the app is correct before the font
@@ -152,6 +157,15 @@ body {
 }
 a { color: var(--link); text-decoration: none; }
 a:hover { color: var(--link-hover); text-decoration: underline; }
+/* Links in running content are underlined at rest, not only on hover. Colour
+   alone fails WCAG 1.4.1 for readers who cannot distinguish it, and in a dense
+   grey-on-white record the difference is easy to miss even if you can. Chrome
+   — navigation, buttons, tabs, badges — is excluded: those read as controls
+   from their shape, and underlining them would be noise. */
+.card-body a:not(.btn):not(.btn-link):not(.badge),
+.doc-body a:not(.btn):not(.btn-link),
+.page-sub a, .ld-doc a, .meta a {
+  text-decoration: underline; text-underline-offset: 2px; }
 .wrap { max-width: 1200px; margin: 0 auto; }
 .muted { color: var(--muted); }
 h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; }
@@ -340,7 +354,8 @@ table.data { width: 100%; border-collapse: collapse; font-size: var(--t-body); b
 /* Density is a feature here, not an oversight. A clerk working a docket wants
    to see thirty files at once and compare them; every row of padding is a row
    of records pushed off the screen. */
-table.data thead th { background: var(--grid-head); color: #fff; text-align: left; padding: 7px 10px;
+table.data thead th { background: linear-gradient(to bottom, var(--blv-navy-mid), var(--grid-head));
+  color: #fff; text-align: left; padding: 7px 10px;
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
   border-right: 1px solid var(--on-navy-line); white-space: nowrap; }
 table.data tbody td { padding: 5px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
@@ -367,13 +382,23 @@ table.data.compact td, table.data.compact th { padding: 6px 8px; }
 .st-draft, .st-withdrawn, .st-tabled { background: var(--stone); color: var(--muted); }
 
 /* Buttons */
+/* Buttons are bevelled: a top-to-bottom gradient, a darker border, and a
+   one-pixel inset highlight along the top edge. That combination is the period
+   signature, and it does real work — it tells you the control is raised and
+   therefore pressable, which a flat rectangle only conveys by convention. */
 .btn { display: inline-flex; align-items: center; justify-content: center;
-  background: var(--accent); color: #fff;
-  padding: 8px 16px; border-radius: var(--radius); border: 1px solid var(--accent-dark); cursor: pointer;
-  font-size: var(--t-body); font-weight: 600; line-height: 1.2; white-space: nowrap;
+  background: linear-gradient(to bottom, var(--blv-navy-mid), var(--accent));
+  color: #fff;
+  padding: 6px 15px; border-radius: var(--radius); border: 1px solid var(--accent-dark); cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+  font-size: var(--t-body); font-weight: 600; line-height: 1.25; white-space: nowrap;
   width: auto; max-width: max-content; text-align: center; transition: background .1s ease; }
 .btn:hover { background: var(--accent-dark); border-color: var(--accent-dark); text-decoration: none; }
-.btn.primary { background: var(--gold); color: var(--blv-navy-deep); border-color: var(--gold-dark); }
+/* Pressed: the bevel inverts, so the control sinks under the pointer. */
+.btn:active { background: var(--accent-dark);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .28); transform: translateY(1px); }
+.btn.primary { background: linear-gradient(to bottom, var(--gold-light, #D8A93A), var(--gold));
+  color: var(--blv-navy-deep); border-color: var(--gold-dark); }
 .btn.primary:hover { background: var(--gold-light); }
 .btn.ghost { background: transparent; color: var(--accent); border-color: var(--line); }
 .btn.ghost:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-dark); }
@@ -487,6 +512,17 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
 .export-links { display: flex; gap: 14px; }
 
 /* Forms */
+/* Bordered fieldsets. The browser's own grouping element, styled rather than
+   replaced: the legend breaking the top border is a genuinely good device for
+   saying "these fields belong together", it is announced to screen readers
+   without any markup of ours, and it long predates the fashion for unlabelled
+   whitespace-separated blocks. */
+.form fieldset { border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px 4px; margin: 0 0 16px; background: var(--card); }
+.form fieldset > legend { padding: 0 7px; margin-left: 4px; font-size: var(--t-micro);
+  font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--blv-navy-mid); }
+.form fieldset .form-row:last-child label:last-child { margin-bottom: 10px; }
+
 .form label { display: block; margin-bottom: 13px; font-size: var(--t-body); font-weight: 600; color: var(--blv-navy-mid); }
 .form input[type=text], .form input[type=url], .form input[type=date], .form input[type=search],
 .form select, .form textarea { width: 100%; padding: 8px 10px; margin-top: 6px; border: 1px solid var(--line);
