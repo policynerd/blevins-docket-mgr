@@ -224,6 +224,20 @@ h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; line-height: 
 /* Slim navy utility strip across the top of the content column */
 .topbar { background: var(--utility); color: var(--on-navy); display: flex; align-items: center; gap: var(--s6);
   padding: 8px 22px; }
+/* Module bar — the second level of navigation.
+   One flat rail of every destination is how you get a rail nobody reads to the
+   bottom of. The modules go across the top, the rail below shows only the
+   active one's sections, and the two together are the shape institutional
+   desktop applications have used for twenty years because it scales past the
+   point where a single list stops working. */
+.mod-bar { display: flex; flex-wrap: wrap; gap: 0; background: var(--tab);
+  border-bottom: 3px solid var(--blv-navy); padding: 0 14px; }
+.mod-tab { display: block; padding: 8px 17px; color: #E7EAF0; font-size: var(--t-small);
+  font-weight: 600; text-decoration: none; border-right: 1px solid rgba(255,255,255,0.14); }
+.mod-tab:hover { background: rgba(255,255,255,0.10); color: #fff; text-decoration: none; }
+.mod-tab.active { background: var(--bg); color: var(--ink); font-weight: 700; }
+@media print { .mod-bar { display: none; } }
+
 .nav-toggle-cb { display: none; }
 .nav-toggle { display: none; font-size: 20px; line-height: 1; color: var(--on-navy); cursor: pointer; padding: 2px 8px; user-select: none; }
 .banner-search { display: flex; flex: 1; max-width: 440px; }
@@ -323,10 +337,16 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 
 /* Data grids — authoritative solid header band */
 table.data { width: 100%; border-collapse: collapse; font-size: var(--t-body); border: 1px solid var(--line); }
-table.data thead th { background: var(--grid-head); color: #fff; text-align: left; padding: 10px 12px;
+/* Density is a feature here, not an oversight. A clerk working a docket wants
+   to see thirty files at once and compare them; every row of padding is a row
+   of records pushed off the screen. */
+table.data thead th { background: var(--grid-head); color: #fff; text-align: left; padding: 7px 10px;
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
   border-right: 1px solid var(--on-navy-line); white-space: nowrap; }
-table.data tbody td { padding: 8px 11px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+table.data tbody td { padding: 5px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+/* A link in a data table is underlined. Colour alone is neither reliable for
+   colour-blind readers (WCAG 1.4.1) nor obvious in a dense grid. */
+table.data tbody a { text-decoration: underline; }
 table.data tbody tr:nth-child(even) { background: var(--zebra); }
 table.data tbody tr:hover { background: var(--marble); }
 table.data.compact td, table.data.compact th { padding: 6px 8px; }

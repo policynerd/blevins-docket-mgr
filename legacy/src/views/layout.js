@@ -17,33 +17,73 @@ const { getFooterHtml } = require('../footer-content');
 // then the measures that go through them; then the money; then the people and
 // the organization behind both. Reference material sits last, where you go
 // looking for it rather than past it.
-const NAV_GROUPS = [
-  { label: null, items: [{ href: '/', label: 'Dashboard' }] },
-  { label: 'Meetings', items: [
-    { href: '/meetings', label: 'Meetings' },
-    { href: '/docket', label: "Today's Docket" },
-    { href: '/calendar', label: 'Calendar' },
-  ] },
-  { label: 'Legislation', items: [
-    { href: '/legislation', label: 'Legislation' },
-    { href: '/policies', label: 'Policies' },
-    { href: '/accountability', label: 'Accountability' },
-  ] },
-  { label: 'Money', items: [
-    { href: '/budget', label: 'Budget' },
-    { href: '/procurement', label: 'Procurement' },
-  ] },
-  { label: 'People & Bodies', items: [
-    { href: '/people', label: ORG.membersLabel },
-    { href: '/bodies', label: 'Bodies & Committees' },
-    { href: '/org', label: 'Organization' },
-  ] },
-  { label: 'Participate', items: [
-    { href: '/proposals', label: 'Proposals' },
-  ] },
+// Two levels, in the manner of the institutional web applications this is for:
+// a horizontal bar of modules across the top, and a left rail showing only the
+// active module's sections. One flat list of every destination is how you get a
+// rail long enough that nobody reads the bottom of it.
+//
+// `match` is the set of path prefixes that belong to a module, used to light
+// the right tab. `role` withholds a whole module from those who cannot use it.
+const MODULES = [
+  { id: 'home', label: 'Home', href: '/', match: [],
+    groups: [{ label: null, items: [{ href: '/', label: 'Dashboard' }] }] },
+
+  { id: 'docket', label: 'Docket', href: '/legislation',
+    match: ['/legislation', '/code', '/accountability', '/watching'],
+    groups: [{ label: 'Legislation', items: [
+      { href: '/legislation', label: 'Legislative Files' },
+      { href: '/code', label: 'Board Code' },
+      { href: '/accountability', label: 'Accountability' },
+    ] }] },
+
+  // "Today's Docket" is the agenda of the meeting happening now, so it belongs
+  // to the meeting rather than to the file cabinet.
+  { id: 'meetings', label: 'Meetings', href: '/meetings',
+    match: ['/meetings', '/docket', '/calendar', '/live', '/display'],
+    groups: [{ label: 'Meetings', items: [
+      { href: '/meetings', label: 'Meetings' },
+      { href: '/docket', label: "Today's Docket" },
+      { href: '/calendar', label: 'Meeting Calendar' },
+    ] }] },
+
+  { id: 'money', label: 'Money', href: '/budget',
+    match: ['/budget', '/procurement', '/vendors'],
+    groups: [{ label: 'Money', items: [
+      { href: '/budget', label: 'Budget' },
+      { href: '/procurement', label: 'Procurement' },
+    ] }] },
+
+  { id: 'governance', label: 'Governance', href: '/people',
+    match: ['/people', '/bodies', '/org', '/govern'],
+    groups: [{ label: 'People & Bodies', items: [
+      { href: '/people', label: ORG.membersLabel },
+      { href: '/bodies', label: 'Bodies & Committees' },
+      { href: '/org', label: 'Organization' },
+    ] }] },
+
+  { id: 'records', label: 'Records', href: '/policies',
+    match: ['/policies'],
+    groups: [{ label: 'Records', items: [
+      { href: '/policies', label: 'Policy Manual' },
+    ] }] },
+
+  // The workspace group inside is assembled per role by navFor().
+  { id: 'admin', label: 'Administration', href: '/admin', role: 'member',
+    match: ['/admin', '/approvals', '/member'], groups: [] },
 ];
+
 // Flat list kept for any consumer that iterates the whole nav.
-const NAV = NAV_GROUPS.flatMap((g) => g.items);
+const NAV = MODULES.flatMap((m) => m.groups.flatMap((g) => g.items));
+
+// Which module owns a path. Home is an exact match, or every path would be
+// under it.
+function moduleFor(active) {
+  const at = String(active || '/');
+  if (at === '/') return MODULES[0];
+  return MODULES.find((m) => m.match.some((p) => at === p || at.startsWith(p + '/') || at === p))
+    || MODULES.find((m) => m.match.some((p) => at.startsWith(p)))
+    || MODULES[0];
+}
 
 // Request-scoped current user. Handlers render synchronously after this is set
 // (no awaits between setUser and rendering), so a module field is safe here.
@@ -62,11 +102,15 @@ function can(user, role) {
 
 // Returns nav as groups [{ label, items:[{ href, label, badge? }] }], with the
 // members label re-resolved live and role-gated sections appended.
-function navFor(user) {
-  const groups = NAV_GROUPS.map((g) => ({
+function navFor(user, moduleId) {
+  const source = moduleId ? MODULES.filter((m) => m.id === moduleId) : MODULES;
+  const groups = source.flatMap((m) => m.groups.map((g) => ({
     label: g.label,
     items: g.items.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : { ...n })),
-  }));
+  })));
+  // The workspace belongs to Administration; when a single module is asked for,
+  // it appears only there.
+  if (moduleId && moduleId !== 'admin') return groups;
   const workspace = [];
   if (can(user, 'member')) {
     workspace.push({ href: '/member', label: 'Member Portal' });
@@ -209,8 +253,19 @@ function escapeText(s) {
 }
 
 // Grouped left-rail navigation. Groups render as labelled sections of links.
+// The horizontal module bar. Modules a user cannot enter are not drawn — a tab
+// that always 403s is worse than no tab.
+function moduleTabs(user, active) {
+  const here = moduleFor(active);
+  return MODULES
+    .filter((m) => !m.role || can(user, m.role))
+    .map((m) => `<a class="mod-tab${m.id === here.id ? ' active' : ''}" href="${escapeText(m.href)}"`
+      + `${m.id === here.id ? ' aria-current="page"' : ''}>${escapeText(m.label)}</a>`)
+    .join('');
+}
+
 function sideNav(user, active) {
-  return navFor(user).map((g) => {
+  return navFor(user, moduleFor(active).id).map((g) => {
     const links = g.items.map((n) => {
       const badge = n.badge ? `<span class="nav-badge">${escapeText(n.badge)}</span>` : '';
       return `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}${badge}</a>`;
@@ -356,6 +411,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, h1, head
           ${authArea}
         </span>
       </div>
+      <nav class="mod-bar" aria-label="Modules">${moduleTabs(user, active)}</nav>
       ${announcementBanner()}
       <main class="main-area">
         ${heading ? pageHead({ title: h1 || title, subtitle, crumbs, actions }) : ''}

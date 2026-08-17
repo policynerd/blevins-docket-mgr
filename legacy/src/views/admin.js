@@ -55,7 +55,6 @@ function adminHome(user) {
   const queues = [
     { n: repo.comments.pendingCount(), label: 'Public comments', href: '/admin/comments' },
     { n: repo.applications.pendingCount(), label: 'Applications', href: '/admin/applications' },
-    { n: repo.proposals.openCount(), label: 'Proposals', href: '/admin/proposals' },
     { n: repo.procurement.openCount(), label: 'Procurement', href: '/admin/procurement' },
   ];
   const waiting = queues.filter((q) => q.n > 0);
