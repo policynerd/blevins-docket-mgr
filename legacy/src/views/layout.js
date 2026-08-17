@@ -234,7 +234,7 @@ function sideNav(user, active) {
 function officialBanner() {
   return `<details class="gov-banner">
     <summary class="gb-bar">
-      <span class="gb-seal" aria-hidden="true">${brandMark({ size: 20, variant: 'light', cls: 'gb-logo' })}</span>
+      <span class="gb-seal" aria-hidden="true">${brandMark({ size: 20, variant: 'dark', cls: 'gb-logo' })}</span>
       <span class="gb-text">An official system of the ${escapeText(ORG.name)}</span>
       <span class="gb-toggle">Here&rsquo;s how you know</span>
     </summary>
