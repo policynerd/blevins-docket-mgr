@@ -36,7 +36,6 @@ const notify = require('./src/notify');
 const smtp = require('./src/smtp');
 const alerts = require('./src/alerts');
 const approvalsView = require('./src/views/approvals');
-const proposalsView = require('./src/views/proposals');
 const procurementView = require('./src/views/procurement');
 const consentsView = require('./src/views/consents');
 const esign = require('./src/esign');
@@ -284,39 +283,6 @@ route('GET', /^\/watching\/?$/, (req, res, ctx) => {
   sendHtml(res, member.watchingPage(ctx.user));
 });
 
-// --- Citizen proposals (Decidim-style) --------------------------------------
-route('GET', /^\/proposals\/?$/, (req, res, ctx) => sendHtml(res, proposalsView.proposalsList(ctx.query)));
-route('GET', /^\/proposals\/(\d+)$/, (req, res, ctx) => {
-  const p = repo.proposals.get(Number(ctx.params[0]));
-  if (!p) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, proposalsView.proposalDetail(p, ctx.query));
-});
-route('POST', /^\/proposals$/, (req, res, ctx) => {
-  if (ctx.body.website) return redirect(res, '/proposals?submitted=1'); // honeypot
-  const title = String(ctx.body.title || '').trim().slice(0, 140);
-  const bodyText = String(ctx.body.body || '').trim().slice(0, 6000);
-  const name = String(ctx.body.name || '').trim().slice(0, 100);
-  if (!title || !bodyText || !name) return redirect(res, '/proposals');
-  if (publicFormThrottled(clientIp(req))) {
-    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
-  }
-  repo.proposals.add({ title, body: bodyText, name, email: String(ctx.body.email || '').trim().slice(0, 200) || null });
-  redirect(res, '/proposals?submitted=1');
-});
-route('POST', /^\/proposals\/(\d+)\/endorse$/, (req, res, ctx) => {
-  const p = repo.proposals.get(Number(ctx.params[0]));
-  if (!p) return sendHtml(res, pages.notFound(), 404);
-  const back = `/proposals/${p.id}`;
-  if (ctx.body.website) return redirect(res, back + '?endorsed=1'); // honeypot
-  const name = String(ctx.body.name || '').trim().slice(0, 100);
-  const email = String(ctx.body.email || '').trim().slice(0, 200);
-  if (!name || !email) return redirect(res, back);
-  if (publicFormThrottled(clientIp(req))) {
-    return sendHtml(res, '<h1>429 — Too many submissions. Please try again later.</h1>', 429);
-  }
-  const ok = repo.proposals.endorse(p.id, name, email);
-  redirect(res, back + (ok ? '?endorsed=1' : '?endorsed=0'));
-});
 
 // Accountability (public implementation tracker).
 route('GET', /^\/accountability\/?$/, (req, res) => sendHtml(res, pages.accountabilityPage()));
@@ -1302,28 +1268,6 @@ route('POST', /^\/admin\/mail\/test$/, (req, res, ctx) => {
   redirect(res, '/admin/mail?sent=1');
 });
 
-// Citizen proposal review (clerk): accept → create a Draft file from the text.
-route('GET', /^\/admin\/proposals\/?$/, (req, res) => sendHtml(res, proposalsView.proposalsAdmin()));
-route('POST', /^\/admin\/proposals\/(\d+)\/decide$/, (req, res, ctx) => {
-  const p = repo.proposals.get(Number(ctx.params[0]));
-  if (!p) return sendHtml(res, pages.notFound(), 404);
-  if (ctx.body.decision === 'accept') {
-    const { id, file_number } = repo.matters.insertNumbered({
-      type: 'Communication', title: p.title, status: 'Draft',
-      summary: `Citizen proposal by ${p.name}`, full_text: p.body,
-    });
-    repo.proposals.decide(p.id, { status: 'Accepted', matterId: id });
-    repo.matters.addHistory({
-      matter_id: id, action_date: require('./src/util').todayISO(),
-      action: 'Introduced from citizen proposal', notes: `Proposal #${p.id}`,
-    });
-    void file_number;
-  } else {
-    repo.proposals.decide(p.id, { status: 'Declined' });
-  }
-  notify.proposalDecision(p.id);
-  redirect(res, '/admin/proposals');
-});
 // --- Procurement management (clerk) -----------------------------------------
 route('GET', /^\/admin\/procurement\/?$/, (req, res) => sendHtml(res, procurementView.procurementAdmin()));
 route('GET', /^\/admin\/procurement\.csv$/, (req, res) => {

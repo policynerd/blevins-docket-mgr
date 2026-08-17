@@ -3095,52 +3095,6 @@ const speakers = {
 };
 
 // ---------------------------------------------------------------------------
-// Citizen proposals (Decidim-style) with endorsements
-// ---------------------------------------------------------------------------
-const PROPOSAL_THRESHOLD_DEFAULT = 10;
-
-const proposals = {
-  threshold() {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'proposals.threshold'").get();
-    const n = row ? Number(row.value) : NaN;
-    return Number.isFinite(n) && n > 0 ? n : PROPOSAL_THRESHOLD_DEFAULT;
-  },
-  add(p) {
-    return db.prepare('INSERT INTO proposals (title, body, name, email) VALUES (?,?,?,?)')
-      .run(p.title, p.body, p.name, p.email || null).lastInsertRowid;
-  },
-  get(id) {
-    return db.prepare(`SELECT p.*, m.file_number,
-      (SELECT COUNT(*) FROM proposal_endorsements e WHERE e.proposal_id = p.id) AS endorsements
-      FROM proposals p LEFT JOIN matters m ON m.id = p.matter_id WHERE p.id = ?`).get(id);
-  },
-  list(status = null) {
-    const where = status ? 'WHERE p.status = ?' : '';
-    return db.prepare(`SELECT p.*, m.file_number,
-      (SELECT COUNT(*) FROM proposal_endorsements e WHERE e.proposal_id = p.id) AS endorsements
-      FROM proposals p LEFT JOIN matters m ON m.id = p.matter_id ${where}
-      ORDER BY endorsements DESC, p.id DESC`).all(...(status ? [status] : []));
-  },
-  endorse(proposalId, name, email) {
-    try {
-      db.prepare('INSERT INTO proposal_endorsements (proposal_id, name, email) VALUES (?,?,?)')
-        .run(proposalId, name, email.toLowerCase());
-      return true;
-    } catch (_) { return false; } // duplicate email for this proposal
-  },
-  decide(id, { status, matterId = null }) {
-    if (!['Accepted', 'Declined', 'Open'].includes(status)) return;
-    db.prepare('UPDATE proposals SET status = ?, matter_id = ? WHERE id = ?')
-      .run(status, matterId, id);
-  },
-  openCount() {
-    return db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE status = 'Open'").get().n;
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Accountability: implementation progress on enacted legislation
-// ---------------------------------------------------------------------------
 const implementation = {
   add(matterId, progress, note) {
     const p = Math.max(0, Math.min(100, Number(progress) || 0));
@@ -3239,7 +3193,7 @@ module.exports = {
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
   letters, LETTER_SECTIONS_DEFAULT,
   policies, users, budget, comments, watches, speakers, applications, audit, savedSearches,
-  proposals, implementation, vendors, procurement, tas, consents, code,
+  implementation, vendors, procurement, tas, consents, code,
   voteLedger, motionVersions, eligibility, voteAdmin,
   RELATION_TYPES, SOLICITATION_KINDS, SOLICITATION_STATUSES, CONSENT_STATUSES, CODE_OPS,
   stats, statusBuckets, purgeDomainData,

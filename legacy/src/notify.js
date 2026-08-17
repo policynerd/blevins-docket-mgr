@@ -95,18 +95,6 @@ function speakerApproved(speakerId) {
   } catch (e) { console.error('notify.speakerApproved failed:', e.message); }
 }
 
-// Citizen proposal decided (accepted → introduced, or declined).
-function proposalDecision(proposalId) {
-  try {
-    const p = db.prepare('SELECT p.*, m.file_number FROM proposals p LEFT JOIN matters m ON m.id = p.matter_id WHERE p.id = ?').get(proposalId);
-    if (!p || !p.email) return;
-    const msg = p.status === 'Accepted'
-      ? `Your proposal "${p.title}" has been accepted and introduced as a legislative file`
-        + `${p.file_number ? ' (' + p.file_number + ')' : ''}. Thank you for participating.`
-      : `Thank you for your proposal "${p.title}". It was not advanced at this time.`;
-    queue(p.email, `Your proposal: ${p.title}`, `${p.name},\n\n${msg}`);
-  } catch (e) { console.error('notify.proposalDecision failed:', e.message); }
-}
 
 // Solicitation awarded — notify the winning vendor.
 function procurementAward(solicitationId) {
@@ -161,6 +149,6 @@ function recent(limit = 50) {
 }
 
 module.exports = {
-  queue, approvalRouted, matterActivity, applicationDecision, speakerApproved, proposalDecision,
+  queue, approvalRouted, matterActivity, applicationDecision, speakerApproved,
   procurementAward, processOutbox, schedule, recent, baseUrl,
 };
