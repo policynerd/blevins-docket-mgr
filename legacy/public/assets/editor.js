@@ -115,6 +115,31 @@
     return true;
   }
 
+  // Move already-scrubbed nodes from the inert document into the selection.
+  function insertNodes(area, nodeList) {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    var range = sel.getRangeAt(0);
+    if (!area.contains(range.commonAncestorContainer)) return;
+    // Snapshot first: childNodes is live, and importing as we go would walk a
+    // list that shifts under the loop.
+    var nodes = Array.prototype.slice.call(nodeList);
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < nodes.length; i++) {
+      frag.appendChild(document.importNode(nodes[i], true));
+    }
+    var last = frag.lastChild;
+    range.deleteContents();
+    range.insertNode(frag);
+    // Leave the caret after what was pasted, not before it.
+    if (last) {
+      range.setStartAfter(last);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+
   var STATE_CMDS = ['bold', 'italic', 'underline', 'strikeThrough',
     'insertUnorderedList', 'insertOrderedList', 'superscript', 'subscript'];
 
@@ -184,9 +209,11 @@
         // document, so the load is attempted even while it is detached.
         var doc = new DOMParser().parseFromString(pastedHtml, 'text/html');
         scrub(doc.body);
-        // Only allowlisted tags remain, and every attribute except a
-        // validated href has been removed.
-        document.execCommand('insertHTML', false, doc.body.innerHTML);
+        // The scrubbed nodes are moved across directly rather than serialized
+        // back to a string and re-parsed. Nothing here is ever handed to an
+        // HTML parser a second time, which is where mutation-XSS lives: a
+        // round trip can re-read markup as something the scrub never saw.
+        insertNodes(area, doc.body.childNodes);
       } else {
         document.execCommand('insertText', false, pastedText);
       }
