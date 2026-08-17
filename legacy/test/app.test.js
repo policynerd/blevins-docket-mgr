@@ -596,6 +596,25 @@ test('sanitizer strips scripts and event handlers, keeps allowed tags', () => {
   assert.match(out, /<h2>t<\/h2>/);
 });
 
+// The scrub pass runs after the parse, so the parse must not be able to run
+// anything. An element made with document.createElement belongs to this
+// document, and assigning to its innerHTML fires <img src=x onerror=...>
+// immediately — before the scrub could strip it — even while it is detached.
+// Verified in a browser: the live parse executes, DOMParser does not.
+test('the editor parses pasted markup inertly, never in the live document', () => {
+  const src = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'public', 'assets', 'editor.js'), 'utf8');
+  assert.match(src, /DOMParser\(\)\s*\.parseFromString/, 'the paste path does not parse inertly');
+  assert.ok(!/\.innerHTML\s*=\s*paste/i.test(src), 'pasted markup is assigned to a live innerHTML');
+  // Scrubbed nodes are carried across as nodes. Serializing them back to a
+  // string and letting insertHTML re-parse it would hand the clipboard to an
+  // HTML parser a second time, which is where mutation-XSS lives. (insertHTML
+  // itself is fine for the table button, whose markup this file writes.)
+  assert.ok(!/doc\.body\.innerHTML/.test(src), 'the clipboard is serialized back to a string');
+  assert.match(src, /function insertNodes/, 'the paste path does not insert nodes directly');
+  assert.match(src, /insertNodes\(area, doc\.body\.childNodes\)/, 'paste does not go through insertNodes');
+});
+
 test('sanitizer keeps tabular matter and footnote markers', () => {
   const out = sanitizeHtml(
     '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'
