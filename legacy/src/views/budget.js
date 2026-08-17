@@ -497,14 +497,16 @@ function appropriationReport() {
       <td class="num">${money(t.actual)}</td><td class="num">${money(t.current - t.committed)}</td><td></td></tr>
     </tbody></table>`
     : emptyState('No appropriation codes yet. Add one to a budget line to start tracking spending by account.');
-  const body = html`
-    <p class="crumbs"><a href="/budget">Budget</a> / Appropriations</p>
-    <h1>Appropriation accounts</h1>
-    <p class="muted">Spending tracked by appropriation account across all fiscal years —
-      budgeted, committed against contracts and legislation, and actually spent.</p>
-    ${raw(card('Accounts', table))}`;
-  return layout({ title: 'Appropriations', active: '/budget',
-    subtitle: 'Follow the money by appropriation account.', body });
+  const body = html`${raw(card('Accounts', table))}`;
+  return layout({
+    title: 'Appropriations',
+    h1: 'Appropriation accounts',
+    active: '/budget',
+    crumbs: [{ label: 'Budget', href: '/budget' }, { label: 'Appropriations' }],
+    subtitle: 'Spending tracked by appropriation account across all fiscal years — '
+      + 'budgeted, committed against contracts and legislation, and actually spent.',
+    body,
+  });
 }
 
 function appropriationDetailPage(detail) {
@@ -608,15 +610,19 @@ function tasRegister(query = {}, user = null) {
     </form>`) : '';
 
   const body = html`
-    <p class="crumbs"><a href="/budget">Budget</a> / Account register</p>
-    <div class="detail-head"><h1>Account register (TAS)</h1>
-      <span class="head-actions">${rows.length ? raw('<a class="btn" href="/budget/accounts.csv">Export CSV</a>') : ''}<a class="btn" href="/budget/appropriations">Appropriation ledger</a></span></div>
-    <p class="muted">Treasury Account Symbol catalog — the source of truth for appropriation structure.
-      A budget line's appropriation code links to a TAS here.</p>
     ${raw(card('Accounts', search + table))}
     ${raw(importForm)}`;
-  return layout({ title: 'Account register', active: '/budget',
-    subtitle: 'Treasury Account Symbol chart of accounts.', body });
+  return layout({
+    title: 'Account register',
+    h1: 'Account register (TAS)',
+    active: '/budget',
+    crumbs: [{ label: 'Budget', href: '/budget' }, { label: 'Account register' }],
+    actions: `${rows.length ? '<a class="btn" href="/budget/accounts.csv">Export CSV</a>' : ''}`
+      + '<a class="btn" href="/budget/appropriations">Appropriation ledger</a>',
+    subtitle: 'Treasury Account Symbol catalog — the source of truth for appropriation structure. '
+      + "A budget line's appropriation code links to a TAS here.",
+    body,
+  });
 }
 
 module.exports = {

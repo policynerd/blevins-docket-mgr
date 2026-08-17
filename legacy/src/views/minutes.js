@@ -49,16 +49,22 @@ function minutesEditor(meeting) {
     <script src="/assets/editor.js" defer></script>` : emptyState('No minutes yet — generate a draft to begin.');
 
   const body = html`
-    <p class="crumbs"><a href="/meetings/${meeting.id}">Meeting</a> / Minutes</p>
-    <div class="detail-head">
-      <h1>Minutes — ${meeting.body_name}</h1>
-      <span>${statusBadge(status === 'published' ? 'Passed' : (status === 'draft' ? 'In Committee' : 'Draft'))} ${raw(`<span class="muted">${escapeText(status)}</span>`)}</span>
-    </div>
-    <p class="muted">${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))}</p>
     ${raw(attendanceForm(meeting))}
     ${raw(card('Generate minutes', generate))}
     ${raw(card('Edit minutes', editor))}`;
-  return layout({ title: 'Minutes', active: '/calendar', body });
+  return layout({
+    title: 'Minutes',
+    h1: 'Minutes — ' + meeting.body_name,
+    active: '/calendar',
+    crumbs: [
+      { label: 'Meeting', href: `/meetings/${meeting.id}` },
+      { label: 'Minutes' },
+    ],
+    actions: statusBadge(status === 'published' ? 'Passed' : (status === 'draft' ? 'In Committee' : 'Draft'))
+      + ` <span class="muted">${escapeText(status)}</span>`,
+    subtitle: formatDateTime(meeting.meeting_date, meeting.meeting_time),
+    body,
+  });
 }
 
 function minutesView(meeting) {
@@ -78,7 +84,9 @@ function minutesView(meeting) {
         ? raw(meeting.minutes_html)
         : raw(emptyState('Minutes have not been published for this meeting.'))}</div>
     </article>`;
-  return layout({ title: 'Minutes — ' + meeting.body_name, active: '/calendar', body });
+  // The page is the minutes document, printed as-is; its masthead is the
+  // heading, so the layout does not add a second one above it.
+  return layout({ title: 'Minutes — ' + meeting.body_name, active: '/calendar', heading: false, body });
 }
 
 module.exports = { minutesEditor, minutesView, attendanceForm, ATTEND_STATUSES };

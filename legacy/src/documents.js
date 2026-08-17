@@ -42,7 +42,10 @@ function upper(s) { return String(s == null ? '' : s).toUpperCase(); }
 // tag cannot survive a single pass.
 function paragraphs(html) {
   let text = String(html || '')
-    .replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6])\s*>/gi, '\n')
+    // A row ends a line; a cell only ends a column. Without the cell rule a
+    // fiscal-note table arrives in the PDF as one run-on word.
+    .replace(/<\s*\/\s*(td|th)\s*>/gi, ' | ')
+    .replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/caption|\/table)\s*>/gi, '\n')
     .replace(/<li[^>]*>/gi, '• ');
   let prev;
   do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
@@ -50,7 +53,10 @@ function paragraphs(html) {
   text = text.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&');
-  return text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  return text.split(/\n+/)
+    // The last cell of a row leaves a separator with nothing after it.
+    .map((s) => s.trim().replace(/\s*\|\s*$/, '').trim())
+    .filter(Boolean);
 }
 
 // Footer carried by every official output: the issuing office, the document

@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate, todayISO } = require('../util');
-const { layout, card, workflowStepper, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
 const { ORG } = require('../org');
 const auth = require('../auth');
 const repo = require('../repo');
@@ -33,16 +33,7 @@ function meetingSteps(meeting, current) {
     { id: 'minutes', label: 'Minutes', href: `/admin/meetings/${meeting.id}/minutes`,
       done: meeting.minutes_status === 'published' },
   ];
-  const at = steps.findIndex((s) => s.id === current);
-  return `<nav class="steps" aria-label="Meeting workflow">${steps.map((s, i) => {
-    const state = s.id === current ? 'here' : (s.done ? 'done' : 'todo');
-    const mark = s.done && s.id !== current ? '✓' : String(i + 1);
-    return `<a class="step step-${state}" href="${escapeText(s.href)}"`
-      + `${s.id === current ? ' aria-current="step"' : ''}>`
-      + `<span class="step-n">${mark}</span><span class="step-l">${escapeText(s.label)}</span></a>`;
-  }).join('')}${at >= 0 && at < steps.length - 1
-    ? `<a class="step-next" href="${escapeText(steps[at + 1].href)}">Next: ${escapeText(steps[at + 1].label)} →</a>`
-    : ''}</nav>`;
+  return stepStrip(steps, current, 'Meeting workflow');
 }
 
 function adminHome(user) {

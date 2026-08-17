@@ -34,16 +34,15 @@ function procurementList() {
           <td>${s.bid_count || 0}</td>
         </tr>`).join('')}</tbody></table>`
     : emptyState('No solicitations posted.');
-  const body = html`
-    <div class="detail-head">
-      <h1>Procurement</h1>
-      <span class="head-actions"><a class="btn" href="/vendors/register">Register as a vendor</a></span>
-    </div>
-    <p class="muted">Open solicitations (RFPs, RFQs, invitations for bid) from the ${ORG.name}.
-      Register your business to join our vendor list, then submit questions and bids on any open solicitation.</p>
-    ${raw(card('Solicitations', table))}`;
-  return layout({ title: 'Procurement', active: '/procurement',
-    subtitle: 'Solicitations, vendors, and bids.', body });
+  const body = html`${raw(card('Solicitations', table))}`;
+  return layout({
+    title: 'Procurement',
+    active: '/procurement',
+    actions: '<a class="btn" href="/vendors/register">Register as a vendor</a>',
+    subtitle: `Open solicitations (RFPs, RFQs, invitations for bid) from the ${ORG.name}. `
+      + 'Register your business to join our vendor list, then submit questions and bids on any open solicitation.',
+    body,
+  });
 }
 
 // ---- Public solicitation detail ---------------------------------------------
@@ -133,11 +132,13 @@ function vendorRegister(query = {}) {
         placeholder="Construction, IT services, office supplies…"></label>
       <button type="submit" class="btn primary">Register</button>
     </form>`;
-  const body = html`
-    <p class="crumbs"><a href="/procurement">Procurement</a> / Vendor registration</p>
-    <h1>Vendor registration</h1>
-    ${raw(card('Register', form))}`;
-  return layout({ title: 'Vendor registration', active: '/procurement', body });
+  const body = html`${raw(card('Register', form))}`;
+  return layout({
+    title: 'Vendor registration',
+    active: '/procurement',
+    crumbs: [{ label: 'Procurement', href: '/procurement' }, { label: 'Vendor registration' }],
+    body,
+  });
 }
 
 // ---- Clerk: solicitation list + create --------------------------------------
@@ -172,12 +173,16 @@ function procurementAdmin() {
     </form>
     <script src="/assets/editor.js" defer></script>`;
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Procurement</p>
-    <div class="detail-head"><h1>Procurement</h1>
-      <span class="head-actions">${rows.length ? raw('<a class="btn" href="/admin/procurement.csv">Export CSV</a>') : ''}<a class="btn" href="/admin/vendors">Vendor registry</a></span></div>
     ${raw(card('Solicitations', table))}
     ${raw(card('New solicitation', createForm))}`;
-  return layout({ title: 'Procurement', active: '/admin', body });
+  return layout({
+    title: 'Procurement',
+    active: '/admin',
+    crumbs: [{ label: 'Clerk Workspace', href: '/admin' }, { label: 'Procurement' }],
+    actions: `${rows.length ? '<a class="btn" href="/admin/procurement.csv">Export CSV</a>' : ''}`
+      + '<a class="btn" href="/admin/vendors">Vendor registry</a>',
+    body,
+  });
 }
 
 // ---- Clerk: manage one solicitation (edit, Q&A, bids, award) -----------------

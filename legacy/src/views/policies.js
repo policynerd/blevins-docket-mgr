@@ -88,14 +88,14 @@ function policiesAdmin() {
         </td>
       </tr>`).join('')}</tbody></table>` : emptyState('No policies yet.');
 
-  const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Policies</p>
-    <div class="detail-head">
-      <h1>Policies</h1>
-      <span class="head-actions"><a class="btn" href="/admin/policies/new">+ New policy</a></span>
-    </div>
-    ${raw(card('All policies', table))}`;
-  return layout({ title: 'Policies', active: '/admin', body });
+  const body = html`${raw(card('All policies', table))}`;
+  return layout({
+    title: 'Policies',
+    active: '/admin',
+    crumbs: [{ label: 'Clerk Workspace', href: '/admin' }, { label: 'Policies' }],
+    actions: '<a class="btn" href="/admin/policies/new">+ New policy</a>',
+    body,
+  });
 }
 
 function policyForm(policy) {

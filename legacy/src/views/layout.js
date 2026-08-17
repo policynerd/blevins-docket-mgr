@@ -312,7 +312,10 @@ function pageHead({ title, subtitle, crumbs, actions }) {
   </div>`;
 }
 
-function layout({ title, active, body, subtitle, head, crumbs, actions, heading = true }) {
+// `h1` overrides the on-page heading where the browser title wants something
+// different — a tab reads better as "Drafting — BOS-2026-014", the page itself
+// as the measure's actual title.
+function layout({ title, active, body, subtitle, head, crumbs, actions, h1, heading = true }) {
   const user = _user;
   const authArea = user
     ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
@@ -355,7 +358,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, heading 
       </div>
       ${announcementBanner()}
       <main class="main-area">
-        ${heading ? pageHead({ title, subtitle, crumbs, actions }) : ''}
+        ${heading ? pageHead({ title: h1 || title, subtitle, crumbs, actions }) : ''}
         ${body}
       </main>
       <footer class="site-footer">
@@ -411,6 +414,22 @@ function emptyState(msg) {
 }
 
 // Vertical routing/approval tracker. `steps` come from repo.workflow.forMatter.
+// A horizontal "where am I in this job" strip. Steps are {id, label, href,
+// done}; `current` is the id of the page being rendered. Shared by the meeting
+// workflow and the drafting workbench so the two read the same way.
+function stepStrip(steps, current, ariaLabel) {
+  const at = steps.findIndex((s) => s.id === current);
+  return `<nav class="steps" aria-label="${escapeText(ariaLabel || 'Workflow')}">${steps.map((s, i) => {
+    const state = s.id === current ? 'here' : (s.done ? 'done' : 'todo');
+    const mark = s.done && s.id !== current ? '✓' : String(i + 1);
+    return `<a class="step step-${state}" href="${escapeText(s.href)}"`
+      + `${s.id === current ? ' aria-current="step"' : ''}>`
+      + `<span class="step-n">${mark}</span><span class="step-l">${escapeText(s.label)}</span></a>`;
+  }).join('')}${at >= 0 && at < steps.length - 1
+    ? `<a class="step-next" href="${escapeText(steps[at + 1].href)}">Next: ${escapeText(steps[at + 1].label)} →</a>`
+    : ''}</nav>`;
+}
+
 function workflowStepper(steps) {
   if (!steps || !steps.length) return emptyState('This file has not been routed yet.');
   const badge = (st) => `<span class="wf-badge wf-b-${escapeText(String(st).toLowerCase())}">${escapeText(st)}</span>`;
@@ -467,4 +486,4 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, authLayout, card, tabs, workflowStepper, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc };
+module.exports = { layout, authLayout, card, tabs, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc };

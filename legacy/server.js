@@ -1447,7 +1447,7 @@ route('GET', /^\/admin\/legislation\/([^/]+)\/letter$/, (req, res, ctx) => {
 // list rather than filing text under a section nothing will ever render.
 route('POST', /^\/admin\/legislation\/([^/]+)\/letter$/, (req, res, ctx) => {
   const m = matterOr404(res, ctx.params[0]); if (!m) return;
-  const ok = repo.letters.save(m.id, String(ctx.body.section || ''), String(ctx.body.body_html || ''));
+  const ok = repo.letters.save(m.id, String(ctx.body.section || ''), sanitizeHtml(ctx.body.body_html || ''));
   const suffix = ok ? '?saved=1' : '?saved=0';
   redirect(res, `/admin/legislation/${encodeURIComponent(m.file_number)}/letter${suffix}`);
 });

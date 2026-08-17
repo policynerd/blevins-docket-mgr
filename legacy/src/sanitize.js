@@ -6,7 +6,16 @@
 const ALLOWED = new Set([
   'p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'strike',
   'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'blockquote', 'a', 'hr', 'code', 'pre',
+  // Tabular matter: fiscal notes and budget tables are the reason the editor
+  // exists for staff reports at all.
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
+  // Footnote markers and section references.
+  'sup', 'sub',
 ]);
+
+// Elements that never close. Everything else is tracked on the open-tag stack
+// so the output cannot end mid-element.
+const VOID = new Set(['br', 'hr']);
 
 function escTextSegment(t) {
   return t
@@ -36,6 +45,10 @@ function sanitizeHtml(input, { maxLen = 200000 } = {}) {
 
   let out = '';
   let last = 0;
+  // Open elements, outermost first. The tag stream is filtered rather than
+  // parsed, so without this an unclosed <table> would swallow every page that
+  // renders the value afterwards.
+  const open = [];
   const tagRe = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g;
   let m;
   while ((m = tagRe.exec(s))) {
@@ -45,7 +58,14 @@ function sanitizeHtml(input, { maxLen = 200000 } = {}) {
     const name = m[1].toLowerCase();
     const closing = tag[1] === '/';
     if (!ALLOWED.has(name)) continue; // drop tag, keep text around it
-    if (closing) { out += `</${name}>`; continue; }
+    if (closing) {
+      const at = open.lastIndexOf(name);
+      if (at === -1) continue; // a close with no open: drop it
+      while (open.length > at) out += `</${open.pop()}>`; // close what it skipped
+      continue;
+    }
+    if (VOID.has(name)) { out += `<${name}>`; continue; }
+    open.push(name);
     if (name === 'a') {
       const href = safeHref(tag);
       out += href ? `<a href="${href}" rel="noopener noreferrer">` : '<a>';
@@ -54,6 +74,7 @@ function sanitizeHtml(input, { maxLen = 200000 } = {}) {
     }
   }
   out += escTextSegment(s.slice(last));
+  while (open.length) out += `</${open.pop()}>`;
   return out.trim();
 }
 
