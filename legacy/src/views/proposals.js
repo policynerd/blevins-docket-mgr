@@ -62,7 +62,6 @@ function proposalsList(query = {}) {
     : emptyState('No decided proposals yet.');
 
   const body = html`
-    <h1>Citizen proposals</h1>
     ${submitted}
     ${raw(card('Propose an idea', submitForm))}
     ${raw(card(`Open proposals (${open.length})`, openList))}

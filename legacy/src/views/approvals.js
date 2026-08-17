@@ -31,12 +31,14 @@ function approvalsPage(user) {
         </li>`).join('')}</ul>`
     : emptyState('Nothing is waiting on you. 🎉');
 
-  const body = html`
-    <h1>Approvals</h1>
-    <p class="muted">Review steps routed to you${actsAsClerk ? ' (and unassigned steps, since you are a clerk)' : ''}.
-      Approving advances the file to the next step of its route; returning sends it back for revision.</p>
-    ${raw(card(`Waiting on you (${items.length})`, rows))}`;
-  return layout({ title: 'Approvals', active: '/approvals', body });
+  const body = html`${raw(card(`Waiting on you (${items.length})`, rows))}`;
+  return layout({
+    title: 'Approvals',
+    active: '/approvals',
+    subtitle: `Review steps routed to you${actsAsClerk ? ' (and unassigned steps, since you are a clerk)' : ''}. `
+      + 'Approving advances the file to the next step of its route; returning sends it back for revision.',
+    body,
+  });
 }
 
 module.exports = { approvalsPage };

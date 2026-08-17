@@ -42,14 +42,18 @@ function consentsAdmin() {
     : '<p class="muted">Signatures are recorded in-app. Configure <code>ADOBE_SIGN_*</code> to route circulation through Adobe Acrobat Sign.</p>';
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / Written consents</p>
-    <h1>Actions by unanimous written consent</h1>
-    <p class="muted">Adopt a resolution without a meeting: circulate it to every seated director;
-      it is adopted when all have signed, and a single decline sends it back to a meeting.</p>
     ${raw(providerNote)}
     ${raw(card('Consents', table))}
     ${raw(card('New written consent', createForm))}`;
-  return layout({ title: 'Written consents', active: '/admin', body });
+  return layout({
+    title: 'Written consents',
+    h1: 'Actions by unanimous written consent',
+    active: '/admin',
+    crumbs: [{ label: 'Clerk Workspace', href: '/admin' }, { label: 'Written consents' }],
+    subtitle: 'Adopt a resolution without a meeting: circulate it to every seated director; '
+      + 'it is adopted when all have signed, and a single decline sends it back to a meeting.',
+    body,
+  });
 }
 
 function consentDetail(consent, signers) {

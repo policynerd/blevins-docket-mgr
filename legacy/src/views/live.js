@@ -10,12 +10,6 @@ const repo = require('../repo');
 function livePage(meeting, { role, personId, control }) {
   const personAttr = personId ? ` data-person="${personId}"` : '';
   const body = html`
-    <p class="crumbs"><a href="/calendar">Calendar</a> / <a href="/meetings/${meeting.id}">Meeting</a> / Live</p>
-    <div class="detail-head">
-      <h1>Live — ${meeting.body_name}</h1>
-      <span class="live-pill" data-live-pill>● LIVE</span>
-    </div>
-    <p class="muted">${raw(formatDateTime(meeting.meeting_date, meeting.meeting_time))} · ${meeting.location || ''}</p>
     ${raw(control ? `<p class="live-tools"><a class="btn" href="/display/${meeting.id}" target="_blank" rel="noopener">Open chamber display →</a>
       <span class="muted">The board for the room. Open it on the wall screen; it needs no sign-in.</span></p>` : '')}
 
@@ -30,7 +24,20 @@ function livePage(meeting, { role, personId, control }) {
       </section>
     </div>
     <script src="/assets/live.js" defer></script>`;
-  return layout({ title: 'Live — ' + meeting.body_name, active: '/calendar', body });
+  return layout({
+    title: 'Live — ' + meeting.body_name,
+    h1: 'Live — ' + meeting.body_name,
+    active: '/calendar',
+    crumbs: [
+      { label: 'Calendar', href: '/calendar' },
+      { label: 'Meeting', href: `/meetings/${meeting.id}` },
+      { label: 'Live' },
+    ],
+    actions: '<span class="live-pill" data-live-pill>● LIVE</span>',
+    subtitle: `${formatDateTime(meeting.meeting_date, meeting.meeting_time)}`
+      + `${meeting.location ? ' · ' + meeting.location : ''}`,
+    body,
+  });
 }
 
 function clerkConsole(meeting, user) {

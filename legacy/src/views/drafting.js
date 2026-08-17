@@ -11,11 +11,53 @@
 //                  law, and amendment impact.
 
 const { html, raw, formatDate } = require('../util');
-const { layout, card, statusBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, stepStrip, statusBadge, emptyState, escapeText } = require('./layout');
+const { editorField } = require('./reports');
+const { sanitizeHtml } = require('../sanitize');
 const repo = require('../repo');
 const legisdoc = require('../legisdoc');
 const amend = require('../amend');
 const docTemplates = require('../doc-templates');
+
+// Drafting a measure is one job with four surfaces, not four errands. The
+// strip is the same one the meeting workflow uses, so "where am I and what is
+// left" reads identically in both places.
+function draftSteps(matter, current) {
+  const fn = encodeURIComponent(matter.file_number);
+  const impact = amend.codeImpact(matter.id);
+  const missing = repo.letters.missing(matter.id);
+  const versions = repo.matters.versions(matter.id).length;
+  return stepStrip([
+    { id: 'draft', label: 'Draft the text', href: `/admin/legislation/${fn}/draft`,
+      done: !!String(matter.full_text || '').trim() },
+    { id: 'code', label: 'Changes to the Code', href: `/admin/legislation/${fn}/code`,
+      done: impact.total > 0 },
+    { id: 'letter', label: 'Board letter', href: `/admin/legislation/${fn}/letter`,
+      done: missing.length === 0 },
+    // A review surface rather than a thing to fill in: it is "done" once there
+    // is something to review against — a prior version or an amending
+    // instruction.
+    { id: 'compare', label: 'Comparative print', href: `/admin/legislation/${fn}/compare`,
+      done: versions >= 2 || impact.total > 0 },
+  ], current, 'Drafting workflow');
+}
+
+// One line, on every drafting surface, answering the only question that
+// governs whether the file can move: can it go before the board yet.
+function readiness(matter) {
+  const missing = repo.letters.missing(matter.id);
+  const hasText = !!String(matter.full_text || '').trim();
+  if (!hasText) {
+    return `<p class="form-warn">Not ready to agendise — the measure has no text yet.</p>`;
+  }
+  if (missing.length) {
+    return `<p class="form-warn">Not ready to agendise — ${missing.length} required board-letter
+      section${missing.length === 1 ? '' : 's'} still blank:
+      ${escapeText(missing.join(', '))}.
+      <a href="/admin/legislation/${escapeText(encodeURIComponent(matter.file_number))}/letter">Write them →</a></p>`;
+  }
+  return `<p class="saved-banner">Ready to agendise — text written and every required board-letter section answered.</p>`;
+}
 
 function opBadge(op) {
   const label = { add: 'Adds', amend: 'Amends', repeal: 'Repeals' }[op] || op;
@@ -75,16 +117,10 @@ function draftPage(matter, { saved = false } = {}) {
   const impact = amend.codeImpact(matter.id);
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/legislation/${matter.file_number}">${matter.file_number}</a> / Drafting</p>
-    <div class="detail-head">
-      <h1>${matter.title}</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/code">Amend the Code${impact.total ? raw(` <span class="badge">${impact.total}</span>`) : ''}</a>
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare">Comparative print</a>
-      </span>
-    </div>
+    ${raw(draftSteps(matter, 'draft'))}
     ${saved ? raw('<p class="saved-banner">Draft saved.</p>') : ''}
-    <p class="muted">${matter.file_number} · ${statusBadge(matter.status)} ·
+    ${raw(readiness(matter))}
+    <p class="muted">${statusBadge(matter.status)} ·
       ${flat.length} provision${flat.length === 1 ? '' : 's'} · ${doc.sections.length} section${doc.sections.length === 1 ? '' : 's'}</p>
 
     ${raw(startFromForm(matter, text))}
@@ -109,7 +145,19 @@ function draftPage(matter, { saved = false } = {}) {
           </form>`))}
       </div>
     </div>`;
-  return layout({ title: 'Drafting — ' + matter.file_number, active: '/admin', body });
+  return layout({
+    title: 'Drafting — ' + matter.file_number,
+    h1: matter.title,
+    active: '/admin',
+    crumbs: [
+      { label: 'Clerk Workspace', href: '/admin' },
+      { label: matter.file_number, href: `/legislation/${encodeURIComponent(matter.file_number)}` },
+      { label: 'Drafting' },
+    ],
+    actions: `<a class="btn" href="/legislation/${escapeText(encodeURIComponent(matter.file_number))}">View the file</a>`,
+    subtitle: matter.file_number,
+    body,
+  });
 }
 
 // --- Amending instructions ---------------------------------------------------
@@ -135,15 +183,7 @@ function codePage(matter, { saved = false } = {}) {
   const opts = sections.map((s) => `<option value="${escapeText(s.citation)}">§${escapeText(s.citation)} — ${escapeText(s.heading)}</option>`).join('');
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/legislation/${matter.file_number}">${matter.file_number}</a> / Amend the Code</p>
-    <div class="detail-head">
-      <h1>Amending instructions</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Back to drafting</a>
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/compare">Comparative print</a>
-      </span>
-    </div>
-    <p class="muted">${matter.file_number} — ${matter.title}</p>
+    ${raw(draftSteps(matter, 'code'))}
     ${saved ? raw('<p class="saved-banner">Instruction saved.</p>') : ''}
     ${impact.total ? raw(`<p class="code-impact-line">This measure would
       <b class="op-add-t">add ${impact.add}</b>, <b class="op-amend-t">amend ${impact.amend}</b>, and
@@ -166,7 +206,18 @@ function codePage(matter, { saved = false } = {}) {
           <textarea name="new_text" rows="10" class="mono" spellcheck="false" placeholder="SECTION 1. Purpose.&#10;(a) ..."></textarea></label>
         <button type="submit" class="btn primary">Add instruction</button>
       </form>`))}`;
-  return layout({ title: 'Amend the Code — ' + matter.file_number, active: '/admin', body });
+  return layout({
+    title: 'Amend the Code — ' + matter.file_number,
+    h1: 'Changes to the Code',
+    active: '/admin',
+    crumbs: [
+      { label: 'Clerk Workspace', href: '/admin' },
+      { label: matter.file_number, href: `/legislation/${encodeURIComponent(matter.file_number)}` },
+      { label: 'Changes to the Code' },
+    ],
+    subtitle: matter.title,
+    body,
+  });
 }
 
 // --- Comparative print -------------------------------------------------------
@@ -233,17 +284,21 @@ function comparePage(matter, mode, query = {}) {
   }
 
   const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/legislation/${matter.file_number}">${matter.file_number}</a> / Comparative print</p>
-    <div class="detail-head">
-      <h1>Comparative print</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Back to drafting</a>
-      </span>
-    </div>
-    <p class="muted">${matter.file_number} — ${matter.title}</p>
+    ${raw(draftSteps(matter, 'compare'))}
     ${raw(nav)}
     ${raw(`<div class="cp-panel">${panel}</div>`)}`;
-  return layout({ title: 'Comparative print — ' + matter.file_number, active: '/admin', body });
+  return layout({
+    title: 'Comparative print — ' + matter.file_number,
+    h1: 'Comparative print',
+    active: '/admin',
+    crumbs: [
+      { label: 'Clerk Workspace', href: '/admin' },
+      { label: matter.file_number, href: `/legislation/${encodeURIComponent(matter.file_number)}` },
+      { label: 'Comparative print' },
+    ],
+    subtitle: matter.title,
+    body,
+  });
 }
 
 // --- The Board Code (public) -------------------------------------------------
@@ -262,12 +317,18 @@ function codeIndex() {
     </section>`).join('');
 
   const body = html`
-    <p class="crumbs"><a href="/">Home</a> / Board Code</p>
-    <h1>The Board Code</h1>
-    <p class="muted">${st.sections} sections in force${st.repealed ? ` · ${st.repealed} repealed` : ''}${st.pending ? ` · ${st.pending} pending amendment${st.pending === 1 ? '' : 's'}` : ''}.
-      Each section links back to the measure that enacted it.</p>
     ${sections.length ? raw(groups) : emptyState('No sections have been codified yet.')}`;
-  return layout({ title: 'Board Code', active: '/code', body });
+  return layout({
+    title: 'Board Code',
+    h1: 'The Board Code',
+    active: '/code',
+    crumbs: [{ label: 'Home', href: '/' }, { label: 'Board Code' }],
+    subtitle: `${st.sections} sections in force`
+      + `${st.repealed ? ` · ${st.repealed} repealed` : ''}`
+      + `${st.pending ? ` · ${st.pending} pending amendment${st.pending === 1 ? '' : 's'}` : ''}.`
+      + ' Each section links back to the measure that enacted it.',
+    body,
+  });
 }
 
 function codeSection(section) {
@@ -292,11 +353,6 @@ function codeSection(section) {
   </div>`) : '';
 
   const body = html`
-    <p class="crumbs"><a href="/code">Board Code</a> / Title ${section.title_num || '—'} / §${section.citation}</p>
-    <div class="detail-head">
-      <h1>§${section.citation} — ${section.heading}</h1>
-      ${section.status === 'Repealed' ? raw('<span class="badge st-failed">Repealed</span>') : ''}
-    </div>
     ${pendingBox}
     <dl class="meta">
       <dt>Status</dt><dd>${section.status}</dd>
@@ -305,7 +361,18 @@ function codeSection(section) {
     </dl>
     ${raw(card('Text', `<div class="ld-doc">${legisdoc.toHtml(doc)}</div>`))}
     ${raw(card('Amendment history', histRows))}`;
-  return layout({ title: `§${section.citation}`, active: '/code', body });
+  return layout({
+    title: `§${section.citation}`,
+    h1: `§${section.citation} — ${section.heading}`,
+    active: '/code',
+    crumbs: [
+      { label: 'Board Code', href: '/code' },
+      { label: `Title ${section.title_num || '—'}` },
+      { label: `§${section.citation}` },
+    ],
+    actions: section.status === 'Repealed' ? '<span class="badge st-failed">Repealed</span>' : '',
+    body,
+  });
 }
 
 module.exports = {
@@ -327,16 +394,19 @@ function letterPage(matter, opts = {}) {
        ${escapeText(missing.map((s) => s.label).join(', '))}.</p>`
     : `<p class="saved-banner">All required sections are written.</p>`;
 
+  // Sanitized on the way out as well as the way in: rows written before the
+  // save path sanitized are still in the table, and this value is injected
+  // into the editing surface as real markup.
   const blocks = composed.map((s) => `
     <section class="ls-block${s.filled ? ' ls-filled' : ''}${s.required && !s.filled ? ' ls-missing' : ''}">
-      <form class="form" method="post" action="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter">
+      <form class="form" method="post" data-wp-form action="/admin/legislation/${encodeURIComponent(matter.file_number)}/letter">
         <input type="hidden" name="section" value="${escapeText(s.key)}">
         <div class="ls-head">
           <h3>${escapeText(s.label)}</h3>
           ${s.required ? '<span class="badge pending-badge">Required</span>' : '<span class="muted">Optional</span>'}
         </div>
         <p class="muted ls-hint">${escapeText(s.hint || '')}</p>
-        <textarea name="body_html" rows="6" placeholder="—">${escapeText(s.body_html || '')}</textarea>
+        ${editorField('body_html', sanitizeHtml(s.body_html || ''), { rows: 6, toolbar: 'basic' })}
         <div class="form-actions">
           <button type="submit" class="btn">Save ${escapeText(s.label.toLowerCase())}</button>
         </div>
@@ -344,21 +414,26 @@ function letterPage(matter, opts = {}) {
     </section>`).join('');
 
   const body = html`
-    <p class="crumbs"><a href="/legislation/${raw(encodeURIComponent(matter.file_number))}">${matter.file_number}</a> / Board letter</p>
-    <div class="detail-head">
-      <h1>Board letter — ${matter.file_number}</h1>
-      <span class="head-actions">
-        <a class="btn" href="/admin/legislation/${raw(encodeURIComponent(matter.file_number))}/draft">✎ Drafting</a>
-        <a class="btn primary" href="/legislation/${raw(encodeURIComponent(matter.file_number))}/doc/board-letter.pdf">📄 Preview letter</a>
-      </span>
-    </div>
-    <p class="muted">${matter.title}</p>
+    ${raw(draftSteps(matter, 'letter'))}
     ${opts.saved ? raw('<p class="saved-banner">Section saved.</p>') : ''}
     ${raw(status)}
     <p class="muted">${raw(String(done))} of ${raw(String(composed.length))} sections written.
       The section list is set under <a href="/admin/letter-sections">Board letter sections</a>.</p>
-    ${raw(blocks)}`;
-  return layout({ title: 'Board letter', active: '/admin', body });
+    ${raw(blocks)}
+    <script src="/assets/editor.js" defer></script>`;
+  return layout({
+    title: 'Board letter — ' + matter.file_number,
+    h1: 'Board letter',
+    active: '/admin',
+    crumbs: [
+      { label: 'Clerk Workspace', href: '/admin' },
+      { label: matter.file_number, href: `/legislation/${encodeURIComponent(matter.file_number)}` },
+      { label: 'Board letter' },
+    ],
+    actions: `<a class="btn primary" href="/legislation/${escapeText(encodeURIComponent(matter.file_number))}/doc/board-letter.pdf">Preview the letter</a>`,
+    subtitle: matter.title,
+    body,
+  });
 }
 
 // The standard section list, edited as one section per line: KEY | LABEL | required
@@ -372,10 +447,6 @@ function letterSectionsAdmin(saved, opts = {}) {
     [s.key, s.label, s.required ? 'required' : 'optional', s.hint || ''].join(' | ').replace(/ \| $/, '')
   ).join('\n');
   const body = html`
-    <p class="crumbs"><a href="/admin">Clerk Workspace</a> / Board letter sections</p>
-    <h1>Board letter sections</h1>
-    <p class="muted">The questions every board letter must answer, in the order they appear.
-      Which questions a board asks is its own policy, so this list is configuration.</p>
     ${saved ? raw('<p class="saved-banner">Section list saved.</p>') : ''}
     ${opts.error ? raw(`<p class="form-error">${escapeText(opts.error)}</p>`) : ''}
     ${raw(card('Standard sections', `
@@ -391,5 +462,12 @@ function letterSectionsAdmin(saved, opts = {}) {
           <a class="btn-link" href="/admin">Cancel</a>
         </div>
       </form>`))}`;
-  return layout({ title: 'Board letter sections', active: '/admin', body });
+  return layout({
+    title: 'Board letter sections',
+    active: '/admin',
+    crumbs: [{ label: 'Clerk Workspace', href: '/admin' }, { label: 'Board letter sections' }],
+    subtitle: 'The questions every board letter must answer, in the order they appear. '
+      + 'Which questions a board asks is its own policy, so this list is configuration.',
+    body,
+  });
 }

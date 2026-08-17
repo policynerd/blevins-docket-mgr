@@ -596,6 +596,46 @@ test('sanitizer strips scripts and event handlers, keeps allowed tags', () => {
   assert.match(out, /<h2>t<\/h2>/);
 });
 
+test('sanitizer keeps tabular matter and footnote markers', () => {
+  const out = sanitizeHtml(
+    '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'
+    + '<tbody><tr><td>2026</td><td>$1,200</td></tr></tbody></table><p>See note<sup>1</sup>, H<sub>2</sub>O.</p>');
+  assert.match(out, /<table><caption>Fiscal note<\/caption>/);
+  assert.match(out, /<th>Year<\/th>/);        // the tag survives, its attributes do not
+  assert.ok(!/colspan/i.test(out));
+  assert.match(out, /<td>\$1,200<\/td>/);
+  assert.match(out, /<sup>1<\/sup>/);
+  assert.match(out, /<sub>2<\/sub>/);
+});
+
+// The sanitizer filters a tag stream rather than parsing a tree, so without an
+// explicit balance pass an unclosed <table> would swallow whatever the page
+// rendered after it.
+test('sanitizer closes what a document leaves open', () => {
+  const out = sanitizeHtml('<table><tr><td>orphan');
+  assert.match(out, /<\/td><\/tr><\/table>$/);
+
+  const nested = sanitizeHtml('<b><i>both open');
+  assert.match(nested, /^<b><i>both open<\/i><\/b>$/);
+
+  // A close that skips a level closes the level it skipped, rather than
+  // emitting a </b> that belongs to nothing.
+  assert.match(sanitizeHtml('<b><i>x</b>'), /^<b><i>x<\/i><\/b>$/);
+});
+
+test('sanitizer drops a closing tag that never opened', () => {
+  assert.equal(sanitizeHtml('</table>plain text'), 'plain text');
+  assert.equal(sanitizeHtml('done</b>'), 'done');
+});
+
+test('flattening a table for the PDF keeps its cells apart', () => {
+  const { paragraphs } = require('../src/documents');
+  const rows = paragraphs(
+    '<table><tr><th>Fund</th><th>Amount</th></tr><tr><td>General</td><td>$40,000</td></tr></table>');
+  // Without a cell rule these arrive as "FundAmount" — one unreadable run.
+  assert.deepEqual(rows, ['Fund | Amount', 'General | $40,000']);
+});
+
 test('terms & vacancies: expiring window and seat math', () => {
   const memberId = db.prepare('SELECT id FROM body_members WHERE body_id = ?').get(bodyId).id;
   repo.bodies.setMemberTerm(memberId, { start_date: '2024-01-01', end_date: '2026-08-01' });
@@ -1263,6 +1303,66 @@ test('letter: required sections are reported until written', () => {
     if (s.required) repo.letters.save(m.id, s.key, 'Answered.');
   }
   assert.deepEqual(repo.letters.missing(m.id), []);
+});
+
+// The four drafting surfaces are one job. Each carries the same strip, marks
+// itself as the current step, and reports the same readiness.
+test('drafting: every surface carries the same path and marks its own step', () => {
+  const drafting = require('../src/views/drafting');
+  const b = repo.bodies.insert({ name: 'Path Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Pathfinder', status: 'Draft', body_id: b });
+  const full = repo.matters.get(m.id);
+
+  const surfaces = {
+    draft: String(drafting.draftPage(full)),
+    code: String(drafting.codePage(full)),
+    compare: String(drafting.comparePage(full, 'law')),
+    letter: String(drafting.letterPage(full)),
+  };
+  for (const [step, page] of Object.entries(surfaces)) {
+    assert.match(page, /class="steps"/, `${step} has no path strip`);
+    assert.match(page, /Drafting workflow/, `${step} strip is unlabelled`);
+    // Exactly one step is the one you are on.
+    assert.equal((page.match(/aria-current="step"/g) || []).length, 1, `${step} marks the wrong count`);
+    assert.match(page, new RegExp(`step-here[^>]*"[^>]*>|href="[^"]*/${step}"`), `${step} not linked`);
+    // And exactly one page heading, from the layout rather than the body.
+    assert.equal((page.match(/<h1>/g) || []).length, 1, `${step} does not have exactly one h1`);
+  }
+});
+
+test('drafting: readiness reports the letter sections still blank', () => {
+  const drafting = require('../src/views/drafting');
+  const b = repo.bodies.insert({ name: 'Ready Board', type: 'Governing Body', seats: 3 });
+
+  // No text at all: that is the first thing missing, not the letter.
+  const blank = repo.matters.insertNumbered({ type: 'Ordinance', title: 'Blank', status: 'Draft', body_id: b });
+  assert.match(String(drafting.draftPage(repo.matters.get(blank.id))), /no text yet/);
+
+  const m = repo.matters.insertNumbered({
+    type: 'Ordinance', title: 'Half done', status: 'Draft', body_id: b,
+    full_text: 'SECTION 1. Short title.',
+  });
+  assert.match(String(drafting.draftPage(repo.matters.get(m.id))), /Not ready to agendise/);
+
+  for (const s of repo.letters.sections()) {
+    if (s.required) repo.letters.save(m.id, s.key, '<p>Answered.</p>');
+  }
+  assert.match(String(drafting.draftPage(repo.matters.get(m.id))), /Ready to agendise/);
+});
+
+// The column is named body_html and is injected into the editing surface as
+// real markup. Rows written before the save path sanitized are still in the
+// table, so the read side has to defend itself.
+test('letter: stored markup is sanitized before it reaches the editor', () => {
+  const drafting = require('../src/views/drafting');
+  const b = repo.bodies.insert({ name: 'Scrub Board', type: 'Governing Body', seats: 3 });
+  const m = repo.matters.insertNumbered({ type: 'Motion', title: 'Scrubbed', status: 'Draft', body_id: b });
+  repo.letters.save(m.id, 'background', '<p>fine</p><script>evil()</script><img src=x onerror=y>');
+
+  const page = String(drafting.letterPage(repo.matters.get(m.id)));
+  const surface = page.slice(page.indexOf('data-wp-editor'));
+  assert.ok(!/evil\(\)|onerror/i.test(surface), 'unsanitized markup reached the editing surface');
+  assert.match(page, /fine/);
 });
 
 test('letter: a section key outside the configured list is refused', () => {
@@ -2157,6 +2257,20 @@ test('a page can opt out of the header when it is itself a document', () => {
   const { layout } = require('../src/views/layout');
   const out = String(layout({ title: 'Agenda Packet', heading: false, body: '<article>x</article>' }));
   assert.equal((out.match(/<h1/g) || []).length, 0);
+});
+
+// A browser tab wants the file number to tell two tabs apart; the page itself
+// wants the measure's title. Before this they had to be the same string.
+test('the tab title and the page heading can differ', () => {
+  const { layout } = require('../src/views/layout');
+  const out = String(layout({
+    title: 'Drafting — 260803',
+    h1: 'An Ordinance amending the Zoning Code',
+    body: '',
+  }));
+  assert.match(out, /<title>Drafting — 260803 ·/);
+  assert.match(out, /<h1>An Ordinance amending the Zoning Code<\/h1>/);
+  assert.equal((out.match(/<h1/g) || []).length, 1);
 });
 
 test('meetings are in the navigation', () => {

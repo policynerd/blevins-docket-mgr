@@ -53,10 +53,6 @@ function memberHome(user) {
 
   const body = html`
     ${raw(liveBanner)}
-    <div class="page-head">
-      <h1>Welcome, ${person ? person.full_name : user.name}</h1>
-      <p class="muted">Your board member workspace — agendas, sponsored legislation, and your voting record.</p>
-    </div>
     <div class="admin-actions">
       <a class="btn primary" href="/member/files/new">✎ Draft a new file</a>
       ${liveNow ? raw(`<a class="btn" href="/live/${liveNow.id}">● Join live meeting</a>`) : ''}
@@ -79,7 +75,13 @@ function memberHome(user) {
     ${raw(card('Your recent votes', voteRows
       ? `<table class="data"><thead><tr><th>Date</th><th>Item</th><th>Vote</th></tr></thead><tbody>${voteRows}</tbody></table>`
       : emptyState('No recorded votes yet.')))}`;
-  return layout({ title: 'Member Portal', active: '/member', body });
+  return layout({
+    title: 'Member Portal',
+    h1: `Welcome, ${person ? person.full_name : user.name}`,
+    active: '/member',
+    subtitle: 'Your board member workspace — agendas, sponsored legislation, and your voting record.',
+    body,
+  });
 }
 
 function memberFileForm(user) {
@@ -129,11 +131,14 @@ function memberFileForm(user) {
         });
       })();
     </script>`;
-  const body = html`
-    <p class="crumbs"><a href="/member">Member Portal</a> / Draft a new file</p>
-    <h1>Draft a new legislative file</h1>
-    ${raw(card('Word processor', form))}`;
-  return layout({ title: 'Draft a new file', active: '/member', body });
+  const body = html`${raw(card('Word processor', form))}`;
+  return layout({
+    title: 'Draft a new file',
+    h1: 'Draft a new legislative file',
+    active: '/member',
+    crumbs: [{ label: 'Member Portal', href: '/member' }, { label: 'Draft a new file' }],
+    body,
+  });
 }
 
 // Watched files with their latest recorded action (any signed-in user).
