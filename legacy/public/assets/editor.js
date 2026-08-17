@@ -177,10 +177,16 @@
       if (!pastedHtml && !pastedText) return;
       e.preventDefault();
       if (pastedHtml) {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = pastedHtml;
-        scrub(tmp);
-        document.execCommand('insertHTML', false, tmp.innerHTML);
+        // Parsed into a document with no browsing context, so nothing in it
+        // runs and no resource is fetched. Assigning the clipboard to a live
+        // element's innerHTML instead would fire an <img onerror> in the gap
+        // before scrub() could strip it — the element belongs to this
+        // document, so the load is attempted even while it is detached.
+        var doc = new DOMParser().parseFromString(pastedHtml, 'text/html');
+        scrub(doc.body);
+        // Only allowlisted tags remain, and every attribute except a
+        // validated href has been removed.
+        document.execCommand('insertHTML', false, doc.body.innerHTML);
       } else {
         document.execCommand('insertText', false, pastedText);
       }
