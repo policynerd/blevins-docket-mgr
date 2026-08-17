@@ -170,35 +170,44 @@ function matterForm(matter, opts = {}) {
 
   const form = html`
     <form class="form" method="post" action="${action}">
-      <div class="form-row">
-        <label>Type
-          <select name="type" required>${raw(selectOptions(repo.MATTER_TYPES, matter && matter.type))}</select>
+      <fieldset>
+        <legend>Identification</legend>
+        <div class="form-row">
+          <label>Type
+            <select name="type" required>${raw(selectOptions(repo.MATTER_TYPES, matter && matter.type))}</select>
+          </label>
+          <label>Status
+            <select name="status">${raw(selectOptions(repo.MATTER_STATUSES, matter ? matter.status : 'Draft'))}</select>
+          </label>
+        </div>
+        ${fileNumPreview}
+        <label>Title
+          <input type="text" name="title" required value="${matter ? matter.title : ''}" placeholder="An ordinance amending…">
         </label>
-        <label>Status
-          <select name="status">${raw(selectOptions(repo.MATTER_STATUSES, matter ? matter.status : 'Draft'))}</select>
+      </fieldset>
+      <fieldset>
+        <legend>Referral</legend>
+        <div class="form-row">
+          <label>In control (body)
+            <select name="body_id">${raw(selectOptions(allBodies, matter && matter.body_id, { includeBlank: '—' }))}</select>
+          </label>
+          <label>Introduced
+            <input type="date" name="intro_date" value="${matter && matter.intro_date ? matter.intro_date : ''}">
+          </label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Text of the measure</legend>
+        <label>Summary
+          <textarea name="summary" rows="3" placeholder="Plain-language summary for the public record…">${matter ? (matter.summary || '') : ''}</textarea>
         </label>
-      </div>
-      ${fileNumPreview}
-      <label>Title
-        <input type="text" name="title" required value="${matter ? matter.title : ''}" placeholder="An ordinance amending…">
-      </label>
-      <div class="form-row">
-        <label>In control (body)
-          <select name="body_id">${raw(selectOptions(allBodies, matter && matter.body_id, { includeBlank: '—' }))}</select>
+        <label>Full text
+          <textarea name="full_text" rows="8" placeholder="BE IT ORDAINED…">${matter ? (matter.full_text || '') : ''}</textarea>
         </label>
-        <label>Introduced
-          <input type="date" name="intro_date" value="${matter && matter.intro_date ? matter.intro_date : ''}">
+        <label>Index terms (comma-separated)
+          <input type="text" name="topics" value="${isEdit ? repo.topics.forMatter(matter.id).map((t) => t.name).join(', ') : ''}" placeholder="Zoning, Budget, Public Safety">
         </label>
-      </div>
-      <label>Summary
-        <textarea name="summary" rows="3" placeholder="Plain-language summary for the public record…">${matter ? (matter.summary || '') : ''}</textarea>
-      </label>
-      <label>Full text
-        <textarea name="full_text" rows="8" placeholder="BE IT ORDAINED…">${matter ? (matter.full_text || '') : ''}</textarea>
-      </label>
-      <label>Index terms (comma-separated)
-        <input type="text" name="topics" value="${isEdit ? repo.topics.forMatter(matter.id).map((t) => t.name).join(', ') : ''}" placeholder="Zoning, Budget, Public Safety">
-      </label>
+      </fieldset>
       <fieldset>
         <legend>Fiscal note</legend>
         <div class="form-row">
