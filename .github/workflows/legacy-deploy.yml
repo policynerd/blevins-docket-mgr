@@ -1,7 +1,19 @@
 name: Deploy legacy app
 
 # Deploys the legislative docket manager (beg-docket-manager) — the app serving
-# app.blevinsholdings.com today.
+# app.blevinsholdings.com today. This is the only thing in the repository that
+# reaches production; run or merge to it to ship a change to the Board's live
+# system.
+#
+# On push to main, not workflow_dispatch. The workflow this replaces was
+# deliberately manual, on the reasoning that "a push-triggered deploy of the
+# Board's system is not something to acquire by accident" — a fair argument,
+# and the opposite failure is what actually happened: deploys were silently
+# broken for four merges and nobody noticed, because nothing was expected to
+# happen automatically. The trade is answered with gates rather than with
+# hesitation: the suite runs, the config is checked against the app name, and
+# the deployed site has to answer afterwards. Dispatch is still available for
+# a deploy without a merge.
 #
 # It has its own fly.toml and Dockerfile under legacy/, and they are not the
 # ones at the repository root: the root pair builds the rebuild
@@ -44,6 +56,15 @@ jobs:
         run: |
           npm ci --omit=dev
           npm test
+
+      # Carried over from the workflow this replaces. The suite loads most of
+      # these, but a require-time error in a view it never renders would
+      # otherwise surface first in production.
+      - name: Module load smoke test
+        working-directory: legacy
+        run: >
+          node --experimental-sqlite --no-warnings -e
+          "require('./src/repo');require('./src/views/pages');require('./src/views/admin');require('./src/views/org');require('./src/views/minutes');require('./src/http/kernel');console.log('modules OK')"
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
