@@ -170,6 +170,11 @@ function matterForm(matter, opts = {}) {
 
   const form = html`
     <form class="form" method="post" action="${action}">
+      <p class="form-instructions">
+        <strong>Before opening a file</strong>
+        Complete every field marked with an asterisk. The file number is assigned on save and
+        cannot be changed afterwards; the measure's text may be drafted later.
+      </p>
       <fieldset>
         <legend>Identification</legend>
         <div class="form-row">

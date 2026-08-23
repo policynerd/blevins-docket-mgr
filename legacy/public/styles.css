@@ -332,22 +332,23 @@ a.stat:hover { text-decoration: none; background: var(--zebra); }
 /* Cards / panels */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin-bottom: 18px; box-shadow: var(--shadow); }
-/* Section header.
-   A filled band with a rule down its leading edge — the section header of
-   institutional desktop software, and correct for this application. It was
-   briefly flattened to a hairline on the grounds that it looked dated; that
-   was the wrong reason to change it. Density and explicit labelling are the
-   point here, and a section of a screen should announce itself.
-   What was actually wrong was the hue. Drawn in brass, the band sat directly
-   above the navy grid header and read as an unrelated third stripe. Drawn in
-   the slate the grid header already uses, the head and the table below it read
-   as one component. */
+/* Section header — the solid captioned bar of an InfoPath/SharePoint form.
+   It went brass, then hairline, then a slate tint; all three were too quiet.
+   In the forms software this application is modelled on, a section announces
+   itself in a filled bar with its name set in bold on the fill, and the reason
+   it works is that the caption is unmissable while scanning a long form for
+   the one block you need. Set in the navy the grid header already uses, so a
+   card and the table inside it read as one component. */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
-  padding: 11px 16px 10px; background: var(--accent-soft);
-  border-bottom: 1px solid var(--line); border-left: 4px solid var(--blv-navy);
+  padding: 7px 14px; background: var(--blv-navy);
+  border-bottom: 1px solid var(--accent-dark);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; }
-.card-head h2 { margin: 0; font-size: var(--t-lead); letter-spacing: 0.01em;
-  color: var(--blv-navy-deep); font-weight: 700; font-family: var(--sans); }
+/* Anything sitting in the bar is on a dark ground now. */
+.card-head a, .card-head .btn-link { color: #E7EAF0; }
+.card-head a:hover, .card-head .btn-link:hover { color: #fff; }
+.card-head .muted { color: var(--on-navy-dim); }
+.card-head h2 { margin: 0; font-size: var(--t-body); letter-spacing: 0.02em;
+  color: #fff; font-weight: 700; font-family: var(--sans); }
 .card-body { padding: 15px; }
 /* Cards in a row size to their own content. Stretching them to a common height
    left the shorter one with a couple of hundred pixels of empty card under its
@@ -528,9 +529,44 @@ ol.agenda { list-style: none; padding: 0; margin: 0; }
   font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--blv-navy-mid); }
 .form fieldset .form-row:last-child label:last-child { margin-bottom: 10px; }
 
-.form label { display: block; margin-bottom: 13px; font-size: var(--t-body); font-weight: 600; color: var(--blv-navy-mid); }
+/* The form itself, in the manner of the forms software this is modelled on:
+   fields sit as white boxes on a grey ground rather than white-on-white, so
+   the fillable area is visible at a glance instead of being inferred from
+   borders. */
+.form fieldset { background: var(--marble); }
+.form input[type=text], .form input[type=url], .form input[type=date],
+.form input[type=search], .form input[type=number], .form input[type=email],
+.form input[type=password], .form select, .form textarea { background: #fff; }
+
+/* Required fields carry a red asterisk, as they do on every government form
+   anyone has filled in. Driven off the `required` attribute rather than a
+   class, so a field cannot be marked required to the browser and unmarked to
+   the reader — the two can never disagree. */
+.form label:has(> input[required]),
+.form label:has(> select[required]),
+.form label:has(> textarea[required]),
+.form label.req { position: relative; }
+/* Pinned to the caption row rather than appended inline: the label element
+   wraps its own control, so an inline ::after lands underneath the input
+   instead of beside the words. */
+.form label:has(> input[required])::after,
+.form label:has(> select[required])::after,
+.form label:has(> textarea[required])::after,
+.form label.req::after {
+  content: '*'; position: absolute; top: 0; right: 0;
+  color: var(--bad); font-weight: 700; font-size: var(--t-body); line-height: 1.2; }
+
+/* The instruction block at the head of a form. Red, italic, and stated before
+   anything is filled in — the convention these forms have always used for
+   "read this before you start". */
+.form-instructions { margin: 0 0 14px; padding: 9px 12px; text-align: center;
+  border: 1px solid var(--bad-line); background: var(--bad-dim);
+  color: var(--bad-dark); font-style: italic; font-size: var(--t-small); }
+.form-instructions strong { display: block; font-style: normal; font-weight: 700; margin-bottom: 2px; }
+
+.form label { display: block; margin-bottom: 9px; font-size: var(--t-small); font-weight: 600; color: var(--blv-navy-mid); }
 .form input[type=text], .form input[type=url], .form input[type=date], .form input[type=search],
-.form select, .form textarea { width: 100%; padding: 8px 10px; margin-top: 6px; border: 1px solid var(--line);
+.form select, .form textarea { width: 100%; padding: 5px 8px; margin-top: 3px; border: 1px solid var(--line);
   border-radius: 3px; font-size: var(--t-body); font-family: inherit; font-weight: 400; }
 .form textarea { resize: vertical; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s6); }
