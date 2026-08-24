@@ -648,6 +648,39 @@ test('the live types have drafting and document forms', () => {
   }
 });
 
+// Correcting an agenda item used to mean deleting it and adding it back, which
+// discarded its votes and its place in the running order. The amend path must
+// touch how the item is presented, and nothing about how it was decided.
+test('an agenda item can be amended without disturbing what was recorded', () => {
+  const b = repo.bodies.insert({ name: 'Amend Board', type: 'Governing Body', seats: 3 });
+  const m = repo.meetings.insert({ body_id: b, meeting_date: '2026-09-01', meeting_time: '10:00' });
+  const item = repo.meetings.addItem({
+    meeting_id: m, title: 'Mistyped title', section: 'New Business', requires_vote: 1 });
+  const id = typeof item === 'object' ? item.id : item;
+
+  const before = repo.meetings.getItem(id);
+  repo.meetings.setItemResult(id, 'Adopted', 'Pass');
+
+  assert.equal(repo.meetings.updateItem(id, {
+    section: 'Old Business', title: 'Corrected title', requires_vote: true,
+    vote_threshold: 'two_thirds',
+  }), true);
+
+  const after = repo.meetings.getItem(id);
+  assert.equal(after.title, 'Corrected title');
+  assert.equal(after.section, 'Old Business');
+  assert.equal(after.vote_threshold, 'two_thirds');
+  // The decision survives the correction, and so does the item's identity.
+  assert.equal(after.id, before.id, 'the item was replaced rather than amended');
+  assert.equal(after.result, 'Pass', 'amending the item discarded its result');
+  assert.equal(after.action, 'Adopted');
+  assert.equal(after.sort_order, before.sort_order, 'the item lost its place in the order');
+
+  // An unknown threshold falls back rather than being written through.
+  repo.meetings.updateItem(id, { title: 'x', vote_threshold: 'unanimous-ish' });
+  assert.ok(['majority', 'two_thirds', 'majority_full'].includes(repo.meetings.getItem(id).vote_threshold));
+});
+
 test('sanitizer keeps tabular matter and footnote markers', () => {
   const out = sanitizeHtml(
     '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'

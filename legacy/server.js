@@ -1918,6 +1918,33 @@ route('GET', /^\/admin\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   sendHtml(res, admin.packetBuilder(mt));
 });
 
+// Amend an item already on the agenda. Previously the only correction
+// available was delete-and-re-add, which discarded the item's votes, its
+// packet documents and its place in the running order.
+route('GET', /^\/admin\/agenda-items\/(\d+)\/edit$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  const meeting = repo.meetings.get(item.meeting_id);
+  if (!meeting) return sendHtml(res, pages.notFound(), 404);
+  sendHtml(res, admin.agendaItemPage(meeting, item));
+});
+route('POST', /^\/admin\/agenda-items\/(\d+)$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const item = repo.meetings.getItem(id);
+  if (!item) return sendHtml(res, pages.notFound(), 404);
+  const b = ctx.body;
+  repo.meetings.updateItem(id, {
+    section: b.section ? String(b.section).slice(0, 80) : null,
+    agenda_number: b.agenda_number ? String(b.agenda_number).slice(0, 20) : null,
+    title: b.title ? String(b.title).slice(0, 300) : null,
+    matter_id: b.matter_id ? Number(b.matter_id) : null,
+    item_type: b.item_type ? String(b.item_type).slice(0, 40) : null,
+    requires_vote: !!b.requires_vote,
+    notes: b.notes ? String(b.notes).slice(0, 2000) : null,
+    vote_threshold: b.vote_threshold,
+  });
+  redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
+});
 route('POST', /^\/admin\/agenda-items\/(\d+)\/in-packet$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendHtml(res, pages.notFound(), 404);

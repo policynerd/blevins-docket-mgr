@@ -605,6 +605,87 @@ function placementBanner(q) {
   return `<p class="saved-banner">Placed ${noun(added)} on the agenda.</p>`;
 }
 
+// One form for putting an item on the agenda and for correcting one already
+// there. Adding was possible before; amending was not, so a wrong section or a
+// mistyped title could only be fixed by deleting the item and adding it back —
+// which discarded its votes, its packet documents and its place in the order.
+//
+// Grouped the way a clerk decides an item: where it sits, what it is about,
+// and how it will be put.
+function agendaItemForm(meeting, item, matterOpts) {
+  const isEdit = !!(item && item.id);
+  const action = isEdit ? `/admin/agenda-items/${item.id}` : `/admin/meetings/${meeting.id}/agenda`;
+  const v = (k) => (item && item[k] != null ? item[k] : '');
+  const thresholds = [
+    { value: 'majority', label: 'Majority of those voting' },
+    { value: 'two_thirds', label: 'Two-thirds of those voting' },
+    { value: 'majority_full', label: 'Majority of the full seated body' },
+  ];
+  return html`
+    <form class="form" method="post" action="${action}">
+      <fieldset>
+        <legend>Placement</legend>
+        <div class="form-row">
+          <label>Section
+            <select name="section">${raw(selectOptions(repo.AGENDA_SECTIONS, v('section'), { includeBlank: '\u2014' }))}</select>
+          </label>
+          <label>Agenda number <span class="muted" style="font-weight:400">(blank to assign automatically)</span>
+            <input type="text" name="agenda_number" value="${v('agenda_number')}" placeholder="e.g. 1A">
+          </label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Subject</legend>
+        <div class="form-row">
+          <label>Legislative file
+            <select name="matter_id">${raw(selectOptions(matterOpts, v('matter_id'), { includeBlank: '\u2014 none (procedural item) \u2014' }))}</select>
+          </label>
+          <label>Item type
+            <select name="item_type">${raw(selectOptions(repo.ITEM_TYPES, v('item_type'), { includeBlank: '\u2014 none \u2014' }))}</select>
+          </label>
+        </div>
+        <label>Title <span class="muted" style="font-weight:400">(procedural items; a file supplies its own)</span>
+          <input type="text" name="title" value="${v('title')}" placeholder="Call to Order / Approval of Minutes\u2026">
+        </label>
+        <label>Note for the record <span class="muted" style="font-weight:400">(optional)</span>
+          <textarea name="notes" rows="2" placeholder="Context the minutes should carry\u2026">${v('notes')}</textarea>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>How it will be put</legend>
+        <label class="check-label">
+          <input type="checkbox" name="requires_vote" value="1"${item && item.requires_vote ? ' checked' : ''}> Requires a vote
+        </label>
+        <label>Threshold to carry
+          <select name="vote_threshold">${raw(selectOptions(thresholds, v('vote_threshold') || 'majority'))}</select>
+        </label>
+      </fieldset>
+      <div class="form-actions">
+        <button type="submit" class="btn primary">${isEdit ? 'Save item' : 'Add to agenda'}</button>
+        ${isEdit ? raw(`<a class="btn-link" href="/admin/meetings/${meeting.id}/agenda">Cancel</a>`) : ''}
+      </div>
+    </form>`;
+}
+
+// The amend screen for a single agenda item.
+function agendaItemPage(meeting, item) {
+  const matterOpts = repo.matters.search({ limit: 300 })
+    .map((m) => ({ value: m.id, label: `${m.file_number} \u2014 ${m.title}` }));
+  const label = item.agenda_number ? `Item ${item.agenda_number}` : 'Agenda item';
+  return layout({
+    title: `${label} \u2014 ${meeting.body_name}`,
+    h1: `Amend ${label.toLowerCase()}`,
+    active: '/admin',
+    crumbs: [
+      { label: 'Clerk Workspace', href: '/admin' },
+      { label: 'Agenda', href: `/admin/meetings/${meeting.id}/agenda` },
+      { label },
+    ],
+    subtitle: item.matter_title || item.title || '',
+    body: html`${raw(card('Agenda item', agendaItemForm(meeting, item, matterOpts)))}`,
+  });
+}
+
 function agendaManager(meeting, query) {
   const items = repo.meetings.items(meeting.id);
   const openMatters = repo.matters.search({ limit: 300 })
@@ -613,28 +694,7 @@ function agendaManager(meeting, query) {
   const itemBlocks = items.length ? items.map((it) => voteBlock(meeting, it)).join('') :
     emptyState('No agenda items yet.');
 
-  const addItemForm = html`
-    <form class="form inline-form" method="post" action="/admin/meetings/${meeting.id}/agenda">
-      <div class="form-row">
-        <label>Agenda # <span class="muted" style="font-weight:400">(auto)</span>
-          <input type="text" name="agenda_number" placeholder="auto (e.g. 1A)">
-        </label>
-        <label>Section<select name="section">${raw(selectOptions(repo.AGENDA_SECTIONS, '', { includeBlank: '—' }))}</select></label>
-      </div>
-      <div class="form-row">
-        <label>Legislative file (optional)
-          <select name="matter_id">${raw(selectOptions(openMatters, '', { includeBlank: '— none (procedural item) —' }))}</select>
-        </label>
-        <label>Item type<select name="item_type">${raw(selectOptions(repo.ITEM_TYPES, '', { includeBlank: '— none —' }))}</select></label>
-      </div>
-      <label>Item title (for procedural items)
-        <input type="text" name="title" placeholder="Call to Order / Approval of Minutes…">
-      </label>
-      <label class="check-label">
-        <input type="checkbox" name="requires_vote" value="1"> Requires a vote
-      </label>
-      <button type="submit" class="btn">Add to agenda</button>
-    </form>`;
+  const addItemForm = agendaItemForm(meeting, null, openMatters);
 
   const { db: settingsDb } = require('../db');
   const templateRow = settingsDb.prepare("SELECT value FROM settings WHERE key = 'agenda.template'").get();
@@ -927,6 +987,7 @@ function voteBlock(meeting, it) {
         <input type="text" name="video_ts" value="${escapeText(it.video_ts || '')}" placeholder="▶ 0:14:32" size="8">
         <button type="submit" class="btn-link">set</button>
       </form>
+      <a class="btn-link" href="/admin/agenda-items/${it.id}/edit" title="Amend this item">\u270e Edit</a>
       <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
         <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>
@@ -1155,6 +1216,6 @@ function mailAdmin({ sent = false } = {}) {
 }
 
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager, packetBuilder, agendaTemplateAdmin, commentsAdmin,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaItemPage, packetBuilder, agendaTemplateAdmin, commentsAdmin,
   matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin, mailAdmin,
 };

@@ -739,6 +739,37 @@ const meetings = {
       JOIN meetings mt ON mt.id = ai.meeting_id
       WHERE ai.id = ?`).get(id);
   },
+  // Amend an item already on the agenda. Until this existed the only way to
+  // correct a section, a title or a linked file was to delete the item and add
+  // it again — which threw away its votes, its packet documents and its place
+  // in the running order.
+  //
+  // Deliberately narrow: it touches how the item is presented and how it will
+  // be voted, and nothing about how it *was* voted. Results, timestamps and
+  // certification are written by the voting path alone, so a clerk tidying a
+  // title cannot disturb a recorded outcome.
+  updateItem(itemId, it) {
+    const cur = meetings.getItem(itemId);
+    if (!cur) return false;
+    const VALID_THRESHOLDS = new Set(['majority', 'two_thirds', 'majority_full']);
+    const threshold = VALID_THRESHOLDS.has(it.vote_threshold)
+      ? it.vote_threshold : (cur.vote_threshold || 'majority');
+    db.prepare(`UPDATE agenda_items SET
+        section = ?, agenda_number = ?, title = ?, matter_id = ?, item_type = ?,
+        requires_vote = ?, notes = ?, vote_threshold = ?
+      WHERE id = ?`).run(
+      it.section || null,
+      it.agenda_number || null,
+      it.title || null,
+      it.matter_id || null,
+      it.item_type || null,
+      it.requires_vote ? 1 : 0,
+      it.notes || null,
+      threshold,
+      itemId,
+    );
+    return true;
+  },
   setItemResult(itemId, action, result) {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
       .run(action || null, result || null, itemId);
