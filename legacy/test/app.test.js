@@ -615,6 +615,72 @@ test('the editor parses pasted markup inertly, never in the live document', () =
   assert.match(src, /insertNodes\(area, doc\.body\.childNodes\)/, 'paste does not go through insertNodes');
 });
 
+// The docket asks what the board must do with an item — act, or note it — not
+// what instrument it happens to be. Files predating that still hold the old
+// instrument names, and must not be quietly refiled by the change.
+test('matter types are Action and Information, and old files keep theirs', () => {
+  assert.deepEqual(repo.MATTER_TYPES, ['Action', 'Information']);
+  for (const t of ['Ordinance', 'Resolution', 'Contract', 'Report']) {
+    assert.ok(repo.ALL_MATTER_TYPES.includes(t), `${t} no longer validates`);
+    assert.ok(!repo.MATTER_TYPES.includes(t), `${t} is still offered for new files`);
+  }
+
+  const b = repo.bodies.insert({ name: 'Type Board', type: 'Governing Body', seats: 3 });
+  const legacy = repo.matters.insertNumbered({
+    type: 'Ordinance', title: 'Filed before the change', status: 'Draft', body_id: b });
+  assert.equal(repo.matters.get(legacy.id).type, 'Ordinance', 'an existing file was rewritten');
+
+  // Editing it must still offer its own type, or saving would refile it as an
+  // Action — the select posts whatever it happens to be showing.
+  const admin = require('../src/views/admin');
+  const form = String(admin.matterForm(repo.matters.get(legacy.id)));
+  assert.match(form, /<option value="Ordinance" selected>/, 'the old type is not offered on edit');
+  assert.match(form, /<option value="Action">/);
+});
+
+// Every new file is an Action, so a drafting form has to exist for it or the
+// "start from a form" offer would never appear again.
+test('the live types have drafting and document forms', () => {
+  const docTemplates = require('../src/doc-templates');
+  for (const t of repo.MATTER_TYPES) {
+    assert.ok(docTemplates.draftingDefaults()[t], `no drafting form for ${t}`);
+    assert.ok(docTemplates.applyTemplate(t, { title: 'X', file_number: '1' }), `no document form for ${t}`);
+  }
+});
+
+// Correcting an agenda item used to mean deleting it and adding it back, which
+// discarded its votes and its place in the running order. The amend path must
+// touch how the item is presented, and nothing about how it was decided.
+test('an agenda item can be amended without disturbing what was recorded', () => {
+  const b = repo.bodies.insert({ name: 'Amend Board', type: 'Governing Body', seats: 3 });
+  const m = repo.meetings.insert({ body_id: b, meeting_date: '2026-09-01', meeting_time: '10:00' });
+  const item = repo.meetings.addItem({
+    meeting_id: m, title: 'Mistyped title', section: 'New Business', requires_vote: 1 });
+  const id = typeof item === 'object' ? item.id : item;
+
+  const before = repo.meetings.getItem(id);
+  repo.meetings.setItemResult(id, 'Adopted', 'Pass');
+
+  assert.equal(repo.meetings.updateItem(id, {
+    section: 'Old Business', title: 'Corrected title', requires_vote: true,
+    vote_threshold: 'two_thirds',
+  }), true);
+
+  const after = repo.meetings.getItem(id);
+  assert.equal(after.title, 'Corrected title');
+  assert.equal(after.section, 'Old Business');
+  assert.equal(after.vote_threshold, 'two_thirds');
+  // The decision survives the correction, and so does the item's identity.
+  assert.equal(after.id, before.id, 'the item was replaced rather than amended');
+  assert.equal(after.result, 'Pass', 'amending the item discarded its result');
+  assert.equal(after.action, 'Adopted');
+  assert.equal(after.sort_order, before.sort_order, 'the item lost its place in the order');
+
+  // An unknown threshold falls back rather than being written through.
+  repo.meetings.updateItem(id, { title: 'x', vote_threshold: 'unanimous-ish' });
+  assert.ok(['majority', 'two_thirds', 'majority_full'].includes(repo.meetings.getItem(id).vote_threshold));
+});
+
 test('sanitizer keeps tabular matter and footnote markers', () => {
   const out = sanitizeHtml(
     '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'

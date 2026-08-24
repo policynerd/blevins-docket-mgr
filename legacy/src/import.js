@@ -136,7 +136,7 @@ function importMatters(text) {
       const finalDate = (row.final_date || '').trim();
 
       if (!title) { r.errors.push(`Line ${line}: title is required.`); return; }
-      if (!repo.MATTER_TYPES.includes(type)) {
+      if (!repo.ALL_MATTER_TYPES.includes(type)) {
         r.errors.push(`Line ${line}: invalid type "${type}" (use one of: ${repo.MATTER_TYPES.join(', ')}).`); return;
       }
       if (!repo.MATTER_STATUSES.includes(status)) {

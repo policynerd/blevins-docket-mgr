@@ -8,10 +8,21 @@ const { ORG } = require('./org');
 // ---------------------------------------------------------------------------
 // Reference data used across the app (mirrors Legistar-style vocabularies)
 // ---------------------------------------------------------------------------
-const MATTER_TYPES = [
+// What the board is being asked to do with an item: act on it, or note it.
+// That is the distinction an agenda actually turns on — whether the item needs
+// a vote — and it is the one already used for agenda items in ITEM_TYPES.
+const MATTER_TYPES = ['Action', 'Information'];
+
+// The instrument-shaped list the docket used before. Kept valid, because 169
+// files already carry these values: a stored type absent from the list would
+// disappear from the type filter, fail import validation, and be silently
+// rewritten the first time anyone saved the file. New files get the two above;
+// old files keep what they were filed as until somebody decides otherwise.
+const LEGACY_MATTER_TYPES = [
   'Ordinance', 'Resolution', 'Motion', 'Appointment',
   'Public Hearing', 'Proclamation', 'Contract', 'Report', 'Communication',
 ];
+const ALL_MATTER_TYPES = MATTER_TYPES.concat(LEGACY_MATTER_TYPES);
 
 const MATTER_STATUSES = [
   'Draft', 'Introduced', 'In Committee', 'On Agenda',
@@ -727,6 +738,37 @@ const meetings = {
       LEFT JOIN matters m ON m.id = ai.matter_id
       JOIN meetings mt ON mt.id = ai.meeting_id
       WHERE ai.id = ?`).get(id);
+  },
+  // Amend an item already on the agenda. Until this existed the only way to
+  // correct a section, a title or a linked file was to delete the item and add
+  // it again — which threw away its votes, its packet documents and its place
+  // in the running order.
+  //
+  // Deliberately narrow: it touches how the item is presented and how it will
+  // be voted, and nothing about how it *was* voted. Results, timestamps and
+  // certification are written by the voting path alone, so a clerk tidying a
+  // title cannot disturb a recorded outcome.
+  updateItem(itemId, it) {
+    const cur = meetings.getItem(itemId);
+    if (!cur) return false;
+    const VALID_THRESHOLDS = new Set(['majority', 'two_thirds', 'majority_full']);
+    const threshold = VALID_THRESHOLDS.has(it.vote_threshold)
+      ? it.vote_threshold : (cur.vote_threshold || 'majority');
+    db.prepare(`UPDATE agenda_items SET
+        section = ?, agenda_number = ?, title = ?, matter_id = ?, item_type = ?,
+        requires_vote = ?, notes = ?, vote_threshold = ?
+      WHERE id = ?`).run(
+      it.section || null,
+      it.agenda_number || null,
+      it.title || null,
+      it.matter_id || null,
+      it.item_type || null,
+      it.requires_vote ? 1 : 0,
+      it.notes || null,
+      threshold,
+      itemId,
+    );
+    return true;
   },
   setItemResult(itemId, action, result) {
     db.prepare('UPDATE agenda_items SET action=?, result=? WHERE id=?')
@@ -3187,7 +3229,7 @@ const watches = {
 };
 
 module.exports = {
-  MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
+  MATTER_TYPES, LEGACY_MATTER_TYPES, ALL_MATTER_TYPES, MATTER_STATUSES, VOTE_VALUES, ITEM_TYPES, AGENDA_SECTIONS, TERMINAL_STATUSES, SORT_COLUMNS,
   ORG_LEVELS, MEMBER_MOTION_STATUSES, POLICY_STATUSES, USER_ROLES,
   BUDGET_STATUSES, BUDGET_KINDS, COMMENT_POSITIONS, workflowTemplate,
   people, bodies, matters, meetings, votes, reports, topics, workflow, org, memberMotions,
