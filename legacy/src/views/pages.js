@@ -140,7 +140,7 @@ function legislationList(query, user = null) {
           <input type="search" name="q" value="${q}" placeholder="e.g. zoning, 260603">
         </label>
         <label class="sp-field">Type
-          <select name="type">${raw('<option value="">— All types —</option>' + repo.MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>
+          <select name="type">${raw('<option value="">— All types —</option>' + repo.ALL_MATTER_TYPES.map((t) => opt(t, type, t)).join(''))}</select>
         </label>
         <label class="sp-field">Status
           <select name="status">${raw('<option value="">— All statuses —</option>' + repo.MATTER_STATUSES.map((s) => opt(s, status, s)).join(''))}</select>

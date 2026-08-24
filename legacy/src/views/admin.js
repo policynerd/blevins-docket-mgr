@@ -145,6 +145,14 @@ function selectOptions(values, current, { includeBlank } = {}) {
   return html;
 }
 
+// The two live types, plus this file's own type when it predates them. Without
+// that, opening an old Ordinance and pressing Save would quietly refile it as
+// an Action, because the browser posts whatever the select happens to show.
+function typeChoices(matter) {
+  const t = matter && matter.type;
+  return (t && !repo.MATTER_TYPES.includes(t)) ? repo.MATTER_TYPES.concat([t]) : repo.MATTER_TYPES;
+}
+
 // --- Matter form (new + edit) -----------------------------------------------
 function matterForm(matter, opts = {}) {
   const isEdit = !!matter;
@@ -179,7 +187,7 @@ function matterForm(matter, opts = {}) {
         <legend>Identification</legend>
         <div class="form-row">
           <label>Type
-            <select name="type" required>${raw(selectOptions(repo.MATTER_TYPES, matter && matter.type))}</select>
+            <select name="type" required>${raw(selectOptions(typeChoices(matter), matter && matter.type))}</select>
           </label>
           <label>Status
             <select name="status">${raw(selectOptions(repo.MATTER_STATUSES, matter ? matter.status : 'Draft'))}</select>
@@ -396,8 +404,8 @@ function matterTextForm(matter) {
 
 // --- Document form templates (per matter type) --------------------------------
 function docTemplatesAdmin(type, { saved = false } = {}) {
-  const active = repo.MATTER_TYPES.includes(type) ? type : 'Ordinance';
-  const pills = repo.MATTER_TYPES.map((t) => `
+  const active = repo.ALL_MATTER_TYPES.includes(type) ? type : 'Action';
+  const pills = repo.ALL_MATTER_TYPES.map((t) => `
     <a class="btn${t === active ? ' primary' : ''}" href="/admin/doc-templates?type=${encodeURIComponent(t)}">${escapeText(t)}${docTemplates.isCustomized(t) ? ' ●' : ''}</a>`).join(' ');
   const form = html`
     <form class="form" method="post" action="/admin/doc-templates" data-wp-form>

@@ -12,6 +12,13 @@ const { formatDate, todayISO, escapeHtml } = require('./util');
 function defaults() {
   const org = ORG.name;
   return {
+    Action: `<p>FILE NO. {{file_number}}</p>
+<h2>{{title}}</h2>
+<p>RESOLVED, by the ${org}, that ____.</p>
+<p>The ____ is directed to ____ and to report to the ${org} on ____.</p>`,
+    Information: `<h2>{{title}}</h2>
+<p><em>For information only — no action is requested of the ${org}.</em></p>
+<p>____</p>`,
     Ordinance: `<p>ORDINANCE NO. {{file_number}}</p>
 <h2>{{title}}</h2>
 <p>BE IT ORDAINED by the ${org}:</p>
@@ -82,6 +89,27 @@ function defaults() {
 function draftingDefaults() {
   const org = ORG.name;
   return {
+    Action: `WHEREAS, ____; and
+WHEREAS, ____; and
+NOW, THEREFORE, BE IT RESOLVED by the ${org}:
+
+SECTION 1. ____.
+(a) ____
+(b) ____
+
+SECTION 2. Direction to staff.
+The ____ is directed to ____ and to report to the ${org} on ____.
+
+SECTION 3. Effective date.
+This takes effect immediately upon adoption.`,
+    Information: `SECTION 1. Purpose.
+This item is submitted to the ${org} for information. No action is requested.
+
+SECTION 2. Background.
+____
+
+SECTION 3. Discussion.
+____`,
     Ordinance: `SECTION 1. Short title.
 This ordinance may be cited as the "{{title}}".
 

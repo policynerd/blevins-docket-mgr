@@ -1216,7 +1216,7 @@ route('GET', /^\/admin\/doc-templates\/?$/, (req, res, ctx) => {
   sendHtml(res, admin.docTemplatesAdmin(ctx.query.type, { saved: ctx.query.saved === '1' }));
 });
 route('POST', /^\/admin\/doc-templates$/, (req, res, ctx) => {
-  const type = repo.MATTER_TYPES.includes(ctx.body.type) ? ctx.body.type : null;
+  const type = repo.ALL_MATTER_TYPES.includes(ctx.body.type) ? ctx.body.type : null;
   if (!type) return sendHtml(res, pages.notFound(), 404);
   if (ctx.body.reset === '1') {
     docTemplates.setTemplate(type, '');

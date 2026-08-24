@@ -615,6 +615,39 @@ test('the editor parses pasted markup inertly, never in the live document', () =
   assert.match(src, /insertNodes\(area, doc\.body\.childNodes\)/, 'paste does not go through insertNodes');
 });
 
+// The docket asks what the board must do with an item — act, or note it — not
+// what instrument it happens to be. Files predating that still hold the old
+// instrument names, and must not be quietly refiled by the change.
+test('matter types are Action and Information, and old files keep theirs', () => {
+  assert.deepEqual(repo.MATTER_TYPES, ['Action', 'Information']);
+  for (const t of ['Ordinance', 'Resolution', 'Contract', 'Report']) {
+    assert.ok(repo.ALL_MATTER_TYPES.includes(t), `${t} no longer validates`);
+    assert.ok(!repo.MATTER_TYPES.includes(t), `${t} is still offered for new files`);
+  }
+
+  const b = repo.bodies.insert({ name: 'Type Board', type: 'Governing Body', seats: 3 });
+  const legacy = repo.matters.insertNumbered({
+    type: 'Ordinance', title: 'Filed before the change', status: 'Draft', body_id: b });
+  assert.equal(repo.matters.get(legacy.id).type, 'Ordinance', 'an existing file was rewritten');
+
+  // Editing it must still offer its own type, or saving would refile it as an
+  // Action — the select posts whatever it happens to be showing.
+  const admin = require('../src/views/admin');
+  const form = String(admin.matterForm(repo.matters.get(legacy.id)));
+  assert.match(form, /<option value="Ordinance" selected>/, 'the old type is not offered on edit');
+  assert.match(form, /<option value="Action">/);
+});
+
+// Every new file is an Action, so a drafting form has to exist for it or the
+// "start from a form" offer would never appear again.
+test('the live types have drafting and document forms', () => {
+  const docTemplates = require('../src/doc-templates');
+  for (const t of repo.MATTER_TYPES) {
+    assert.ok(docTemplates.draftingDefaults()[t], `no drafting form for ${t}`);
+    assert.ok(docTemplates.applyTemplate(t, { title: 'X', file_number: '1' }), `no document form for ${t}`);
+  }
+});
+
 test('sanitizer keeps tabular matter and footnote markers', () => {
   const out = sanitizeHtml(
     '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'
