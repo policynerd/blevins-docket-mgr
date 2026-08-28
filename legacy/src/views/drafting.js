@@ -43,20 +43,20 @@ function draftSteps(matter, current) {
 }
 
 // One line, on every drafting surface, answering the only question that
-// governs whether the file can move: can it go before the board yet.
+// governs whether the file can move: can it go before the board yet. The
+// judgement itself lives in repo.matters.readiness, so the agenda's ready
+// queue reaches the same verdict about the same file.
 function readiness(matter) {
-  const missing = repo.letters.missing(matter.id);
-  const hasText = !!String(matter.full_text || '').trim();
-  if (!hasText) {
-    return `<p class="form-warn">Not ready to agendise — the measure has no text yet.</p>`;
+  const { ready, reasons } = repo.matters.readiness(matter);
+  if (ready) {
+    return `<p class="saved-banner">Ready to agendise — text written and every required board-letter section answered.</p>`;
   }
-  if (missing.length) {
-    return `<p class="form-warn">Not ready to agendise — ${missing.length} required board-letter
-      section${missing.length === 1 ? '' : 's'} still blank:
-      ${escapeText(missing.join(', '))}.
-      <a href="/admin/legislation/${escapeText(encodeURIComponent(matter.file_number))}/letter">Write them →</a></p>`;
-  }
-  return `<p class="saved-banner">Ready to agendise — text written and every required board-letter section answered.</p>`;
+  const letter = reasons.find((r) => r.code === 'letter');
+  const said = reasons.map((r) => escapeText(r.label)).join('; ');
+  const fix = letter
+    ? ` <a href="/admin/legislation/${escapeText(encodeURIComponent(matter.file_number))}/letter">Write them →</a>`
+    : '';
+  return `<p class="form-warn">Not ready to agendise — ${said}.${fix}</p>`;
 }
 
 function opBadge(op) {

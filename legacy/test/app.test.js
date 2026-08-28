@@ -681,6 +681,49 @@ test('an agenda item can be amended without disturbing what was recorded', () =>
   assert.ok(['majority', 'two_thirds', 'majority_full'].includes(repo.meetings.getItem(id).vote_threshold));
 });
 
+// The queue and the drafting screen used to disagree about the same file: the
+// drafting page refused it while the agenda offered it with a checkbox.
+test('readiness is one judgement, shared by both screens', () => {
+  const b = repo.bodies.insert({ name: 'Ready Judge', type: 'Governing Body', seats: 3 });
+  const blank = repo.matters.insertNumbered({ type: 'Action', title: 'Nothing written', status: 'Introduced', body_id: b });
+  const r1 = repo.matters.readiness(blank.id);
+  assert.equal(r1.ready, false);
+  assert.ok(r1.reasons.some((x) => x.code === 'no_text'), 'a file with no text reads as ready');
+
+  const written = repo.matters.insertNumbered({
+    type: 'Action', title: 'Written', status: 'Introduced', body_id: b,
+    full_text: 'SECTION 1. Short title.',
+  });
+  for (const sec of repo.letters.sections()) {
+    if (sec.required) repo.letters.save(written.id, sec.key, '<p>Answered.</p>');
+  }
+  assert.equal(repo.matters.readiness(written.id).ready, true);
+
+  // And the drafting page says so from the same source.
+  const drafting = require('../src/views/drafting');
+  assert.match(String(drafting.draftPage(repo.matters.get(written.id))), /Ready to agendise/);
+  assert.match(String(drafting.draftPage(repo.matters.get(blank.id))), /no text yet/);
+});
+
+// Placing a file is what puts it on the agenda, so it is what should say so.
+test('placing a file sets its status and lands it under its own section', () => {
+  const b = repo.bodies.insert({ name: 'Placing Board', type: 'Governing Body', seats: 3 });
+  const mtg = repo.meetings.insert({ body_id: b, meeting_date: '2026-10-01', meeting_time: '10:00' });
+  const ord = repo.matters.insertNumbered({ type: 'Ordinance', title: 'An ordinance', status: 'Introduced', body_id: b });
+
+  const out = repo.meetings.addMatters(mtg, [ord.id], {});
+  assert.equal(out.added, 1);
+  assert.equal(repo.matters.get(ord.id).status, 'On Agenda', 'the file was scheduled but still reads Introduced');
+  const item = repo.meetings.items(mtg).find((i) => i.matter_id === ord.id);
+  assert.equal(item.section, 'Ordinances', 'an ordinance landed somewhere other than Ordinances');
+
+  // A file already decided is being reheard; that is not a step backwards.
+  const passed = repo.matters.insertNumbered({ type: 'Action', title: 'Already carried', status: 'Passed', body_id: b });
+  const mtg2 = repo.meetings.insert({ body_id: b, meeting_date: '2026-10-08', meeting_time: '10:00' });
+  repo.meetings.addMatters(mtg2, [passed.id], {});
+  assert.equal(repo.matters.get(passed.id).status, 'Passed', 'a decided file was walked back to On Agenda');
+});
+
 // --- The vote record -------------------------------------------------------
 // A helper, because every one of these needs a seated body with a votable item.
 function votableItem(name) {

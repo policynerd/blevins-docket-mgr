@@ -217,6 +217,17 @@
       var tmp = document.createElement('div'); tmp.innerHTML = outcomeBar(a);
       ob.parentNode.replaceChild(tmp.firstChild, ob);
     }
+    // The control bar belongs to the item's lifecycle, not just its tally:
+    // closing the roll retires "Close" in favour of Announce/Certify/Publish.
+    // Patched here, in place, so the clerk is never left looking at a button
+    // the item has already moved past — clicking Close a second time is how
+    // the boundary that decides which ballots are late used to move.
+    var acts = control && activeEl.querySelector('.la-actions');
+    if (acts) {
+      var tmpActs = document.createElement('div'); tmpActs.innerHTML = controlBar(a);
+      acts.parentNode.replaceChild(tmpActs.firstChild, acts);
+      bindControls(a);
+    }
     a.roster.forEach(function (m) {
       var row = activeEl.querySelector('.la-row[data-person="' + esc(m.person_id) + '"]');
       if (!row) return;
@@ -233,17 +244,30 @@
     });
   }
 
-  function bindActive(a) {
-    activeEl.querySelectorAll('[data-cast]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        post('/admin/agenda-items/' + a.id + '/cast', { person_id: b.getAttribute('data-cast'), vote: b.getAttribute('data-vote') });
-      });
-    });
-    activeEl.querySelectorAll('[data-myvote]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        post('/member/agenda-items/' + a.id + '/cast', { vote: b.getAttribute('data-myvote') });
-      });
-    });
+  /*
+   * Reopening a certified roll is a withdrawal, not a correction.
+   *
+   * The same /open the clerk uses on a fresh item clears the computed,
+   * announced, certified and published stamps and voids the linked matter's
+   * history rows. Said plainly before it happens; an uncertified roll reopens
+   * with no friction, as it should.
+   */
+  function confirmReopen(a) {
+    if (!a.certified && !a.published) return true;
+    return window.confirm(
+      (a.published ? 'This result is certified and published.\n'
+        : 'This result is certified.\n')
+      + 'Reopening the roll withdraws the certification'
+      + (a.published ? ' and unpublishes the result' : '') + ',\n'
+      + 'clears the announcement and the certifying clerk, and voids the\n'
+      + 'linked matter\u2019s history rows. Certifying again is a new act.\n\n'
+      + 'Reopen the roll anyway?');
+  }
+
+  // The clerk's controls are bound on their own because the control bar is
+  // re-rendered in place as the item advances: the replacement buttons need
+  // their handlers back without re-binding the roster underneath them.
+  function bindControls(a) {
     // Each control maps to one act on the item, and each act is one event in
     // the session chain. No button does two things.
     [['close', 'close'], ['announce', 'announce'], ['certify', 'certify'],
@@ -251,6 +275,7 @@
       var btn = activeEl.querySelector('[data-' + pair[0] + ']');
       if (!btn) return;
       btn.addEventListener('click', function () {
+        if (pair[0] === 'reopen' && !confirmReopen(a)) return;
         btn.disabled = true;
         post('/admin/agenda-items/' + a.id + '/' + pair[1], {})
           .catch(function (e) { window.alert(e.message); })
@@ -271,6 +296,20 @@
       post('/admin/agenda-items/' + a.id + '/void', { reason: reason })
         .catch(function (e) { window.alert(e.message); });
     });
+  }
+
+  function bindActive(a) {
+    activeEl.querySelectorAll('[data-cast]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/admin/agenda-items/' + a.id + '/cast', { person_id: b.getAttribute('data-cast'), vote: b.getAttribute('data-vote') });
+      });
+    });
+    activeEl.querySelectorAll('[data-myvote]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/member/agenda-items/' + a.id + '/cast', { vote: b.getAttribute('data-myvote') });
+      });
+    });
+    bindControls(a);
     var mfSave = activeEl.querySelector('[data-mf-save]');
     if (mfSave) mfSave.addEventListener('click', function () {
       post('/admin/agenda-items/' + a.id + '/motion', {
