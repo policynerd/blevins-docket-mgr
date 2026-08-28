@@ -681,6 +681,75 @@ test('an agenda item can be amended without disturbing what was recorded', () =>
   assert.ok(['majority', 'two_thirds', 'majority_full'].includes(repo.meetings.getItem(id).vote_threshold));
 });
 
+// --- The vote record -------------------------------------------------------
+// A helper, because every one of these needs a seated body with a votable item.
+function votableItem(name) {
+  const b = repo.bodies.insert({ name, type: 'Governing Body', seats: 3 });
+  const people = ['One', 'Two', 'Three'].map((n) => {
+    const pid = repo.people.insert({ full_name: `${name} ${n}` });
+    repo.bodies.addMember(b, pid, 'Member', 1);
+    return pid;
+  });
+  const m = repo.meetings.insert({ body_id: b, meeting_date: '2026-09-01', meeting_time: '10:00' });
+  const it = repo.meetings.addItem({ meeting_id: m, title: 'The question', requires_vote: 1 });
+  return { body: b, people, meeting: m, item: typeof it === 'object' ? it.id : it };
+}
+
+// Every close appends a ROLL_CLOSED and the tally is bounded by the LAST one,
+// so a second close moves the boundary and promotes late ballots into the
+// count. The button used to never stop saying "Close roll", which invited it.
+test('closing a roll twice does not promote late ballots', () => {
+  const v = votableItem('Twice');
+  repo.voteAdmin.openRoll(v.item);
+  repo.voteLedger.append(v.item, v.people[0], 'Yea');
+  const first = repo.voteAdmin.closeRoll(v.item);
+
+  // A ballot arriving after the close is late and must stay late.
+  repo.voteLedger.append(v.item, v.people[1], 'Yea');
+  const second = repo.voteAdmin.closeRoll(v.item);
+
+  assert.equal(second.yea, first.yea, 'a second close changed the tally');
+  assert.equal(second.result, first.result);
+});
+
+// Freezing the rule at open is right for a closed roll. Reopening is a fresh
+// roll, and used to inherit the old rule for ever — so a clerk who corrected
+// the threshold and reopened got the old arithmetic, silently.
+test('reopening a roll takes the threshold as it now stands', () => {
+  const v = votableItem('Threshold');
+  repo.meetings.updateItem(v.item, { title: 'q', requires_vote: true, vote_threshold: 'majority' });
+  repo.voteAdmin.openRoll(v.item);
+  assert.equal(repo.meetings.getItem(v.item).threshold_rule, 'majority');
+  repo.voteAdmin.closeRoll(v.item);
+
+  repo.meetings.updateItem(v.item, { title: 'q', requires_vote: true, vote_threshold: 'two_thirds' });
+  repo.voteAdmin.reopen(v.item);
+  assert.equal(repo.meetings.getItem(v.item).threshold_rule, 'two_thirds',
+    'the reopened roll is still being read against the old rule');
+});
+
+// Setting the other item back to 'pending' appended no ROLL_CLOSED, computed
+// no result and wrote no history: its ballots stayed in the ledger while the
+// item showed as never voted.
+test('opening a roll refuses while another is still open', () => {
+  const v = votableItem('TwoItems');
+  const second = repo.meetings.addItem({ meeting_id: v.meeting, title: 'Second question', requires_vote: 1 });
+  const secondId = typeof second === 'object' ? second.id : second;
+
+  repo.voteAdmin.openRoll(v.item);
+  repo.voteLedger.append(v.item, v.people[0], 'Yea');
+
+  assert.throws(() => repo.voteAdmin.reopen(secondId), /still open/i,
+    'the first item was silently un-decided');
+  assert.equal(repo.meetings.getItem(v.item).vote_status, 'open',
+    'the first roll was closed behind the clerk');
+
+  // Close it properly and the second may then be opened.
+  repo.voteAdmin.closeRoll(v.item);
+  repo.voteAdmin.reopen(secondId);
+  assert.equal(repo.meetings.getItem(secondId).vote_status, 'open');
+});
+
 test('sanitizer keeps tabular matter and footnote markers', () => {
   const out = sanitizeHtml(
     '<table><caption>Fiscal note</caption><thead><tr><th colspan="2">Year</th></tr></thead>'

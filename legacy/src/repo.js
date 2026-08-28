@@ -2739,7 +2739,13 @@ const voteAdmin = {
   openRoll(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
-    const rule = item.threshold_rule || item.vote_threshold || 'majority';
+    // The rule the roll is taken under. Freezing it at open is deliberate: a
+    // closed roll must be read against the rule in force when it was taken,
+    // not whatever the config says later. But a *reopen* is a fresh roll, so
+    // it takes the item's current threshold — previously `threshold_rule` won
+    // for ever, and a clerk who corrected the threshold and reopened got the
+    // old arithmetic with no indication anything had been ignored.
+    const rule = item.vote_threshold || item.threshold_rule || 'majority';
     db.prepare(`UPDATE agenda_items
       SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
           threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
@@ -2760,6 +2766,13 @@ const voteAdmin = {
   closeRoll(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
+    // Closing an already-closed roll is not a repeat of the same act. Every
+    // close appends a ROLL_CLOSED and the tally is bounded by the *last* one
+    // (ledger.closedAtSeq), so a second close moves the boundary forward and
+    // quietly promotes ballots that were late into the count. Nobody presses
+    // it twice on purpose — until this was fixed the button simply never
+    // stopped saying "Close roll & record result".
+    if (item.vote_status === 'closed') return eligibility.outcome(itemId);
     voteLedger.appendEvent(item.meeting_id, 'ROLL_CLOSED',
       { agendaItemId: itemId }, { agendaItemId: itemId, enteredBy: userId });
     db.prepare(`UPDATE agenda_items
@@ -2854,8 +2867,19 @@ const voteAdmin = {
         reason: 'Vote reopened; this outcome was superseded', userId,
       });
     }
-    for (const it of meetings.items(item.meeting_id)) {
-      if (it.vote_status === 'open') meetings.setVoteStatus(it.id, 'pending');
+    // An item whose roll is still open is not something to tidy away. Setting
+    // it back to 'pending' appended no ROLL_CLOSED, computed no result and
+    // wrote no history, so its ballots stayed in the ledger while the item
+    // showed as never voted. Refuse instead, and name the item in the way —
+    // closing it for the clerk would record an outcome nobody asked for.
+    const stillOpen = meetings.items(item.meeting_id)
+      .find((it) => it.vote_status === 'open' && it.id !== item.id);
+    if (stillOpen) {
+      const err = new Error('The roll on '
+        + (stillOpen.agenda_number ? `item ${stillOpen.agenda_number}` : 'another item')
+        + ' is still open. Close it before opening this one.');
+      err.code = 'ROLL_ALREADY_OPEN';
+      throw err;
     }
     meetings.setVoteStatus(item.id, 'open');
     // Reopening clears the close: the previous instant no longer bounds
@@ -2887,6 +2911,7 @@ const voteAdmin = {
     votes.clearForItem(item.id);
     meetings.setVoteStatus(item.id, 'pending');
     db.prepare(`UPDATE agenda_items SET vote_closed_at = NULL, result_computed_at = NULL,
+      threshold_rule = NULL,
       result_announced_at = NULL, result_certified_at = NULL, result_published_at = NULL
       WHERE id = ?`).run(item.id);
     voteLedger.appendEvent(item.meeting_id, 'CORRECTION_APPROVED',
