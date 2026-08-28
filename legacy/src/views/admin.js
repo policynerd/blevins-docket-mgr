@@ -701,7 +701,28 @@ function agendaManager(meeting, query) {
   const openMatters = repo.matters.search({ limit: 300 })
     .map((m) => ({ value: m.id, label: `${m.file_number} — ${m.title}` }));
 
-  const itemBlocks = items.length ? items.map((it) => voteBlock(meeting, it)).join('') :
+  // Grouped under section headings, in the order the meeting is run.
+  //
+  // This was a flat list with the section printed as small grey text on each
+  // row, so the clerk arranged the agenda by dragging while unable to see the
+  // thing being arranged, and first saw the grouping on the public page or in
+  // the printed packet. Items keep their running order inside a section, and a
+  // section that appears twice in the order is shown twice — that is a real
+  // state the agenda can be in, and hiding it would be the bug.
+  const grouped = () => {
+    const out = [];
+    let last = null;
+    for (const it of items) {
+      const sec = it.section || null;
+      if (sec !== last) {
+        out.push(`<h3 class="agenda-section-head">${escapeText(sec || 'Unsectioned')}</h3>`);
+        last = sec;
+      }
+      out.push(voteBlock(meeting, it));
+    }
+    return out.join('');
+  };
+  const itemBlocks = items.length ? grouped() :
     emptyState('No agenda items yet.');
 
   const addItemForm = agendaItemForm(meeting, null, openMatters);

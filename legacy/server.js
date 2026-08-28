@@ -549,7 +549,7 @@ route('GET', /^\/meetings\/?$/, (req, res, ctx) => sendHtml(res, pages.meetingsI
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.meetingDetail(mt, ctx.query));
+  sendHtml(res, pages.meetingDetail(mt, ctx.query, ctx.user));
 });
 route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));

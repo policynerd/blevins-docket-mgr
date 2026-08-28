@@ -776,6 +776,39 @@ test('the work queue can say what is waiting and what was forgotten', () => {
   assert.notEqual(after.became_current_at, null, 'the next step never recorded when it started');
 });
 
+// Numbers were assigned at insert and never revisited: dragging rewrote
+// sort_order only, so 2C could sit above 2A, and deleting 2B gave A, C, D.
+test('agenda numbers follow the running order', () => {
+  const b = repo.bodies.insert({ name: 'Number Board', type: 'Governing Body', seats: 3 });
+  const mtg = repo.meetings.insert({ body_id: b, meeting_date: '2026-11-01', meeting_time: '10:00' });
+  const add = (section, title) => {
+    const it = repo.meetings.addItem({ meeting_id: mtg, section, title });
+    return typeof it === 'object' ? it.id : it;
+  };
+  // Placed out of canonical order on purpose: New Business before Ordinances.
+  const nb1 = add('New Business', 'NB one');
+  const ord1 = add('Ordinances', 'Ord one');
+  const ord2 = add('Ordinances', 'Ord two');
+
+  repo.meetings.renumber(mtg);
+  const num = (id) => repo.meetings.getItem(id).agenda_number;
+  // Ordinances precedes New Business in AGENDA_SECTIONS, so it is section 1
+  // regardless of which was placed first.
+  assert.equal(num(ord1), '1A');
+  assert.equal(num(ord2), '1B');
+  assert.equal(num(nb1), '2A');
+
+  // Deleting the middle one closes the gap rather than leaving A, C.
+  repo.meetings.removeItem(ord1);
+  assert.equal(num(ord2), '1A', 'the agenda still reads with a hole in it');
+
+  // And reordering renumbers rather than leaving the labels behind.
+  const ord3 = add('Ordinances', 'Ord three');
+  repo.meetings.reorderItems(mtg, [ord3, ord2, nb1]);
+  assert.equal(num(ord3), '1A', 'the item dragged to the top kept the old number');
+  assert.equal(num(ord2), '1B');
+});
+
 // --- The vote record -------------------------------------------------------
 // A helper, because every one of these needs a seated body with a votable item.
 function votableItem(name) {

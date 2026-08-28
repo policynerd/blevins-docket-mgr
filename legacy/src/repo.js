@@ -819,7 +819,11 @@ const meetings = {
     db.prepare('UPDATE agenda_items SET requires_vote=? WHERE id=?').run(val ? 1 : 0, itemId);
   },
   removeItem(itemId) {
+    const row = db.prepare('SELECT meeting_id FROM agenda_items WHERE id = ?').get(itemId);
     db.prepare('DELETE FROM agenda_items WHERE id = ?').run(itemId); // votes cascade
+    // Deleting 2B used to leave the agenda reading A, C, D — the next insert
+    // computed its letter from the survivors.
+    if (row) meetings.renumber(row.meeting_id);
   },
   setMotion(itemId, { mover_id, seconder_id, motion_text, vote_threshold }) {
     const VALID_THRESHOLDS = new Set(['majority', 'two_thirds', 'majority_full']);
@@ -856,6 +860,55 @@ const meetings = {
   },
   // Persist a new ordering. Only items that belong to the meeting are touched,
   // so a stale or tampered id list can't move items between meetings.
+  /**
+   * Recompute every agenda number from the running order.
+   *
+   * Numbers were assigned once, at insert, and never revisited. Dragging an
+   * item rewrote sort_order only, so 2C could sit above 2A; deleting 2B left
+   * the next insert computing 2D from the surviving A and C, giving A, C, D;
+   * and a section's numeric prefix was whatever order its first item happened
+   * to be placed in, so placing New Business before Ordinances made New
+   * Business section 1. The agenda a clerk arranged and the agenda the public
+   * page printed were different documents.
+   *
+   * Sections are numbered in the order AGENDA_SECTIONS declares them — the
+   * order a meeting is actually run in — and items lettered within a section by
+   * their position in the running order. Anything unsectioned keeps plain
+   * integers after the sectioned blocks. A clerk who typed a number by hand
+   * loses it here, which is the trade: one authority for the numbering, and it
+   * is the order of business.
+   */
+  renumber(meetingId) {
+    const items = db.prepare(
+      'SELECT id, section FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order, id').all(meetingId);
+    const order = new Map(AGENDA_SECTIONS.map((name, i) => [name, i]));
+    // Sections in canonical order, but only those actually used, so the
+    // numbering has no gaps for sections this meeting does not hold.
+    const used = [...new Set(items.map((i) => i.section).filter(Boolean))]
+      .sort((a, b) => (order.has(a) ? order.get(a) : 999) - (order.has(b) ? order.get(b) : 999));
+    const prefixOf = new Map(used.map((name, i) => [name, i + 1]));
+
+    const seen = new Map();
+    let plain = 0;
+    const upd = db.prepare('UPDATE agenda_items SET agenda_number = ? WHERE id = ?');
+    db.exec('SAVEPOINT sp_renumber');
+    try {
+      for (const it of items) {
+        if (!it.section) { upd.run(String(++plain), it.id); continue; }
+        const n = (seen.get(it.section) || 0) + 1;
+        seen.set(it.section, n);
+        // Past Z, fall back to a numeric suffix rather than emitting punctuation.
+        const letter = n <= 26 ? String.fromCharCode(64 + n) : `-${n}`;
+        upd.run(`${prefixOf.get(it.section)}${letter}`, it.id);
+      }
+      db.exec('RELEASE sp_renumber');
+    } catch (e) {
+      db.exec('ROLLBACK TO sp_renumber'); db.exec('RELEASE sp_renumber');
+      throw e;
+    }
+    return items.length;
+  },
+
   reorderItems(meetingId, orderedIds) {
     const owned = new Set(db.prepare('SELECT id FROM agenda_items WHERE meeting_id = ?')
       .all(meetingId).map((r) => r.id));
@@ -872,6 +925,7 @@ const meetings = {
       db.exec('ROLLBACK TO sp_reorder'); db.exec('RELEASE sp_reorder');
       throw e;
     }
+    meetings.renumber(meetingId);
     return pos;
   },
   // --- Agenda assembly ------------------------------------------------------

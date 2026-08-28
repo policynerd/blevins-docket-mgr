@@ -815,6 +815,11 @@ function meetingDetail(meeting, query = {}, user = null) {
   // meeting arrived at a page with no controls and had to type the admin URL
   // from memory to get back to work. Same button, same place, resolved against
   // the viewer instead of against nobody.
+  //
+  // The viewer arrives as an argument, the way every other record page in this
+  // file takes it — matterDetail, personDetail, meetingsIndex — rather than
+  // read out of the layout's request-scoped copy, which is a setter with no
+  // reader. No argument means no claim of rank, which is the public board.
   const liveHref = isClerk ? `/admin/meetings/${meeting.id}/live` : `/live/${meeting.id}`;
 
   const body = html`
