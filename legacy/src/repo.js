@@ -1547,6 +1547,30 @@ const workflow = {
   // Create the default route if this matter has none, routing each step to the
   // chosen user (assigneeIds is parallel to the template; null = any clerk).
   // Returns the step count.
+  /**
+   * Who took each step the last time a file was routed.
+   *
+   * The routing form offered six selects of every active user, all defaulting
+   * to "— any clerk —", on every file, for ever: the helper that built them
+   * declared a `selected` parameter and never used it. In practice the same
+   * handful of people review everything, so the clerk retyped the same six
+   * choices on every file while the answer sat in the last route's rows.
+   *
+   * Keyed by step name rather than by seq, so the memory survives a change to
+   * the template's order. Only steps that were actually assigned are
+   * remembered — "any clerk" is the absence of a choice, not a choice.
+   */
+  lastAssignees() {
+    const rows = db.prepare(`
+      SELECT w.name, w.assignee_id
+      FROM workflow_steps w
+      WHERE w.assignee_id IS NOT NULL
+      ORDER BY w.matter_id DESC, w.seq ASC`).all();
+    const seen = new Map();
+    for (const r of rows) if (!seen.has(r.name)) seen.set(r.name, r.assignee_id);
+    return seen;
+  },
+
   start(matterId, assigneeIds = []) {
     const existing = db.prepare('SELECT COUNT(*) AS n FROM workflow_steps WHERE matter_id = ?').get(matterId).n;
     if (existing > 0) return existing;

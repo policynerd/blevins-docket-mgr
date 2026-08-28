@@ -323,15 +323,25 @@ function workflowPanel(matter) {
   const steps = repo.workflow.forMatter(matter.id);
   if (!steps.length) {
     const activeUsers = repo.users.all().filter((u) => u.active);
-    const userOptions = (selected) => `<option value="">— any clerk —</option>`
-      + activeUsers.map((u) => `<option value="${u.id}">${escapeText(u.name)} (${escapeText(u.role)})</option>`).join('');
+    // `selected` used to be declared here and never used, and the helper was
+    // called with no argument, so all six selects read "— any clerk —" on
+    // every file for ever. Combined with the notifier dropping unassigned
+    // steps, the route a clerk got by doing nothing was a route where nobody
+    // was told anything.
+    const userOptions = (selected) => `<option value=""${selected ? '' : ' selected'}>— any clerk —</option>`
+      + activeUsers.map((u) => `<option value="${u.id}"${String(u.id) === String(selected) ? ' selected' : ''}>`
+        + `${escapeText(u.name)} (${escapeText(u.role)})</option>`).join('');
+    // The same few people review everything, so the last route is a far better
+    // guess than nothing. Offered, not imposed: every select is still free.
+    const remembered = repo.workflow.lastAssignees();
     const stepRows = repo.workflowTemplate().map((s) => `
       <label>${escapeText(s.name)} <span class="muted">(${escapeText(s.role || '')})</span>
-        <select name="assignee_id">${userOptions()}</select>
+        <select name="assignee_id">${userOptions(remembered.get(s.name))}</select>
       </label>`).join('');
     const inner = `<p class="muted">Route this file through departmental review and approval.
         Each step goes to the person you pick — it appears in their Approvals inbox, and only they
-        (or an admin) can act on it. Leave a step unassigned to let any clerk handle it.</p>
+        (or an admin) can act on it. Leave a step unassigned to let any clerk handle it — they are all notified when you do.</p>
+        <p class="muted">Each step is pre-filled with whoever took it on the last file routed.</p>
       <form class="form" method="post" action="/admin/matters/${matter.id}/route">
         <div class="form-row">${stepRows}</div>
         <button type="submit" class="btn">▶ Start approval route</button>

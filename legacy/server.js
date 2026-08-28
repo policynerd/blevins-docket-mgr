@@ -1783,6 +1783,12 @@ function actOnStep(req, res, ctx, { backTo }) {
     const next = repo.workflow.current(step.matter_id);
     if (next) notify.approvalRouted(next.id);
   }
+  // Returning it was a dead end. The step stayed current, so it stayed in the
+  // reviewer's own inbox — the one person who has finished with it — the
+  // sponsor was never told their file had come back, and nothing anywhere
+  // recorded that somebody was now expected to do something. A return is a
+  // handoff like any other; it just goes the other way.
+  if (status === 'Returned') notify.matterReturned(step.matter_id, step.name, ctx.body.notes);
   redirect(res, backTo === 'inbox' ? '/approvals' : `/admin/matters/${step.matter_id}/edit`);
 }
 

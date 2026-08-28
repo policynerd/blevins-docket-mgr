@@ -724,6 +724,28 @@ test('placing a file sets its status and lands it under its own section', () => 
   assert.equal(repo.matters.get(passed.id).status, 'Passed', 'a decided file was walked back to On Agenda');
 });
 
+// The routing form built six selects of every user, all reading "— any clerk —",
+// on every file for ever: the helper declared `selected` and never used it.
+test('the routing form remembers who took each step last time', () => {
+  const admin = require('../src/views/admin');
+  const b = repo.bodies.insert({ name: 'Route Board', type: 'Governing Body', seats: 3 });
+  const reviewer = repo.users.create({ name: 'Lena Reviewer', email: 'lena@example.gov', role: 'staff' });
+
+  const first = repo.matters.insertNumbered({ type: 'Action', title: 'First', status: 'Draft', body_id: b });
+  const template = repo.workflowTemplate();
+  const ids = template.map((t) => (t.name === 'Legal Review' ? reviewer : null));
+  repo.workflow.start(first.id, ids);
+
+  assert.equal(repo.workflow.lastAssignees().get('Legal Review'), reviewer,
+    'the last route is not remembered');
+
+  // The next file offers that person already chosen, rather than a blank slate.
+  const next = repo.matters.insertNumbered({ type: 'Action', title: 'Next', status: 'Draft', body_id: b });
+  const form = String(admin.matterForm(repo.matters.get(next.id)));
+  assert.match(form, new RegExp(`<option value="${reviewer}" selected>`),
+    'the remembered reviewer is not pre-selected on the next file');
+});
+
 // --- The vote record -------------------------------------------------------
 // A helper, because every one of these needs a seated body with a votable item.
 function votableItem(name) {
