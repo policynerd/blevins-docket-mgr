@@ -18,7 +18,15 @@ function snapshot(meetingId) {
   const meeting = repo.meetings.get(meetingId);
   if (!meeting) return { meeting: null };
   const items = repo.meetings.items(meetingId);
-  const members = repo.bodies.members(meeting.body_id);
+  // The seated, voting roll — the same one the tally is computed over.
+  //
+  // This used to be bodies.members(), which is every row on the body: the
+  // ex-officio, the non-voting, and members whose terms have ended. Presence
+  // has always been counted over votingRoll(), so the two disagreed by
+  // construction — the denominator was inflated by people who cannot vote, and
+  // on a body with any ex-officio member quorum could be arithmetically
+  // unreachable. The board printed both numbers side by side.
+  const members = repo.bodies.votingRoll(meeting.body_id);
   // The item before the body: the open roll if there is one, otherwise the
   // most recently closed one that has a result.
   //

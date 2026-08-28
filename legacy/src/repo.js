@@ -44,6 +44,13 @@ const MATTER_STATUSES = [
 const VOTE_VALUES = ledger.CHOICES;
 const ITEM_TYPES = ['Action', 'Discussion', 'Information'];
 
+// A file's type already names where it belongs on an agenda. Only the types
+// with a corresponding section are mapped; anything else falls through to the
+// caller's choice.
+function sectionForType(type) {
+  return { Ordinance: 'Ordinances', Resolution: 'Resolutions' }[type] || null;
+}
+
 const AGENDA_SECTIONS = [
   'Call to Order', 'Roll Call', 'Approval of Minutes', 'Public Comment',
   'Consent Agenda', 'Public Hearings', 'Ordinances', 'Resolutions',
@@ -510,6 +517,37 @@ const matters = {
    * @returns {string|null} a status from MATTER_STATUSES, or null if the
    *   action does not imply one and the current status should stand.
    */
+  /**
+   * Can this file go before the board yet, and if not, why.
+   *
+   * The answer was computed in the drafting view and nowhere else, so the
+   * drafting screen refused a file while the agenda's "ready queue" offered
+   * the same file with a checkbox — the queue filtered on status and on not
+   * being booked already, and on nothing about whether the thing was written.
+   * One definition, so the two screens cannot disagree.
+   *
+   * Returns { ready, reasons: [{ code, label }] } rather than a sentence: the
+   * drafting page wants a paragraph, the queue wants a short flag on a table
+   * row, and the caller should decide how to say it.
+   */
+  readiness(matterOrId) {
+    const m = typeof matterOrId === 'object' ? matterOrId : matters.get(matterOrId);
+    if (!m) return { ready: false, reasons: [{ code: 'missing', label: 'No such file' }] };
+    const reasons = [];
+    if (!String(m.full_text || '').trim() && !String(m.body_html || '').trim()) {
+      reasons.push({ code: 'no_text', label: 'no text yet' });
+    }
+    const missing = letters.missing(m.id);
+    if (missing.length) {
+      reasons.push({
+        code: 'letter',
+        label: `${missing.length} required board-letter section${missing.length === 1 ? '' : 's'} blank`,
+        detail: missing,
+      });
+    }
+    return { ready: reasons.length === 0, reasons };
+  },
+
   statusFromAction(action, result, currentStatus = null) {
     const a = String(action || '').toLowerCase();
     const r = String(result || '').toLowerCase();
@@ -895,13 +933,25 @@ const meetings = {
         // submitted list of [id, id] would place the same file on the agenda
         // twice — the one duplicate the query itself cannot see.
         eligible.delete(id);
+        const m = matters.get(id);
         meetings.addItem({
           meeting_id: meetingId,
           matter_id: id,
-          section: opts.section || null,
+          // The file's own type already names the section it belongs under:
+          // AGENDA_SECTIONS carries "Ordinances" and "Resolutions" under
+          // exactly the names matters.type uses. Everything landed in New
+          // Business regardless, and the clerk sorted it out by dragging.
+          section: opts.section || sectionForType(m && m.type) || null,
           item_type: opts.item_type || 'Action',
           requires_vote: opts.requires_vote == null ? 1 : (opts.requires_vote ? 1 : 0),
         });
+        // Scheduling a file is what puts it on the agenda, so it is what
+        // should say so. 'On Agenda' was reachable only by a clerk later
+        // typing an action string that happened to match a regex, so a file
+        // could be scheduled, packeted and heard while its status still read
+        // 'Introduced'. Terminal statuses are left alone: a file that has
+        // already passed or failed is being reheard, which is not a step back.
+        if (m && !TERMINAL_STATUSES.has(m.status)) matters.setStatus(id, 'On Agenda');
         added++;
       }
       db.exec('RELEASE sp_add_matters');
@@ -2739,7 +2789,13 @@ const voteAdmin = {
   openRoll(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
-    const rule = item.threshold_rule || item.vote_threshold || 'majority';
+    // The rule the roll is taken under. Freezing it at open is deliberate: a
+    // closed roll must be read against the rule in force when it was taken,
+    // not whatever the config says later. But a *reopen* is a fresh roll, so
+    // it takes the item's current threshold — previously `threshold_rule` won
+    // for ever, and a clerk who corrected the threshold and reopened got the
+    // old arithmetic with no indication anything had been ignored.
+    const rule = item.vote_threshold || item.threshold_rule || 'majority';
     db.prepare(`UPDATE agenda_items
       SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
           threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
@@ -2760,6 +2816,13 @@ const voteAdmin = {
   closeRoll(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
+    // Closing an already-closed roll is not a repeat of the same act. Every
+    // close appends a ROLL_CLOSED and the tally is bounded by the *last* one
+    // (ledger.closedAtSeq), so a second close moves the boundary forward and
+    // quietly promotes ballots that were late into the count. Nobody presses
+    // it twice on purpose — until this was fixed the button simply never
+    // stopped saying "Close roll & record result".
+    if (item.vote_status === 'closed') return eligibility.outcome(itemId);
     voteLedger.appendEvent(item.meeting_id, 'ROLL_CLOSED',
       { agendaItemId: itemId }, { agendaItemId: itemId, enteredBy: userId });
     db.prepare(`UPDATE agenda_items
@@ -2854,8 +2917,19 @@ const voteAdmin = {
         reason: 'Vote reopened; this outcome was superseded', userId,
       });
     }
-    for (const it of meetings.items(item.meeting_id)) {
-      if (it.vote_status === 'open') meetings.setVoteStatus(it.id, 'pending');
+    // An item whose roll is still open is not something to tidy away. Setting
+    // it back to 'pending' appended no ROLL_CLOSED, computed no result and
+    // wrote no history, so its ballots stayed in the ledger while the item
+    // showed as never voted. Refuse instead, and name the item in the way —
+    // closing it for the clerk would record an outcome nobody asked for.
+    const stillOpen = meetings.items(item.meeting_id)
+      .find((it) => it.vote_status === 'open' && it.id !== item.id);
+    if (stillOpen) {
+      const err = new Error('The roll on '
+        + (stillOpen.agenda_number ? `item ${stillOpen.agenda_number}` : 'another item')
+        + ' is still open. Close it before opening this one.');
+      err.code = 'ROLL_ALREADY_OPEN';
+      throw err;
     }
     meetings.setVoteStatus(item.id, 'open');
     // Reopening clears the close: the previous instant no longer bounds
@@ -2887,6 +2961,7 @@ const voteAdmin = {
     votes.clearForItem(item.id);
     meetings.setVoteStatus(item.id, 'pending');
     db.prepare(`UPDATE agenda_items SET vote_closed_at = NULL, result_computed_at = NULL,
+      threshold_rule = NULL,
       result_announced_at = NULL, result_certified_at = NULL, result_published_at = NULL
       WHERE id = ?`).run(item.id);
     voteLedger.appendEvent(item.meeting_id, 'CORRECTION_APPROVED',
@@ -2952,11 +3027,25 @@ const eligibility = {
       const att = attendance.get(p.id) || 'Present';
       const ev = standing.get(p.id);
       const choice = ev ? ev.choice : null;
-      const present = att !== 'Absent' && att !== 'Excused';
+      // A ballot in the ledger settles whether someone was in the room.
+      // Attendance is a radio button a clerk may not have got back to; the
+      // ledger is the append-only record this system exists to keep, and a
+      // vote cannot be cast by somebody who was not there.
+      //
+      // The defect this replaces was not the choice of winner but the
+      // incoherence: presence excluded the member from `eligible` while
+      // outcome() counted their Yea regardless, so an absent member's ballot
+      // raised the numerator and not the denominator, and a motion could carry
+      // on arithmetic that appeared nowhere on the board.
+      //
+      // The contradiction is reported rather than resolved silently.
+      const markedAway = att === 'Absent' || att === 'Excused';
+      const present = !markedAway || !!choice;
+      const attendanceConflict = markedAway && !!choice;
       const recused = choice === 'Recused';
       return {
         person_id: p.id, full_name: p.full_name, district: p.district,
-        attendance: att, present, recused, choice,
+        attendance: att, present, recused, choice, attendanceConflict,
         changed: !!(ev && ev.supersedes_event_id),
         // Shown, not hidden: a vote the clerk entered from the spoken roll is
         // a different fact from one the member pressed, and the board should

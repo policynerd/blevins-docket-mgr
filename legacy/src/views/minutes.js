@@ -31,8 +31,18 @@ function minutesEditor(meeting) {
   const status = meeting.minutes_status || 'none';
   const has = !!meeting.minutes_html;
 
+  // Generating rewrites `minutes_html` wholesale, so anything hand-edited in
+  // the editor below is gone the moment this posts — and the button sat right
+  // above that editor with nothing between a stray click and the loss. Asked
+  // only when there is a document to lose: the first generation replaces
+  // nothing, and a prompt nobody needs is a prompt everyone clicks through.
+  const confirmReplace = has
+    ? ` onsubmit="return confirm('Rebuild these minutes from the agenda and recorded votes?`
+      + ` Any hand edits saved in the document below will be discarded.')"`
+    : '';
+
   const generate = `
-    <form method="post" action="/admin/meetings/${meeting.id}/minutes/generate" class="inline-form">
+    <form method="post" action="/admin/meetings/${meeting.id}/minutes/generate" class="inline-form"${confirmReplace}>
       <button type="submit" class="btn">${has ? '↻ Regenerate from agenda & votes' : '✨ Generate draft from agenda & votes'}</button>
       <span class="muted">Builds roll call, motions, and vote breakdowns automatically.</span>
     </form>`;

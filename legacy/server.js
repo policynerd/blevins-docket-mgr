@@ -2286,6 +2286,12 @@ route('POST', /^\/admin\/meetings\/(\d+)\/attendance$/, (req, res, ctx) => {
     if (m && ctx.body[key]) rows.push({ person_id: Number(m[1]), status: ctx.body[key] });
   }
   repo.meetings.setAttendance(id, rows);
+  // Attendance decides quorum and who is in the denominator, so the console
+  // and the wall board are wrong until they hear about it. Every other
+  // mutating route on this path pushes; this one did not, so marking a member
+  // absent left both screens showing the old count until some unrelated event
+  // happened to refresh them.
+  live.pushUpdate(id);
   redirect(res, `/admin/meetings/${id}/minutes`);
 });
 

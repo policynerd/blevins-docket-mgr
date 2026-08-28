@@ -740,6 +740,22 @@ function agendaManager(meeting, query) {
 // already scheduled. Placing business on an agenda is a bulk act — a clerk
 // works down a list deciding what makes this meeting — so this is a checklist
 // with one placement action, not the one-at-a-time dropdown beneath it.
+// Whether the file is actually written, said on the row where it is about to
+// be placed. The judgement is repo.matters.readiness — the same one the
+// drafting screen states in a sentence. Before this the queue asked only
+// whether a file had the right status and was not already booked, so a file
+// with no text and every board-letter section blank sat here looking exactly
+// like a finished one: the two screens disagreed about the same file.
+//
+// It flags rather than blocks. A clerk may have reason to agendise something
+// unfinished; the point is that they should know they are doing it.
+function readyFlag(matter) {
+  const { ready, reasons } = repo.matters.readiness(matter);
+  if (ready) return '<span class="badge st-passed">Ready</span>';
+  const why = reasons.map((r) => r.label).join('; ');
+  return `<span class="badge st-draft" title="${escapeText(why)}">Not ready</span>`;
+}
+
 function readyQueue(meeting) {
   const ready = repo.meetings.readyForAgenda(meeting.id);
   if (!ready.length) {
@@ -754,6 +770,7 @@ function readyQueue(meeting) {
       <td>${typeBadge(m.type)}</td>
       <td class="title-cell"><label for="rq${m.id}">${m.title}</label></td>
       <td>${statusBadge(m.status)}</td>
+      <td>${raw(readyFlag(m))}</td>
       <td class="rq-material muted">${raw(materialNote(m))}</td>
     </tr>`).join('');
 
@@ -763,7 +780,7 @@ function readyQueue(meeting) {
     <table class="data ready-queue">
       <thead><tr>
         <th class="rq-pick"><input type="checkbox" data-check-all="ready-queue" aria-label="Select all"></th>
-        <th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Material</th>
+        <th>File #</th><th>Type</th><th>Title</th><th>Status</th><th>Ready</th><th>Material</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>

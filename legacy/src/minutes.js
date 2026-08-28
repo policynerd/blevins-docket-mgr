@@ -52,19 +52,49 @@ function generate(meetingId) {
       out.push(`<p>${line.trim()}</p>`);
     }
 
-    if (it.matter_id) {
-      const votes = repo.votes.forItem(it.id);
-      if (votes.length) {
-        const t = repo.votes.tally(it.id);
-        const byVote = (v) => votes.filter((x) => x.vote === v).map((x) => x.full_name);
-        out.push(`<p>Vote: Yea ${t.Yea}, Nay ${t.Nay}`
-          + (t.Present ? `, Present ${t.Present}` : '')
-          + (t.Abstain ? `, Abstain ${t.Abstain}` : '')
-          + (t.Recused ? `, Recused ${t.Recused}` : '')
-          + (t.Absent ? `, Absent ${t.Absent}` : '') + '.');
-        const yeas = byVote('Yea'); const nays = byVote('Nay');
+    // Every item that went to a roll gets its vote printed, linked to a
+    // legislative file or not. This was gated on `matter_id`, so approval of
+    // the prior minutes, procedural motions and any resolution carried without
+    // a file had their ballots recorded in the ledger and then left out of the
+    // document entirely — the clerk retyped them from the console by hand.
+    //
+    // The gate is the item's own vote state, the same pair the chamber board
+    // reads. Not `requires_vote`, which records what was meant to happen; not
+    // an open roll, which has not happened yet. It also keeps a voided vote
+    // out: voiding deliberately leaves the ballots in the ledger but returns
+    // the item to 'pending', and outcome() would otherwise still tally them
+    // into minutes for a vote the Board has said did not occur.
+    if (it.vote_status === 'closed' && it.result_computed_at) {
+      // The certified arithmetic, not `votes.tally`. That table is a mutable
+      // projection with no notion of where the roll closed, so a late or
+      // superseded ballot moved the printed count while the result the clerk
+      // certified stood unchanged — the minutes and the certificate stating
+      // different numbers for the same vote. outcome() reads the append-only
+      // ledger bounded by the close, which is the arithmetic that produced the
+      // result, so the two cannot drift apart.
+      const o = repo.eligibility.outcome(it.id);
+      if (o) {
+        const named = (choice) => o.roll.filter((r) => r.choice === choice).map((r) => r.full_name);
+        const yeas = named('Yea'); const nays = named('Nay');
+        const present = named('Present').length; const abstain = named('Abstain').length;
+        // Absent is attendance, never a ballot: it is not a choice a member can
+        // record, so who was not in the room is the only thing the column can
+        // mean. Derived the way the chamber board derives it, so the wall and
+        // the minutes cannot report different figures for the same roll.
+        const absent = o.seated - o.present;
+        out.push(`<p>Vote: Yea ${o.yea}, Nay ${o.nay}`
+          + (present ? `, Present ${present}` : '')
+          + (abstain ? `, Abstain ${abstain}` : '')
+          + (o.recused ? `, Recused ${o.recused}` : '')
+          + (absent ? `, Absent ${absent}` : '') + '.');
         if (yeas.length) out.push(` Yeas: ${escapeHtml(yeas.join(', '))}.`);
         if (nays.length) out.push(` Nays: ${escapeHtml(nays.join(', '))}.`);
+        // The rule the result was ruled under, in the same paragraph rather
+        // than a section of its own. A reader given only "Yea 4, Nay 3" cannot
+        // tell whether that carried, and the chair has to be able to state the
+        // basis aloud from the minutes without recomputing it.
+        out.push(` <em>Required to carry: ${o.required} of ${o.eligible} eligible`
+          + ` — ${escapeHtml(o.basis)}.</em>`);
         out.push('</p>');
       }
     }
