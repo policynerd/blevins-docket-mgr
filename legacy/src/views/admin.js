@@ -1243,6 +1243,6 @@ function mailAdmin({ sent = false } = {}) {
 }
 
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaItemPage, packetBuilder, agendaTemplateAdmin, commentsAdmin,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaItemPage, meetingSteps, packetBuilder, agendaTemplateAdmin, commentsAdmin,
   matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin, mailAdmin,
 };

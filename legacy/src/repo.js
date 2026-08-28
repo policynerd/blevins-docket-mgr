@@ -1560,6 +1560,50 @@ const workflow = {
    * the template's order. Only steps that were actually assigned are
    * remembered — "any clerk" is the absence of a choice, not a choice.
    */
+  /**
+   * Every file currently waiting on somebody, oldest first.
+   *
+   * There was no query for this at all: progress() was dead code, the only
+   * indicator anywhere was a count on a nav badge, and "what is stuck" was
+   * answered by a clerk remembering. `days` is null for steps that predate
+   * became_current_at rather than being reported as zero — an unknown age is
+   * not a fresh one.
+   */
+  waiting({ olderThanDays = null } = {}) {
+    const rows = db.prepare(`
+      SELECT w.id AS step_id, w.matter_id, w.seq, w.name AS step_name, w.status,
+             w.assignee_id, w.became_current_at,
+             u.name AS assignee_name,
+             m.file_number, m.title, m.type, m.status AS matter_status,
+             CAST(julianday('now') - julianday(w.became_current_at) AS INTEGER) AS days
+      FROM workflow_steps w
+      JOIN matters m ON m.id = w.matter_id
+      LEFT JOIN users u ON u.id = w.assignee_id
+      WHERE w.status IN ('Pending','Returned')
+        AND w.seq = (SELECT MIN(seq) FROM workflow_steps x
+                     WHERE x.matter_id = w.matter_id AND x.status IN ('Pending','Returned'))
+      ORDER BY w.became_current_at IS NULL, w.became_current_at ASC`).all();
+    if (olderThanDays == null) return rows;
+    return rows.filter((r) => r.days != null && r.days >= olderThanDays);
+  },
+
+  /**
+   * Files that were never routed at all.
+   *
+   * Nothing starts a route automatically and creating a file redirects to the
+   * public page, so forgetting is the default outcome rather than an unusual
+   * one. Terminal files are excluded: a measure already decided does not need
+   * review it will never receive.
+   */
+  unrouted() {
+    return db.prepare(`
+      SELECT m.id, m.file_number, m.title, m.type, m.status, m.intro_date
+      FROM matters m
+      WHERE NOT EXISTS (SELECT 1 FROM workflow_steps w WHERE w.matter_id = m.id)
+        AND m.status NOT IN ('Passed','Failed','Enacted','Vetoed','Withdrawn')
+      ORDER BY m.intro_date IS NULL, m.intro_date ASC, m.id ASC`).all();
+  },
+
   lastAssignees() {
     const rows = db.prepare(`
       SELECT w.name, w.assignee_id
@@ -1578,6 +1622,10 @@ const workflow = {
       VALUES (?,?,?,?,?,?)`);
     const template = workflowTemplate();
     template.forEach((s, i) => ins.run(matterId, i + 1, s.name, s.role, 'Pending', assigneeIds[i] || null));
+    // Only the first step is being waited on; the rest are nobody's problem
+    // yet, and stamping them all would make every step look equally old.
+    db.prepare(`UPDATE workflow_steps SET became_current_at = datetime('now')
+      WHERE matter_id = ? AND seq = 1`).run(matterId);
     return template.length;
   },
   // Approvals inbox: the active (first Pending/Returned) step of each routed
@@ -1604,8 +1652,19 @@ const workflow = {
       AND status IN ('Pending','Returned') ORDER BY seq LIMIT 1`).get(matterId);
   },
   act(stepId, { status, userId, notes }) {
+    const step = db.prepare('SELECT matter_id, seq FROM workflow_steps WHERE id = ?').get(stepId);
     db.prepare(`UPDATE workflow_steps SET status=?, acted_by=?, acted_at=datetime('now'), notes=?
       WHERE id=?`).run(status, userId || null, notes || null, stepId);
+    // Finishing one step starts the next, and "started" is the instant a file
+    // lands on somebody. Recorded rather than inferred, because acted_at says
+    // when a step ended and nothing said when it began — so how long a
+    // reviewer had been sitting on something was not merely unreported, it
+    // was uncomputable.
+    if (step && (status === 'Approved' || status === 'Skipped')) {
+      db.prepare(`UPDATE workflow_steps SET became_current_at = datetime('now')
+        WHERE matter_id = ? AND seq = ? AND became_current_at IS NULL`)
+        .run(step.matter_id, step.seq + 1);
+    }
   },
   progress(matterId) {
     const row = db.prepare(`SELECT

@@ -844,6 +844,13 @@ const COLUMN_MIGRATIONS = {
   },
   workflow_steps: {
     assignee_id: 'INTEGER REFERENCES users(id)',  // who this approval is routed to
+    // When this step became the one being waited on.
+    //
+    // The table recorded acted_at — when a step *finished* — and nothing for
+    // when it started, so how long a file had been sitting with somebody was
+    // not merely unreported but uncomputable. Nothing could be overdue even in
+    // principle, and chasing a reviewer who never acts was done from memory.
+    became_current_at: 'TEXT',
   },
   // The organization chart, given something to be about.
   //
@@ -973,6 +980,16 @@ function reset() {
     'budget_amendments', 'budget_transactions', 'budget_lines', 'budgets', 'policies', 'member_motions', 'settings',
     'org_units', 'workflow_steps', 'matter_topics', 'matter_versions',
     'topics', 'attendance', 'reports',
+    // The vote ledger and the motion history. These were left standing while
+    // every table they refer to was dropped, so the ids they hold pointed at
+    // whatever was created next: after a reset the old ballots re-attached to
+    // the new meeting 1 and its items, and three resets left fifty-four events
+    // on a chain that should have had eighteen. It stayed internally coherent
+    // — supersession resolved the stale ballots and the chain still verified —
+    // which is exactly why it would have gone unnoticed. Nothing reached this
+    // until the seeder began writing real ledger events instead of rows in the
+    // projection.
+    'session_events', 'motion_versions',
     'users', 'votes', 'agenda_item_docs', 'agenda_items', 'attachments', 'letter_sections', 'matter_history',
     'matter_sponsors', 'matters', 'meetings', 'body_members', 'bodies', 'people'];
   db.exec('PRAGMA foreign_keys = OFF;');

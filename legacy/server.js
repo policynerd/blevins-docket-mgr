@@ -8,6 +8,7 @@ const { init } = require('./src/db');
 const repo = require('./src/repo');
 const pages = require('./src/views/pages');
 const admin = require('./src/views/admin');
+const queueView = require('./src/views/queue');
 const api = require('./src/api');
 const feeds = require('./src/exports');
 const auth = require('./src/auth');
@@ -1668,6 +1669,12 @@ route('POST', /^\/govern\/member-motions\/(\d+)\/complete$/, (req, res, ctx) => 
   redirect(res, '/govern/members');
 });
 
+// What is on you, what is late, what could be scheduled, and what was
+// forgotten. Every row comes from a query the data already supported; the
+// application had simply never asked.
+route('GET', /^\/admin\/queue\/?$/, (req, res, ctx) => {
+  sendHtml(res, queueView.workQueue(ctx.user));
+});
 route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matterForm(null)));
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   const b = ctx.body;

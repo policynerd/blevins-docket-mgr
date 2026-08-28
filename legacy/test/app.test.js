@@ -746,6 +746,36 @@ test('the routing form remembers who took each step last time', () => {
     'the remembered reviewer is not pre-selected on the next file');
 });
 
+// There was no query for "what is waiting" or "what was never routed" at all:
+// progress() was dead code and the only indicator anywhere was a nav badge.
+test('the work queue can say what is waiting and what was forgotten', () => {
+  const b = repo.bodies.insert({ name: 'Queue Board', type: 'Governing Body', seats: 3 });
+  const routed = repo.matters.insertNumbered({ type: 'Action', title: 'Routed', status: 'Introduced', body_id: b });
+  const forgotten = repo.matters.insertNumbered({ type: 'Action', title: 'Forgotten', status: 'Introduced', body_id: b });
+  const decided = repo.matters.insertNumbered({ type: 'Action', title: 'Done with', status: 'Enacted', body_id: b });
+
+  repo.workflow.start(routed.id, []);
+
+  const waiting = repo.workflow.waiting();
+  const mine = waiting.find((w) => w.matter_id === routed.id);
+  assert.ok(mine, 'a routed file is not reported as waiting');
+  assert.equal(mine.seq, 1, 'the waiting step is not the first one');
+  assert.equal(mine.days, 0, 'a step that just started has no age');
+
+  const unrouted = repo.workflow.unrouted().map((m) => m.id);
+  assert.ok(unrouted.includes(forgotten.id), 'a file with no route is not reported');
+  assert.ok(!unrouted.includes(routed.id), 'a routed file is reported as unrouted');
+  // A measure already decided does not need review it will never receive.
+  assert.ok(!unrouted.includes(decided.id), 'a decided file is being chased for review');
+
+  // Advancing moves the wait to the next step rather than leaving it stale.
+  const cur = repo.workflow.current(routed.id);
+  repo.workflow.act(cur.id, { status: 'Approved', userId: null, notes: null });
+  const after = repo.workflow.waiting().find((w) => w.matter_id === routed.id);
+  assert.equal(after.seq, 2, 'the wait did not move to the next step');
+  assert.notEqual(after.became_current_at, null, 'the next step never recorded when it started');
+});
+
 // --- The vote record -------------------------------------------------------
 // A helper, because every one of these needs a seated body with a votable item.
 function votableItem(name) {

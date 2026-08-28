@@ -4,6 +4,10 @@ const { html, raw, formatDateTime } = require('../util');
 const { layout, card, statusBadge, emptyState, escapeText } = require('./layout');
 const { editorField } = require('./reports');
 const repo = require('../repo');
+// Safe at the top level: admin.js requires no view but layout and reports, and
+// only reaches sideways into ./live from inside a function, so nothing it pulls
+// in leads back here while it is still loading.
+const { meetingSteps } = require('./admin');
 
 const ATTEND_STATUSES = ['Present', 'Remote', 'Excused', 'Absent'];
 
@@ -58,7 +62,12 @@ function minutesEditor(meeting) {
     </form>
     <script src="/assets/editor.js" defer></script>` : emptyState('No minutes yet — generate a draft to begin.');
 
+  // Minutes is the last step of the meeting, and also the one a clerk is sent
+  // back to mid-meeting whenever the roll changes — the attendance form below
+  // lives here and nowhere else. Both readings want the same thing on the page:
+  // where this screen sits in the sequence and what is one click behind it.
   const body = html`
+    ${raw(meetingSteps(meeting, 'minutes'))}
     ${raw(attendanceForm(meeting))}
     ${raw(card('Generate minutes', generate))}
     ${raw(card('Edit minutes', editor))}`;

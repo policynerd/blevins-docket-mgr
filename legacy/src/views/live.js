@@ -4,14 +4,38 @@ const { html, raw, formatDateTime } = require('../util');
 const { layout, statusBadge } = require('./layout');
 const { hasRole } = require('../auth');
 const repo = require('../repo');
+// admin.js reaches back into this module for its launcher, but only from
+// inside a function body — by the time `adminHome` runs, admin.js has finished
+// loading and its exports are complete. So the dependency is one-way at load
+// time and this can be a plain top-level require rather than a lazy one.
+const { meetingSteps } = require('./admin');
 
 // One live page template, parameterized by capability. The client (live.js)
 // hydrates and updates everything over SSE.
 function livePage(meeting, { role, personId, control }) {
   const personAttr = personId ? ` data-person="${personId}"` : '';
+
+  // Running the meeting is the fourth of five steps, and it was the only one
+  // that did not say so: the strip was on Agenda and Packet, so a clerk who
+  // opened the console lost the thread of the sequence exactly when the room
+  // was watching. Console only — the public board is a different audience on a
+  // different URL, and none of these destinations would open for them anyway.
+  const steps = control ? meetingSteps(meeting, 'live') : '';
+
+  // The other screens this one meeting is run from. Attendance is the reason
+  // the second link is here: the roll is taken on Minutes and nowhere else,
+  // so marking a late arrival or an absence once the meeting has started means
+  // leaving this page — a trip the clerk otherwise had to make from memory,
+  // mid-meeting, with no link anywhere on the console pointing at it.
+  const tools = control ? `
+    <p class="live-tools"><a class="btn" href="/display/${meeting.id}" target="_blank" rel="noopener">Open chamber display →</a>
+      <span class="muted">The board for the room. Open it on the wall screen; it needs no sign-in.</span></p>
+    <p class="live-tools"><a class="btn" href="/admin/meetings/${meeting.id}/minutes">Roll call &amp; minutes →</a>
+      <span class="muted">Where attendance is taken. Mark somebody absent or arrived late without leaving the meeting.</span></p>` : '';
+
   const body = html`
-    ${raw(control ? `<p class="live-tools"><a class="btn" href="/display/${meeting.id}" target="_blank" rel="noopener">Open chamber display →</a>
-      <span class="muted">The board for the room. Open it on the wall screen; it needs no sign-in.</span></p>` : '')}
+    ${raw(steps)}
+    ${raw(tools)}
 
     <div class="live" data-meeting="${meeting.id}" data-role="${role}" data-control="${control ? '1' : '0'}"${raw(personAttr)}>
       <section class="card live-active-card">
