@@ -68,7 +68,7 @@ const MODULES = [
     ] }] },
 
   // The workspace group inside is assembled per role by navFor().
-  { id: 'admin', label: 'Administration', href: '/admin', role: 'member',
+  { id: 'admin', label: 'Administration', href: '/admin/queue', role: 'member',
     match: ['/admin', '/approvals', '/member'], groups: [] },
 ];
 
@@ -113,6 +113,7 @@ function navFor(user, moduleId) {
   if (moduleId && moduleId !== 'admin') return groups;
   const workspace = [];
   if (can(user, 'member')) {
+    workspace.push({ href: '/admin/queue', label: 'My Work Queue' });
     workspace.push({ href: '/member', label: 'Member Portal' });
     // Approvals routed to this user (lazy require avoids a load-order cycle).
     let count = 0;

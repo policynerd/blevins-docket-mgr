@@ -323,15 +323,25 @@ function workflowPanel(matter) {
   const steps = repo.workflow.forMatter(matter.id);
   if (!steps.length) {
     const activeUsers = repo.users.all().filter((u) => u.active);
-    const userOptions = (selected) => `<option value="">— any clerk —</option>`
-      + activeUsers.map((u) => `<option value="${u.id}">${escapeText(u.name)} (${escapeText(u.role)})</option>`).join('');
+    // `selected` used to be declared here and never used, and the helper was
+    // called with no argument, so all six selects read "— any clerk —" on
+    // every file for ever. Combined with the notifier dropping unassigned
+    // steps, the route a clerk got by doing nothing was a route where nobody
+    // was told anything.
+    const userOptions = (selected) => `<option value=""${selected ? '' : ' selected'}>— any clerk —</option>`
+      + activeUsers.map((u) => `<option value="${u.id}"${String(u.id) === String(selected) ? ' selected' : ''}>`
+        + `${escapeText(u.name)} (${escapeText(u.role)})</option>`).join('');
+    // The same few people review everything, so the last route is a far better
+    // guess than nothing. Offered, not imposed: every select is still free.
+    const remembered = repo.workflow.lastAssignees();
     const stepRows = repo.workflowTemplate().map((s) => `
       <label>${escapeText(s.name)} <span class="muted">(${escapeText(s.role || '')})</span>
-        <select name="assignee_id">${userOptions()}</select>
+        <select name="assignee_id">${userOptions(remembered.get(s.name))}</select>
       </label>`).join('');
     const inner = `<p class="muted">Route this file through departmental review and approval.
         Each step goes to the person you pick — it appears in their Approvals inbox, and only they
-        (or an admin) can act on it. Leave a step unassigned to let any clerk handle it.</p>
+        (or an admin) can act on it. Leave a step unassigned to let any clerk handle it — they are all notified when you do.</p>
+        <p class="muted">Each step is pre-filled with whoever took it on the last file routed.</p>
       <form class="form" method="post" action="/admin/matters/${matter.id}/route">
         <div class="form-row">${stepRows}</div>
         <button type="submit" class="btn">▶ Start approval route</button>
@@ -691,7 +701,28 @@ function agendaManager(meeting, query) {
   const openMatters = repo.matters.search({ limit: 300 })
     .map((m) => ({ value: m.id, label: `${m.file_number} — ${m.title}` }));
 
-  const itemBlocks = items.length ? items.map((it) => voteBlock(meeting, it)).join('') :
+  // Grouped under section headings, in the order the meeting is run.
+  //
+  // This was a flat list with the section printed as small grey text on each
+  // row, so the clerk arranged the agenda by dragging while unable to see the
+  // thing being arranged, and first saw the grouping on the public page or in
+  // the printed packet. Items keep their running order inside a section, and a
+  // section that appears twice in the order is shown twice — that is a real
+  // state the agenda can be in, and hiding it would be the bug.
+  const grouped = () => {
+    const out = [];
+    let last = null;
+    for (const it of items) {
+      const sec = it.section || null;
+      if (sec !== last) {
+        out.push(`<h3 class="agenda-section-head">${escapeText(sec || 'Unsectioned')}</h3>`);
+        last = sec;
+      }
+      out.push(voteBlock(meeting, it));
+    }
+    return out.join('');
+  };
+  const itemBlocks = items.length ? grouped() :
     emptyState('No agenda items yet.');
 
   const addItemForm = agendaItemForm(meeting, null, openMatters);
@@ -1233,6 +1264,6 @@ function mailAdmin({ sent = false } = {}) {
 }
 
 module.exports = {
-  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaItemPage, packetBuilder, agendaTemplateAdmin, commentsAdmin,
+  adminHome, matterForm, meetingForm, personForm, agendaManager, agendaItemPage, meetingSteps, packetBuilder, agendaTemplateAdmin, commentsAdmin,
   matterTextForm, docTemplatesAdmin, applicationsAdmin, auditAdmin, mailAdmin,
 };

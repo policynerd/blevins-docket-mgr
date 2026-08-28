@@ -740,8 +740,9 @@ function videoHref(url, ts) {
   return url + '#t=' + secs;
 }
 
-function meetingDetail(meeting, query = {}) {
+function meetingDetail(meeting, query = {}, user = null) {
   const items = repo.meetings.items(meeting.id);
+  const isClerk = auth.hasRole(user, 'clerk');
 
   // Columnar "meeting items" grid grouped by agenda section.
   let lastSection = null;
@@ -807,6 +808,20 @@ function meetingDetail(meeting, query = {}) {
     meeting.video_url ? `<a href="${escapeText(meeting.video_url)}">Video</a>` : '',
   ].filter(Boolean).join(' · ');
 
+  // "● Live" means two different pages depending on who is asking. The public
+  // board is the read-only gallery view; the clerk running the meeting needs
+  // the console with the roll, the motions and the timer on it. One href sent
+  // everybody to the gallery, so a clerk pressing the button on their own
+  // meeting arrived at a page with no controls and had to type the admin URL
+  // from memory to get back to work. Same button, same place, resolved against
+  // the viewer instead of against nobody.
+  //
+  // The viewer arrives as an argument, the way every other record page in this
+  // file takes it — matterDetail, personDetail, meetingsIndex — rather than
+  // read out of the layout's request-scoped copy, which is a setter with no
+  // reader. No argument means no claim of rank, which is the public board.
+  const liveHref = isClerk ? `/admin/meetings/${meeting.id}/live` : `/live/${meeting.id}`;
+
   const body = html`
     ${raw(card('Meeting details', html`
       <dl class="meta record-header">
@@ -833,7 +848,7 @@ function meetingDetail(meeting, query = {}) {
       { label: formatDate(meeting.meeting_date) || 'Meeting' },
     ],
     actions: `
-      <a class="btn" href="/live/${meeting.id}">● Live</a>
+      <a class="btn" href="${liveHref}">● Live</a>
       <a class="btn" href="/meetings/${meeting.id}/packet">Agenda packet</a>
       <a class="btn" href="/meetings/${meeting.id}/minutes">Minutes</a>
       <a class="btn" href="/admin/meetings/${meeting.id}/agenda">Manage agenda</a>`,

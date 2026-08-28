@@ -724,6 +724,91 @@ test('placing a file sets its status and lands it under its own section', () => 
   assert.equal(repo.matters.get(passed.id).status, 'Passed', 'a decided file was walked back to On Agenda');
 });
 
+// The routing form built six selects of every user, all reading "— any clerk —",
+// on every file for ever: the helper declared `selected` and never used it.
+test('the routing form remembers who took each step last time', () => {
+  const admin = require('../src/views/admin');
+  const b = repo.bodies.insert({ name: 'Route Board', type: 'Governing Body', seats: 3 });
+  const reviewer = repo.users.create({ name: 'Lena Reviewer', email: 'lena@example.gov', role: 'staff' });
+
+  const first = repo.matters.insertNumbered({ type: 'Action', title: 'First', status: 'Draft', body_id: b });
+  const template = repo.workflowTemplate();
+  const ids = template.map((t) => (t.name === 'Legal Review' ? reviewer : null));
+  repo.workflow.start(first.id, ids);
+
+  assert.equal(repo.workflow.lastAssignees().get('Legal Review'), reviewer,
+    'the last route is not remembered');
+
+  // The next file offers that person already chosen, rather than a blank slate.
+  const next = repo.matters.insertNumbered({ type: 'Action', title: 'Next', status: 'Draft', body_id: b });
+  const form = String(admin.matterForm(repo.matters.get(next.id)));
+  assert.match(form, new RegExp(`<option value="${reviewer}" selected>`),
+    'the remembered reviewer is not pre-selected on the next file');
+});
+
+// There was no query for "what is waiting" or "what was never routed" at all:
+// progress() was dead code and the only indicator anywhere was a nav badge.
+test('the work queue can say what is waiting and what was forgotten', () => {
+  const b = repo.bodies.insert({ name: 'Queue Board', type: 'Governing Body', seats: 3 });
+  const routed = repo.matters.insertNumbered({ type: 'Action', title: 'Routed', status: 'Introduced', body_id: b });
+  const forgotten = repo.matters.insertNumbered({ type: 'Action', title: 'Forgotten', status: 'Introduced', body_id: b });
+  const decided = repo.matters.insertNumbered({ type: 'Action', title: 'Done with', status: 'Enacted', body_id: b });
+
+  repo.workflow.start(routed.id, []);
+
+  const waiting = repo.workflow.waiting();
+  const mine = waiting.find((w) => w.matter_id === routed.id);
+  assert.ok(mine, 'a routed file is not reported as waiting');
+  assert.equal(mine.seq, 1, 'the waiting step is not the first one');
+  assert.equal(mine.days, 0, 'a step that just started has no age');
+
+  const unrouted = repo.workflow.unrouted().map((m) => m.id);
+  assert.ok(unrouted.includes(forgotten.id), 'a file with no route is not reported');
+  assert.ok(!unrouted.includes(routed.id), 'a routed file is reported as unrouted');
+  // A measure already decided does not need review it will never receive.
+  assert.ok(!unrouted.includes(decided.id), 'a decided file is being chased for review');
+
+  // Advancing moves the wait to the next step rather than leaving it stale.
+  const cur = repo.workflow.current(routed.id);
+  repo.workflow.act(cur.id, { status: 'Approved', userId: null, notes: null });
+  const after = repo.workflow.waiting().find((w) => w.matter_id === routed.id);
+  assert.equal(after.seq, 2, 'the wait did not move to the next step');
+  assert.notEqual(after.became_current_at, null, 'the next step never recorded when it started');
+});
+
+// Numbers were assigned at insert and never revisited: dragging rewrote
+// sort_order only, so 2C could sit above 2A, and deleting 2B gave A, C, D.
+test('agenda numbers follow the running order', () => {
+  const b = repo.bodies.insert({ name: 'Number Board', type: 'Governing Body', seats: 3 });
+  const mtg = repo.meetings.insert({ body_id: b, meeting_date: '2026-11-01', meeting_time: '10:00' });
+  const add = (section, title) => {
+    const it = repo.meetings.addItem({ meeting_id: mtg, section, title });
+    return typeof it === 'object' ? it.id : it;
+  };
+  // Placed out of canonical order on purpose: New Business before Ordinances.
+  const nb1 = add('New Business', 'NB one');
+  const ord1 = add('Ordinances', 'Ord one');
+  const ord2 = add('Ordinances', 'Ord two');
+
+  repo.meetings.renumber(mtg);
+  const num = (id) => repo.meetings.getItem(id).agenda_number;
+  // Ordinances precedes New Business in AGENDA_SECTIONS, so it is section 1
+  // regardless of which was placed first.
+  assert.equal(num(ord1), '1A');
+  assert.equal(num(ord2), '1B');
+  assert.equal(num(nb1), '2A');
+
+  // Deleting the middle one closes the gap rather than leaving A, C.
+  repo.meetings.removeItem(ord1);
+  assert.equal(num(ord2), '1A', 'the agenda still reads with a hole in it');
+
+  // And reordering renumbers rather than leaving the labels behind.
+  const ord3 = add('Ordinances', 'Ord three');
+  repo.meetings.reorderItems(mtg, [ord3, ord2, nb1]);
+  assert.equal(num(ord3), '1A', 'the item dragged to the top kept the old number');
+  assert.equal(num(ord2), '1B');
+});
+
 // --- The vote record -------------------------------------------------------
 // A helper, because every one of these needs a seated body with a votable item.
 function votableItem(name) {

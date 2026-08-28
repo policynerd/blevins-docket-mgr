@@ -8,6 +8,7 @@ const { init } = require('./src/db');
 const repo = require('./src/repo');
 const pages = require('./src/views/pages');
 const admin = require('./src/views/admin');
+const queueView = require('./src/views/queue');
 const api = require('./src/api');
 const feeds = require('./src/exports');
 const auth = require('./src/auth');
@@ -548,7 +549,7 @@ route('GET', /^\/meetings\/?$/, (req, res, ctx) => sendHtml(res, pages.meetingsI
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
   if (!mt) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, pages.meetingDetail(mt, ctx.query));
+  sendHtml(res, pages.meetingDetail(mt, ctx.query, ctx.user));
 });
 route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
   const mt = repo.meetings.get(Number(ctx.params[0]));
@@ -1668,6 +1669,12 @@ route('POST', /^\/govern\/member-motions\/(\d+)\/complete$/, (req, res, ctx) => 
   redirect(res, '/govern/members');
 });
 
+// What is on you, what is late, what could be scheduled, and what was
+// forgotten. Every row comes from a query the data already supported; the
+// application had simply never asked.
+route('GET', /^\/admin\/queue\/?$/, (req, res, ctx) => {
+  sendHtml(res, queueView.workQueue(ctx.user));
+});
 route('GET', /^\/admin\/matters\/new$/, (req, res) => sendHtml(res, admin.matterForm(null)));
 route('POST', /^\/admin\/matters$/, (req, res, ctx) => {
   const b = ctx.body;
@@ -1783,6 +1790,12 @@ function actOnStep(req, res, ctx, { backTo }) {
     const next = repo.workflow.current(step.matter_id);
     if (next) notify.approvalRouted(next.id);
   }
+  // Returning it was a dead end. The step stayed current, so it stayed in the
+  // reviewer's own inbox — the one person who has finished with it — the
+  // sponsor was never told their file had come back, and nothing anywhere
+  // recorded that somebody was now expected to do something. A return is a
+  // handoff like any other; it just goes the other way.
+  if (status === 'Returned') notify.matterReturned(step.matter_id, step.name, ctx.body.notes);
   redirect(res, backTo === 'inbox' ? '/approvals' : `/admin/matters/${step.matter_id}/edit`);
 }
 

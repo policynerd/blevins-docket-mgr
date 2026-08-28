@@ -800,6 +800,14 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 .auth-hint { margin-top: 14px; padding: 12px; background: var(--marble); border: 1px solid var(--line); border-radius: 4px; font-size: var(--t-small); }
 .auth-hint ul { margin: 6px 0 0; padding-left: 18px; }
 
+/* Agenda section headings in the manager. The clerk arranges by dragging, so
+   the sections have to be visible while dragging rather than only on the
+   printed agenda. */
+.agenda-section-head { margin: 18px 0 6px; padding: 5px 12px; font-size: var(--t-small);
+  font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: #fff; background: var(--blv-navy-mid); border-radius: var(--radius); }
+.agenda-section-head:first-child { margin-top: 0; }
+
 /* Word processor */
 .wp { border: 1px solid var(--line); border-radius: 4px; background: #fff; margin-top: 6px; }
 .wp-label { font-size: var(--t-small); font-weight: 700; color: var(--accent-dark); padding: 8px 10px 0; }

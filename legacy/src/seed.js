@@ -274,30 +274,69 @@ function run() {
     });
     repo.meetings.addItem({ meeting_id: pastMeeting, section: 'Call to Order', agenda_number: '1', title: 'Call to Order & Roll Call' });
     repo.meetings.addItem({ meeting_id: pastMeeting, section: 'Approval of Minutes', agenda_number: '2', title: 'Approval of Minutes — prior regular meeting' });
+    // Neither item carries a `result` here: the outcome is whatever closing
+    // the roll computes from the ledger below. Asserting one at the point the
+    // item is added would state a result the record cannot account for, which
+    // is precisely the defect this seeding used to demonstrate.
     const ai_bridge = repo.meetings.addItem({
       meeting_id: pastMeeting, matter_id: m2.id, section: 'Resolutions',
-      agenda_number: '5.A', action: 'Motion to adopt', result: 'Pass',
+      agenda_number: '5.A', action: 'Motion to adopt',
     });
     const ai_fee = repo.meetings.addItem({
       meeting_id: pastMeeting, matter_id: m9.id, section: 'Ordinances',
-      agenda_number: '6.A', action: 'Motion to adopt on second reading', result: 'Fail',
+      agenda_number: '6.A', action: 'Motion to adopt on second reading',
     });
 
-    // Record votes for the two substantive items
     const council = ['Marlena Ortiz', 'Daniel Cho', 'Priya Nair', 'Walter Briggs', 'Sofia Almeida', 'Theo Jackson', 'Grace Lindqvist'];
-    const bridgeVotes = { 'Walter Briggs': 'Nay' }; // everyone else Yea
-    for (const name of council) {
-      repo.votes.record(ai_bridge, P[name], bridgeVotes[name] || 'Yea');
-    }
-    const feeVotes = { 'Daniel Cho': 'Yea', 'Marlena Ortiz': 'Yea', 'Grace Lindqvist': 'Yea' };
-    for (const name of council) {
-      repo.votes.record(ai_fee, P[name], feeVotes[name] || 'Nay');
-    }
 
-    // Roll-call attendance for the past council meeting
+    // The roll is called before anything is put to a vote, and the seed does
+    // it in that order for the same reason the chamber does: eligibility and
+    // every threshold below are derived from attendance, so votes recorded
+    // first would be tallied against a room nobody had counted yet.
     repo.meetings.setAttendance(pastMeeting, council.map((name) => ({
       person_id: P[name], status: name === 'Theo Jackson' ? 'Excused' : 'Present',
     })));
+
+    // Take the two substantive items to a roll the way the chamber takes one:
+    // open, cast into the ledger, close. Writing rows straight into `votes`
+    // seeded ballots this application does not recognise as votes — no ledger
+    // events, no closed roll, no computed result — so the chamber board and
+    // the minutes, which read the record rather than the projection, showed
+    // nothing for them. A demo of the mechanism has to exercise it.
+    const bridgeVotes = { 'Walter Briggs': 'Nay' };  // everyone else Yea
+    const feeVotes = { 'Daniel Cho': 'Yea', 'Marlena Ortiz': 'Yea', 'Grace Lindqvist': 'Yea' };
+    // An excused member casts nothing. A ballot from someone the roll puts
+    // outside the room is the contradiction eligibility.forItem exists to
+    // flag, and seeding one would put the defect on display as though it were
+    // the feature.
+    const votingMembers = council.filter((name) => name !== 'Theo Jackson');
+
+    function takeRoll(itemId, choiceFor) {
+      repo.voteAdmin.openRoll(itemId);
+      for (const name of votingMembers) {
+        const choice = choiceFor(name);
+        // Ledger first, projection second — the order server.js records in.
+        // The append is the record; the `votes` row is the derived view that
+        // tallies, member vote history and the exports still read.
+        //
+        // CLERK_ENTRY rather than the default: these stand for a roll the
+        // Clerk heard and typed. Seeding them as MEMBER_TERMINAL would put
+        // every sample member on record as having pressed a station that was
+        // never in the room.
+        repo.voteLedger.append(itemId, P[name], choice, { source: 'CLERK_ENTRY' });
+        repo.votes.record(itemId, P[name], choice);
+      }
+      // Closing is what computes the result and stamps it on the item. One
+      // roll at a time — opening a second while this one is open throws — so
+      // each item is finished before the next is called.
+      return repo.voteAdmin.closeRoll(itemId);
+    }
+
+    // 5-1: carries. The bridge contract was adopted.
+    takeRoll(ai_bridge, (name) => bridgeVotes[name] || 'Yea');
+    // 3-3: fails. A tie does not carry under a majority of those voting, and
+    // the fee schedule is meant to show a measure that was defeated.
+    takeRoll(ai_fee, (name) => feeVotes[name] || 'Nay');
 
     // Upcoming council meeting (agenda posted, no votes yet)
     const nextMeeting = repo.meetings.insert({

@@ -32,21 +32,65 @@ function queue(to, subject, body) {
 // An approval step is now waiting on its assignee.
 function approvalRouted(stepId) {
   try {
+    // LEFT JOIN, not JOIN. An unassigned step has assignee_id NULL, and an
+    // inner join dropped the row entirely — so the step that lands in every
+    // clerk's shared inbox was the one that emailed nobody. Since the assignee
+    // selects also defaulted to "— any clerk —" on every file, the route a
+    // clerk got by doing nothing was a route where no reviewer was ever told.
     const s = db.prepare(`
-      SELECT w.name AS step_name, w.seq, u.email, u.name AS user_name,
+      SELECT w.name AS step_name, w.seq, w.assignee_id, u.email, u.name AS user_name,
              m.file_number, m.title
       FROM workflow_steps w
-      JOIN users u ON u.id = w.assignee_id
+      LEFT JOIN users u ON u.id = w.assignee_id
       JOIN matters m ON m.id = w.matter_id
       WHERE w.id = ?`).get(stepId);
-    if (!s || !s.email) return;
-    queue(s.email, `Approval waiting: ${s.file_number}`,
-      `${s.user_name},\n\nStep ${s.seq} (${s.step_name}) of file ${s.file_number} — "${s.title}" — is routed to you.\n\n`
-      + `Review it in your approvals inbox: ${link('/approvals')}`);
+    if (!s) return;
+
+    const body = (who) => `${who},\n\nStep ${s.seq} (${s.step_name}) of file `
+      + `${s.file_number} — "${s.title}" — is waiting for review.\n\n`
+      + `Review it in your approvals inbox: ${link('/approvals')}`;
+
+    if (s.assignee_id && s.email) {
+      queue(s.email, `Approval waiting: ${s.file_number}`, body(s.user_name));
+      return;
+    }
+    // Unassigned: the step is waiting on whichever clerk picks it up, so tell
+    // the clerks. Addressed to all of them because that is literally who it is
+    // routed to — inboxFor() shows an unassigned step to every clerk.
+    const clerks = db.prepare(
+      "SELECT name, email FROM users WHERE role IN ('clerk','admin') AND email IS NOT NULL AND active = 1").all();
+    for (const c of clerks) {
+      queue(c.email, `Approval waiting (unassigned): ${s.file_number}`, body(c.name));
+    }
   } catch (e) { console.error('notify.approvalRouted failed:', e.message); }
 }
 
 // Activity on a file: tell everyone watching it.
+// A file sent back for revision.
+//
+// Returning used to tell nobody: the step stayed current so it stayed in the
+// reviewer's own inbox, and the person who has to act — whoever wrote it — was
+// never informed. Addressed to the sponsors, because they are who "revise
+// this" means, and to anyone watching the file.
+function matterReturned(matterId, stepName, notes) {
+  try {
+    if (!smtp.isConfigured()) return;
+    const m = db.prepare('SELECT file_number, title FROM matters WHERE id = ?').get(matterId);
+    if (!m) return;
+    const people = db.prepare(`
+      SELECT DISTINCT u.name, u.email FROM matter_sponsors ms
+      JOIN users u ON u.person_id = ms.person_id
+      WHERE ms.matter_id = ? AND u.email IS NOT NULL AND u.active = 1`).all(matterId);
+    for (const p of people) {
+      queue(p.email, `Returned for revision: ${m.file_number}`,
+        `${p.name},\n\nFile ${m.file_number} — "${m.title}" — was returned for revision at `
+        + `the ${stepName} step.\n\n`
+        + (notes ? `Note from the reviewer: ${notes}\n\n` : '')
+        + `Open the file: ${link(`/legislation/${encodeURIComponent(m.file_number)}`)}`);
+    }
+  } catch (e) { console.error('notify.matterReturned failed:', e.message); }
+}
+
 function matterActivity(matterId, actionText) {
   try {
     if (!smtp.isConfigured()) return;
@@ -149,6 +193,6 @@ function recent(limit = 50) {
 }
 
 module.exports = {
-  queue, approvalRouted, matterActivity, applicationDecision, speakerApproved,
+  queue, approvalRouted, matterReturned, matterActivity, applicationDecision, speakerApproved,
   procurementAward, processOutbox, schedule, recent, baseUrl,
 };
