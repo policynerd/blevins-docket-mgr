@@ -46,7 +46,17 @@ function paragraphs(html) {
     // fiscal-note table arrives in the PDF as one run-on word.
     .replace(/<\s*\/\s*(td|th)\s*>/gi, ' | ')
     .replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/tr|\/caption|\/table)\s*>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '• ');
+    // Opening block tags break a line too.
+    //
+    // Only closing tags did, which is right for well-formed markup and wrong
+    // for the markup people actually paste. A word processor writes
+    // `<p>…required now to:<ul><li>Eliminate…` — the <p> is never closed
+    // before the list, because a browser closes it implicitly and this is a
+    // regex, not a parser. It printed in the board letter as
+    // "required now to:• Eliminate ambiguity", the bullet glued to the end of
+    // the sentence that introduces it.
+    .replace(/<\s*(p|div|ul|ol|table|tr|h[1-6])(\s[^>]*)?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ');
   let prev;
   do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
   text = text.replace(/[<>]/g, '');
@@ -98,8 +108,13 @@ async function boardLetter(matter, opts = {}) {
     margin: { top: 60, right: 72, bottom: 72, left: 72 + RAIL_W },
     runningHeader: (d) => {
       // Repeat the subject on every continuation page, hanging under the label.
-      d.margin.left = 72;
-      d.contentW = d.size.w - d.margin.left - d.margin.right;
+      //
+      // The margin used to drop back to 72 here, so the text column jumped
+      // 128pt left and grew a third wider between page 1 and page 2 — one
+      // document set in two measures, which is the first thing the eye catches
+      // and reads as a fault rather than a design. The rail stays for the
+      // whole letter; below the roster it is letterhead, which is what a rail
+      // is for.
       d.text('SUBJECT:', { size: 10, style: 'b' });
       d.y += 10 * 1.32;
       d.text(subject, { size: 10, style: 'b', indent: 62, hanging: 0 });
@@ -167,7 +182,22 @@ async function boardLetter(matter, opts = {}) {
     else paras = [];
     if (!paras.length) continue;
     doc.heading(sec.label, { size: 11 });
-    for (const para of paras) doc.text(para, { size: 10.5, after: 6, justify: true });
+    // Not justified. The rail leaves this column about 340pt wide — roughly 55
+    // characters at 10.5pt, below what justification needs — so every line came
+    // out with its word spacing stretched ("Approve  and  Adopt  the  revised
+    // Enterprise  Governance  Code") and rivers running down the page. The
+    // wider documents below still justify; this one is a memo on a narrow
+    // measure and reads better ragged right.
+    for (const para of paras) {
+      // A bullet hangs: its runover lines align under the text, not under the
+      // mark. Without it the second line of a bullet starts at the same left
+      // edge as the bullet itself, and a three-line item stops looking like
+      // one item.
+      const bullet = /^[•\u2013\u2014-]\s/.test(para);
+      doc.text(para, bullet
+        ? { size: 10.5, after: 6, indent: 12, hanging: 12 }
+        : { size: 10.5, after: 6 });
+    }
     doc.gap(4);
   }
 

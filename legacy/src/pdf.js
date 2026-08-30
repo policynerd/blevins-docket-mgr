@@ -6,10 +6,38 @@ const repo = require('./repo');
 const { formatDate, formatDateTime } = require('./util');
 const { Doc, MUTED: MUTED2 } = require('./pdfdoc');
 const documents = require('./documents');
+const upload = require('./upload');
+const fs = require('node:fs');
 
 function upper(v) { return String(v == null ? '' : v).toUpperCase(); }
 
 const HTTPS_URL = /^https:\/\/[^"'<>\s]+$/;
+
+/**
+ * A file uploaded through the application, read off disk.
+ *
+ * The packet only knew how to fetch remote https URLs, so an attachment a
+ * clerk uploaded — which is stored on the volume and has a `file_path` and no
+ * URL — was reported as "could not be bound" on the incomplete-packet page.
+ * The ordinary case of attaching a document to a file therefore never reached
+ * the packet at all.
+ *
+ * The header is checked rather than the stored content type or the file name:
+ * a mislabelled upload should fall through to the placeholder page, not crash
+ * the merge.
+ */
+function localPdfBytes(att) {
+  if (!att || !att.file_path) return null;
+  const abs = upload.uploadPath(att.file_path);
+  if (!abs) return null;
+  try {
+    const buf = fs.readFileSync(abs);
+    if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') return null;
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
 
 async function fetchPdfBytes(url) {
   if (!HTTPS_URL.test(url)) return null;
@@ -80,8 +108,14 @@ async function generatePacket(meeting) {
         { size: 8, style: 'sans', color: MUTED2 });
     },
   });
+  // The organisation and the body are usually configured to the same name, and
+  // the cover printed both — "BOARD OF GOVERNORS" over "Board of Governors",
+  // which reads as a stutter rather than as two facts. Say it once when they
+  // agree, as the board letter already does.
   front.text(upper(ORG.name), { size: 16, style: 'b', after: 6 });
-  front.text(meeting.body_name || '', { size: 13, style: 'b', after: 4 });
+  if (meeting.body_name && upper(meeting.body_name) !== upper(ORG.name)) {
+    front.text(meeting.body_name, { size: 13, style: 'b', after: 4 });
+  }
   front.text('AGENDA PACKET', { size: 11, style: 'sans', color: MUTED2, after: 10 });
   front.rule({ after: 14 });
   front.text(formatDateTime(meeting.meeting_date, meeting.meeting_time), { size: 12, after: 4 });
@@ -99,7 +133,11 @@ async function generatePacket(meeting) {
     const it = r.item;
     const num = it.agenda_number ? `${it.agenda_number}. ` : '';
     const title = it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)');
-    const tab = r.tab ? `Tab ${r.tab}` : '\u2014';
+    // An item carrying nothing keeps its place in the contents and takes no
+    // tab. It used to print an em-dash in the tab column, which reads as a
+    // value that failed to load rather than as "there is nothing behind this
+    // one" — blank says that without claiming anything.
+    const tab = r.tab ? `Tab ${r.tab}` : '';
     front.text(`${tab}    ${num}${title}`, { size: 10.5, indent: 0, hanging: 52, after: 3 });
   }
   await merge(await front.save());
@@ -152,22 +190,36 @@ async function generatePacket(meeting) {
     // and where it cannot, say so on its own page rather than leaving a gap
     // the reader has to notice.
     const files = [
-      ...r.attachments.map((a) => ({ name: a.name, url: a.url, kind: 'Attachment' })),
+      ...r.attachments.map((a) => ({
+        name: a.name, url: a.url, file_path: a.file_path, kind: 'Attachment',
+      })),
       ...r.docs.map((d) => ({ name: d.name, url: d.url, kind: 'Item document' })),
     ];
     for (const f of files) {
-      const bytes = f.url ? await fetchPdfBytes(f.url) : null;
+      // Uploaded first: a file held on the volume is the copy this board
+      // controls, and it needs no network to bind.
+      const bytes = localPdfBytes(f) || (f.url ? await fetchPdfBytes(f.url) : null);
       const sep = await Doc.create({});
       sep.gap(120);
       sep.text(f.kind.toUpperCase(), { size: 10, style: 'sans', color: MUTED2, align: 'center', after: 8 });
       sep.text(f.name, { size: 14, style: 'b', align: 'center', after: 8 });
       if (!bytes) {
-        sep.text(f.url
-          ? 'This document is stored outside the packet and could not be retrieved when the packet was built.'
-          : 'This document has no file or link attached to it.',
+        // Three different reasons, which want three different answers. A Word
+        // document is not a retrieval failure and never will be: telling a
+        // clerk to go and fix it wastes their morning, when what they need to
+        // know is that it has to be converted or handed round separately.
+        const notPdf = /\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || '')
+          || (f.file_path && !/\.pdf$/i.test(f.file_path));
+        sep.text(notPdf
+          ? 'This document is not a PDF and cannot be bound into the packet. '
+            + 'Convert it to PDF to include it, or distribute it separately.'
+          : (f.url
+            ? 'This document is stored outside the packet and could not be retrieved when the packet was built.'
+            : 'This document has no file or link attached to it.'),
         { size: 10.5, style: 'i', color: MUTED2, align: 'center' });
-        if (f.url) sep.text(f.url, { size: 9, color: MUTED2, align: 'center' });
-        problems.push(`${it.file_number || it.title}: ${f.name} could not be bound`);
+        if (f.url && !notPdf) sep.text(f.url, { size: 9, color: MUTED2, align: 'center' });
+        problems.push(`${it.file_number || it.title}: ${f.name} `
+          + (notPdf ? 'is not a PDF and was not bound' : 'could not be bound'));
       }
       await merge(await sep.save());
       if (bytes) await safely(`${f.name}`, () => merge(bytes));
