@@ -543,4 +543,37 @@ function forbidden() {
   });
 }
 
-module.exports = { layout, authLayout, card, tabs, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc };
+/**
+ * The publish control, and the sentence that goes with it.
+ *
+ * One component for board letters, agendas and files, because the decision is
+ * the same decision in all three places and it should not read as three
+ * different features. The sentence matters as much as the button: nowhere in
+ * this application did it previously say, in words, that a thing was readable
+ * by anyone on the internet — which is exactly how a hundred and forty-one
+ * draft letters came to be public without anybody choosing it.
+ *
+ * `at` is the timestamp column (or null). `noun` names the thing in the
+ * confirmation, so it reads "Take this board letter off the public site?".
+ */
+function publishControl({ action, at, noun, hint = '' }) {
+  const published = !!at;
+  const confirm = published
+    ? `Take this ${noun} off the public site? It will no longer be readable without signing in.`
+    : `Publish this ${noun}? Anyone on the internet will be able to read it, with no sign-in.`;
+  const state = published
+    ? `<span class="badge st-passed">Public</span> <span class="muted">since ${escapeText(String(at).slice(0, 10))}</span>`
+    : '<span class="badge st-draft">Not public</span> <span class="muted">visible only after signing in</span>';
+  return `<div class="publish-control">
+    <div class="publish-state">${state}</div>
+    ${hint ? `<p class="muted publish-hint">${escapeText(hint)}</p>` : ''}
+    <form method="post" action="${escapeText(action)}" class="inline-form"
+      onsubmit="return confirm('${escapeText(confirm).replace(/'/g, "\\'")}')">
+      <input type="hidden" name="state" value="${published ? 'off' : 'on'}">
+      <button type="submit" class="btn${published ? '' : ' primary'}">
+        ${published ? 'Unpublish' : 'Publish to the public site'}</button>
+    </form>
+  </div>`;
+}
+
+module.exports = { layout, authLayout, card, tabs, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc, publishControl };

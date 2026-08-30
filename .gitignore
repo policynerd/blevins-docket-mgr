@@ -7,8 +7,14 @@
 **/data/*.db-shm
 **/data/*.db-wal
 
-# Runtime database backups (auto-created on server startup)
-**/data/backups/
+# Runtime database backups (auto-created on server startup).
+#
+# BACKUP_DIR follows DOCKET_DB — it is `dirname(DB_PATH)/backups` — so pinning
+# this to data/ only covered the default layout. Point DOCKET_DB anywhere else
+# (an in-memory run puts it at the repo root) and a full copy of the database
+# lands somewhere git was still willing to track. Match the directory by name
+# wherever it appears.
+**/backups/
 
 # Local environment files
 .env

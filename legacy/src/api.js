@@ -2,6 +2,12 @@
 
 const { sendJson } = require('./util');
 const repo = require('./repo');
+const visibility = require('./visibility');
+
+// Every resource here takes the viewer, because this API is a complete mirror
+// of the portal and was the one surface where forgetting to filter would hand
+// over the whole docket in a single request. Anonymous callers see published
+// records only; a signed-in member sees what they see on the site.
 
 // A small, read-only JSON API modeled on Legistar's Web API shape:
 // resources for Matters, Events (meetings), Bodies, Persons and Votes.
@@ -54,24 +60,25 @@ function matterDTO(m, deep = false) {
   return dto;
 }
 
-function matters(res, query) {
+function matters(res, query, user) {
   const rows = repo.matters.search({
     q: query.q, type: query.type, status: query.status,
     bodyId: query.body_id ? Number(query.body_id) : undefined,
     sponsorId: query.sponsor_id ? Number(query.sponsor_id) : undefined,
     limit: query.limit ? Math.min(Number(query.limit), 1000) : 200,
+    publicOnly: !visibility.isInsider(user),
   });
   sendJson(res, { count: rows.length, results: rows.map((m) => matterDTO(m)) });
 }
 
-function matter(res, key) {
+function matter(res, key, user) {
   const m = /^\d+$/.test(key) ? repo.matters.get(Number(key)) : repo.matters.getByFileNumber(key);
-  if (!m) return sendJson(res, { error: 'Matter not found' }, 404);
+  if (!visibility.canSeeMatter(user, m)) return sendJson(res, { error: 'Matter not found' }, 404);
   sendJson(res, matterDTO(m, true));
 }
 
-function events(res) {
-  const rows = repo.meetings.all().map((mt) => ({
+function events(res, user) {
+  const rows = repo.meetings.all({ publicOnly: !visibility.isInsider(user) }).map((mt) => ({
     id: mt.id, body: mt.body_name, body_id: mt.body_id,
     date: mt.meeting_date, time: mt.meeting_time, location: mt.location,
     status: mt.status, item_count: mt.item_count,
@@ -80,9 +87,9 @@ function events(res) {
   sendJson(res, { count: rows.length, results: rows });
 }
 
-function event(res, id) {
+function event(res, id, user) {
   const mt = repo.meetings.get(Number(id));
-  if (!mt) return sendJson(res, { error: 'Event not found' }, 404);
+  if (!visibility.canSeeAgenda(user, mt)) return sendJson(res, { error: 'Event not found' }, 404);
   const items = repo.meetings.items(mt.id).map((it) => {
     const out = {
       agenda_number: it.agenda_number, section: it.section,

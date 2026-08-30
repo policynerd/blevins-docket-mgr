@@ -129,11 +129,16 @@ function policyForm(policy) {
     </form>
     <script src="/assets/editor.js" defer></script>`;
 
-  const body = html`
-    <p class="crumbs"><a href="/admin/policies">Policies</a> / ${isEdit ? policy.title : 'New policy'}</p>
-    <h1>${isEdit ? 'Edit policy' : 'New policy'}</h1>
-    ${raw(card('Policy', form))}`;
-  return layout({ title: isEdit ? 'Edit policy' : 'New policy', active: '/admin', body });
+  const body = html`${raw(card('Policy', form))}`;
+  return layout({
+    title: isEdit ? 'Edit policy' : 'New policy',
+    active: '/admin',
+    crumbs: [
+      { label: 'Policies', href: '/admin/policies' },
+      { label: isEdit ? policy.title : 'New policy' },
+    ],
+    body,
+  });
 }
 
 module.exports = { policiesList, policyDetail, policiesAdmin, policyForm, POLICY_CATEGORIES };

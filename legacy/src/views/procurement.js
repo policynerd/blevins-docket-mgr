@@ -269,11 +269,18 @@ function vendorsAdmin() {
            <button type="submit" class="btn-link">${v.status === 'Suspended' ? 'Reinstate' : 'Suspend'}</button></form></td>
          </tr>`).join('')}</tbody></table>`
     : emptyState('No registered vendors.');
-  const body = html`
-    <p class="crumbs"><a href="/admin">Admin</a> / <a href="/admin/procurement">Procurement</a> / Vendors</p>
-    <h1>Vendor registry (${rows.length})</h1>
-    ${raw(card('Registered vendors', table))}`;
-  return layout({ title: 'Vendors', active: '/admin', body });
+  const body = html`${raw(card('Registered vendors', table))}`;
+  return layout({
+    title: 'Vendors',
+    h1: `Vendor registry (${rows.length})`,
+    active: '/admin',
+    crumbs: [
+      { label: 'Admin', href: '/admin' },
+      { label: 'Procurement', href: '/admin/procurement' },
+      { label: 'Vendors' },
+    ],
+    body,
+  });
 }
 
 module.exports = {

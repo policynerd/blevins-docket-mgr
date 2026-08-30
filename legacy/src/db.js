@@ -777,6 +777,11 @@ const COLUMN_MIGRATIONS = {
     fiscal_recurring: 'INTEGER NOT NULL DEFAULT 0', // 1 = ongoing annual cost, 0 = one-time
     fiscal_note: 'TEXT',                            // narrative fiscal note
     amends_policy_id: 'INTEGER REFERENCES policies(id) ON DELETE SET NULL', // comparative print target
+    // When a clerk deliberately made this file readable by the public. NULL is
+    // the whole of the backfill: every row that existed before publication was
+    // a decision is unpublished, which is what "nothing is public until
+    // somebody publishes it" has to mean on day one.
+    published_at: 'TEXT',
   },
   budgets: {
     adopted_matter_id: 'INTEGER REFERENCES matters(id) ON DELETE SET NULL', // adopting resolution
@@ -833,6 +838,17 @@ const COLUMN_MIGRATIONS = {
   meetings: {
     minutes_html: 'TEXT',
     minutes_status: "TEXT NOT NULL DEFAULT 'none'",
+    // `status` is the meeting's lifecycle — Scheduled, In Progress, Adjourned,
+    // Final — and was never a statement about who may read the agenda. This is
+    // that statement, kept separate so a meeting can be Final and unpublished,
+    // or Scheduled and published, without one meaning implying the other.
+    agenda_published_at: 'TEXT',
+  },
+  reports: {
+    // A board letter had no state at all: `/reports/:id` sits outside the three
+    // authorized prefixes, so a letter was at a public URL from the moment the
+    // empty template was inserted — headings, blank sections and all.
+    published_at: 'TEXT',
   },
   users: {
     sso_subject: 'TEXT',          // stable Entra object id (oid) for SSO accounts

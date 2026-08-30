@@ -6,16 +6,23 @@ const { ORG } = require('../org');
 const { money } = require('./budget');
 const auth = require('../auth');
 const repo = require('../repo');
+const visibility = require('../visibility');
 
 // --- Dashboard ---------------------------------------------------------------
-function dashboard() {
-  const s = repo.stats();
+function dashboard(user = null) {
+  const publicOnly = !visibility.isInsider(user);
+  const s = repo.stats({ publicOnly });
   const today = todayISO();
-  const upcoming = repo.meetings.upcoming(today, 6);
-  const recent = repo.matters.search({ limit: 8 });
-  const buckets = repo.statusBuckets();
-  const inSession = repo.meetings.inSession();
-  const nextMeeting = repo.meetings.nextScheduled(today);
+  const upcoming = repo.meetings.upcoming(today, 6, { publicOnly });
+  const recent = repo.matters.search({ limit: 8, publicOnly });
+  const buckets = repo.statusBuckets({ publicOnly });
+  // Both name a specific meeting on the front page — the live banner and the
+  // "next meeting" line — so they follow the agenda's publication like the
+  // rest of it, rather than announcing a meeting whose page returns 404.
+  const canSee = (mt) => visibility.canSeeAgenda(user, mt);
+  const inSession = repo.meetings.inSession().filter(canSee);
+  const next = repo.meetings.nextScheduled(today);
+  const nextMeeting = canSee(next) ? next : null;
 
   const statCards = [
     ['Legislative files', s.matters, '/legislation'],
@@ -105,6 +112,9 @@ function legislationList(query, user = null) {
     sponsorId: sponsor_id ? Number(sponsor_id) : undefined,
     topicId: topic ? Number(topic) : undefined,
     from: from || undefined, to: to || undefined,
+    // Carried into `count` as well as `search`, or the pager would page over
+    // rows the reader is never shown and the last pages would come back empty.
+    publicOnly: !visibility.isInsider(user),
   };
   const total = repo.matters.count(filterArgs);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -463,7 +473,16 @@ function matterDetail(matter, query = {}, user = null) {
     ? raw('<p class="form-ok">Thank you — your comment has been received and will appear once reviewed by the Clerk’s office.</p>')
     : '';
 
+  // Reaching an unpublished file at its public URL is normal for anyone signed
+  // in, so the page states which it is rather than letting the reader guess
+  // from the absence of something.
+  const privacyNotice = !matter.published_at
+    ? raw('<p class="notice">Not public — you can see this file because you are signed in. '
+      + 'A clerk publishes it from Manage.</p>')
+    : '';
+
   const body = html`
+    ${privacyNotice}
     ${codifyNotice}
     ${commentedNotice}
     ${raw(tracker)}
@@ -594,7 +613,7 @@ function matterVersionPage(matter, ver) {
 }
 
 // --- Calendar ----------------------------------------------------------------
-function calendar(query = {}) {
+function calendar(query = {}, user = null) {
   const today = todayISO();
   const view = ['upcoming', 'past', 'all'].includes(query.view) ? query.view : 'upcoming';
   const { body_id = '', from = '', to = '' } = query;
@@ -603,6 +622,7 @@ function calendar(query = {}) {
   const filterArgs = {
     bodyId: body_id ? Number(body_id) : undefined,
     from: from || undefined, to: to || undefined, view, today,
+    publicOnly: !visibility.isInsider(user),
   };
   const total = repo.meetings.countCalendar(filterArgs);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -822,7 +842,14 @@ function meetingDetail(meeting, query = {}, user = null) {
   // reader. No argument means no claim of rank, which is the public board.
   const liveHref = isClerk ? `/admin/meetings/${meeting.id}/live` : `/live/${meeting.id}`;
 
+  const agendaNotice = !meeting.agenda_published_at
+    ? raw('<p class="notice">Agenda not published — you can see this because you are '
+      + 'signed in. The chamber display and the public live board stay closed until '
+      + 'a clerk publishes it.</p>')
+    : '';
+
   const body = html`
+    ${agendaNotice}
     ${raw(card('Meeting details', html`
       <dl class="meta record-header">
         <dt>Name</dt><dd>${meeting.body_name}</dd>
@@ -988,7 +1015,7 @@ function agendaPacket(meeting) {
 // no minutes. That is the clerk's actual working list.
 function meetingsIndex(user) {
   const today = todayISO();
-  const rows = repo.meetings.board(today);
+  const rows = repo.meetings.board(today).filter((mt) => visibility.canSeeAgenda(user, mt));
   const isClerk = auth.hasRole(user, 'clerk');
   const upcoming = rows.filter((m) => m.meeting_date >= today);
   const past = rows.filter((m) => m.meeting_date < today);
@@ -1314,10 +1341,12 @@ function topicsList() {
 }
 
 // --- Daily docket ------------------------------------------------------------
-function docket() {
+function docket(user = null) {
   const today = todayISO();
-  const meetings = repo.meetings.todayDocket(today);
-  const upcoming = repo.meetings.nextScheduled(today);
+  const canSee = (mt) => visibility.canSeeAgenda(user, mt);
+  const meetings = repo.meetings.todayDocket(today).filter(canSee);
+  const next = repo.meetings.nextScheduled(today);
+  const upcoming = canSee(next) ? next : null;
 
   const meetingBlocks = meetings.map((mt) => {
     const items = repo.meetings.items(mt.id);
