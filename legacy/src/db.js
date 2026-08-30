@@ -765,6 +765,19 @@ const COLUMN_MIGRATIONS = {
     result_certified_by: 'INTEGER REFERENCES users(id)',
     result_published_at: 'TEXT',
     certification_checkpoint: 'TEXT',
+    // The consent calendar: one roll, many items.
+    //
+    // A board disposing of twelve routine items had to run twelve roll calls,
+    // because a roll is opened on an agenda item and there was no way to say
+    // "these twelve, together". The group is itself an agenda item — so the
+    // ledger, the thresholds, the certification lifecycle and the wall board
+    // all go on working unchanged, taking one roll on one item — and the items
+    // it covers point at it. Nothing about how a vote is recorded changes;
+    // what changes is how many items one recorded vote disposes of.
+    consent_group_id: 'INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL',
+    // Marks the group item itself, so it can be told from an ordinary item
+    // that happens to have nothing pointing at it yet.
+    is_consent_group: 'INTEGER NOT NULL DEFAULT 0',
   },
   matters: {
     body_html: 'TEXT',
@@ -843,6 +856,12 @@ const COLUMN_MIGRATIONS = {
     // that statement, kept separate so a meeting can be Final and unpublished,
     // or Scheduled and published, without one meaning implying the other.
     agenda_published_at: 'TEXT',
+  },
+  speaker_requests: {
+    // When the chair gave this person the floor. A queue can say who is next;
+    // only a start time can say how long they have been talking, which is the
+    // thing a room and a chair both want and neither had.
+    started_at: 'TEXT',
   },
   reports: {
     // A board letter had no state at all: `/reports/:id` sits outside the three

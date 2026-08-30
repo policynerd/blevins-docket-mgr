@@ -716,6 +716,86 @@ const meetings = {
       WHERE ai.meeting_id = ?
       ORDER BY ai.sort_order, ai.id`).all(meetingId);
   },
+  /**
+   * The consent calendar.
+   *
+   * A board disposing of twelve routine items ran twelve roll calls, because a
+   * roll is opened on an agenda item and there was no way to say "these
+   * twelve, together". The Consent Agenda section has existed since the
+   * beginning — items could be *filed* under it, and then still had to be
+   * voted one at a time.
+   *
+   * The group is itself an agenda item. That is the whole design: the ledger,
+   * the threshold rules, the certification lifecycle and the wall board all go
+   * on working unchanged, taking one roll on one item. Nothing about how a
+   * vote is recorded changes. What changes is how many items one recorded vote
+   * disposes of.
+   */
+  consentMembers(groupId) {
+    return db.prepare(`
+      SELECT ai.*, m.file_number, m.type AS matter_type, m.title AS matter_title,
+             m.status AS matter_status
+      FROM agenda_items ai LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE ai.consent_group_id = ?
+      ORDER BY ai.sort_order, ai.id`).all(groupId);
+  },
+
+  /**
+   * Put items into a consent group, creating the group if there is not one.
+   *
+   * Refuses items that have already been voted: a consent calendar is a way of
+   * disposing of business, not of re-disposing of it, and quietly folding a
+   * decided item into a fresh roll would overwrite a result nobody asked to
+   * revisit. Refuses a group item too, so groups cannot nest.
+   */
+  groupIntoConsent(meetingId, itemIds, { title = 'Consent Calendar' } = {}) {
+    const wanted = (itemIds || []).map(Number).filter(Boolean);
+    if (!wanted.length) return null;
+
+    const all = meetings.items(meetingId);
+    const byId = new Map(all.map((i) => [i.id, i]));
+    const eligible = wanted
+      .map((id) => byId.get(id))
+      .filter((it) => it && !it.is_consent_group && !it.result && (it.vote_status || 'pending') === 'pending');
+    if (!eligible.length) return null;
+
+    let group = all.find((i) => i.is_consent_group && (i.vote_status || 'pending') === 'pending');
+    if (!group) {
+      const groupId = meetings.addItem({
+        meeting_id: meetingId,
+        section: 'Consent Agenda',
+        title,
+        requires_vote: 1,
+        is_consent_group: 1,
+        notes: 'Moved that the items on the consent calendar be adopted together.',
+      });
+      group = meetings.getItem(groupId);
+    }
+
+    const set = db.prepare('UPDATE agenda_items SET consent_group_id = ? WHERE id = ?');
+    for (const it of eligible) set.run(group.id, it.id);
+    meetings.renumber(meetingId);
+    return meetings.getItem(group.id);
+  },
+
+  /** Take one item back off the calendar, so it can be considered on its own. */
+  ungroupConsent(itemId) {
+    const it = meetings.getItem(itemId);
+    if (!it || !it.consent_group_id) return null;
+    const groupId = it.consent_group_id;
+    db.prepare('UPDATE agenda_items SET consent_group_id = NULL WHERE id = ?').run(itemId);
+    // A calendar with nothing on it is furniture. Remove the group rather than
+    // leaving an empty heading for the room to wonder about — but only while
+    // it is still unvoted, since after a roll it is part of the record.
+    const group = meetings.getItem(groupId);
+    if (group && !group.result && !meetings.consentMembers(groupId).length) {
+      meetings.removeItem(groupId);
+    } else {
+      meetings.renumber(it.meeting_id);
+    }
+    return meetings.getItem(itemId);
+  },
+
   insert(mt) {
     return db.prepare(`INSERT INTO meetings
       (body_id, meeting_date, meeting_time, location, status, agenda_url, minutes_url, video_url, notes)
@@ -786,11 +866,13 @@ const meetings = {
       ? (it.requires_vote ? 1 : 0)
       : (it.matter_id || itemType === 'Action' ? 1 : 0);
     return db.prepare(`INSERT INTO agenda_items
-      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes, requires_vote, item_type)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes,
+       requires_vote, item_type, is_consent_group)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
       agendaNum, it.section || null, it.title || null,
-      it.action || null, it.result || null, it.notes || null, requiresVote, itemType).lastInsertRowid;
+      it.action || null, it.result || null, it.notes || null, requiresVote, itemType,
+      it.is_consent_group ? 1 : 0).lastInsertRowid;
   },
   getItem(id) {
     return db.prepare(`
@@ -2983,6 +3065,16 @@ const voteAdmin = {
   openRoll(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
+    // An item on the consent calendar is disposed of by the calendar's roll.
+    // Opening its own would take a second vote on business the board is about
+    // to decide once, and leave two results on one item with nothing saying
+    // which governs. Take it off the calendar first if it needs debating.
+    if (item.consent_group_id) {
+      const e = new Error('This item is on the consent calendar. '
+        + 'Remove it from the calendar to consider it separately.');
+      e.code = 'ON_CONSENT_CALENDAR';
+      throw e;
+    }
     // The rule the roll is taken under. Freezing it at open is deliberate: a
     // closed roll must be read against the rule in force when it was taken,
     // not whatever the config says later. But a *reopen* is a fresh roll, so
@@ -3035,6 +3127,28 @@ const voteAdmin = {
       eligible: outcome.eligible, required: outcome.required,
       thresholdRule: outcome.threshold, result: outcome.result,
     }, { agendaItemId: itemId, enteredBy: userId });
+
+    // A consent calendar carries its items with it.
+    //
+    // The result is written onto each one so that the agenda, the minutes and
+    // every matter's own page read the same as they would after a separate
+    // vote — a member should not have to know the item travelled on a consent
+    // calendar to find out what happened to it. The ledger is untouched:
+    // there is exactly one roll, on the group, and each item points at it.
+    if (item.is_consent_group) {
+      const carried = meetings.consentMembers(itemId);
+      const stamp = db.prepare(
+        "UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?");
+      for (const member of carried) {
+        meetings.setItemResult(member.id,
+          member.action || 'Adopted on the consent calendar', outcome.result);
+        stamp.run(member.id);
+      }
+      voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
+        agendaItemId: itemId, consentCalendar: true,
+        carriedItemIds: carried.map((c) => c.id), result: outcome.result,
+      }, { agendaItemId: itemId, enteredBy: userId });
+    }
     return outcome;
   },
 
@@ -3105,6 +3219,15 @@ const voteAdmin = {
   reopen(itemId, { userId = null } = {}) {
     const item = meetings.getItem(itemId);
     if (!item) return null;
+    // Before anything is retracted. openRoll refuses this too, but by then
+    // retractOutcome has already voided the item's history rows — a refusal
+    // that has already destroyed something is not a refusal.
+    if (item.consent_group_id) {
+      const e = new Error('This item is on the consent calendar. '
+        + 'Remove it from the calendar to consider it separately.');
+      e.code = 'ON_CONSENT_CALENDAR';
+      throw e;
+    }
     const wasClosed = item.vote_status === 'closed';
     if (wasClosed) {
       this.retractOutcome(item, {
@@ -3416,6 +3539,45 @@ const speakers = {
   setStatus(id, status) {
     if (!['Pending', 'Approved', 'Rejected', 'Spoke'].includes(status)) return;
     db.prepare('UPDATE speaker_requests SET status = ? WHERE id = ?').run(status, id);
+  },
+
+  /**
+   * Give this person the floor.
+   *
+   * Whoever held it before is marked as having spoken: only one person has the
+   * floor, and leaving the previous speaker started would leave the board
+   * counting two clocks and the record unable to say when the first sat down.
+   */
+  startSpeaking(id) {
+    const s = speakers.get(id);
+    if (!s) return null;
+    db.prepare(`UPDATE speaker_requests SET status = 'Spoke'
+      WHERE meeting_id = ? AND started_at IS NOT NULL AND status <> 'Spoke'`).run(s.meeting_id);
+    db.prepare("UPDATE speaker_requests SET started_at = datetime('now'), status = 'Approved' WHERE id = ?")
+      .run(id);
+    return speakers.get(id);
+  },
+
+  /** Whoever currently holds the floor, if anyone. */
+  speaking(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ? AND s.started_at IS NOT NULL AND s.status <> 'Spoke'
+      ORDER BY s.started_at DESC LIMIT 1`).get(meetingId);
+  },
+
+  /** Approved and still waiting, in the order they signed up. */
+  queue(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ? AND s.status = 'Approved' AND s.started_at IS NULL
+      ORDER BY s.created_at`).all(meetingId);
   },
 };
 

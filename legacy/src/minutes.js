@@ -42,6 +42,32 @@ function generate(meetingId) {
       : `${escapeHtml(it.agenda_number || '')} ${escapeHtml(it.title || '')}`;
     out.push(`<p><strong>${heading.trim()}</strong></p>`);
 
+    // The consent calendar, in the minutes.
+    //
+    // One roll disposed of these, so the tally is printed once — on the
+    // calendar, below — and each item it carried is named here. Printing the
+    // items without saying they travelled together would read as twelve
+    // separate votes that nobody took; printing the calendar without naming
+    // the items would record a decision without saying what was decided.
+    const carried = it.is_consent_group ? repo.meetings.consentMembers(it.id) : [];
+    if (carried.length) {
+      out.push(`<p>The following ${carried.length} item${carried.length === 1 ? '' : 's'} `
+        + `${carried.length === 1 ? 'was' : 'were'} considered together on the consent calendar:</p>`);
+      out.push('<ol>' + carried.map((c) => '<li>'
+        + escapeHtml(c.agenda_number ? `${c.agenda_number} ` : '')
+        + escapeHtml(c.matter_id ? `${c.file_number} — ${c.matter_title}` : (c.title || ''))
+        + '</li>').join('') + '</ol>');
+    }
+
+    // An item carried on a calendar states where its vote was taken instead of
+    // reprinting a roll it was not the subject of.
+    if (it.consent_group_id) {
+      const group = repo.meetings.getItem(it.consent_group_id);
+      out.push('<p>Adopted on the consent calendar'
+        + (group && group.agenda_number ? ` (${escapeHtml(group.agenda_number)})` : '')
+        + '; see the roll recorded there.</p>');
+    }
+
     if (it.motion_text || it.mover_id || it.seconder_id) {
       const mover = it.mover_id ? nameOf(it.mover_id) : null;
       const seconder = it.seconder_id ? nameOf(it.seconder_id) : null;

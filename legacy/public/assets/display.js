@@ -24,6 +24,10 @@
     seconder: document.querySelector('[data-seconder]'),
     roll: document.querySelector('[data-roll]'),
     counts: document.querySelector('[data-counts]'),
+    threshold: document.querySelector('[data-threshold]'),
+    reopened: document.querySelector('[data-reopened]'),
+    consent: document.querySelector('[data-consent]'),
+    floor: document.querySelector('[data-floor]'),
     basis: document.querySelector('[data-basis]'),
     status: document.querySelector('[data-status]'),
     stale: document.querySelector('[data-stale]')
@@ -90,15 +94,38 @@
    * board of nine belongs in one column however wide the screen is; a board of
    * twenty-five does not fit in one however tall.
    */
-  function fitRoll(n) {
-    var cols = n > 24 ? 3 : (n > 12 ? 2 : 1);
+  function setCols(n, cols) {
     el.roll.setAttribute('data-cols', String(cols));
-    // Both axes explicitly: with grid-auto-flow:column, seats fill down one
-    // column and then start the next, which is the order a roll is read in.
-    // Left to implicit columns they would come out at whatever width their
-    // longest name wanted, and the roll would sit lopsided on the wall.
+    // Equal columns, so every chip sits at its column's right edge and the
+    // results read down the board in straight lines. A chip does end up nearer
+    // the next column's name than its own — but every column carries the same
+    // name-then-chip pattern, so the room reads the structure once and the
+    // ambiguity does not survive it. Ragged chips, each stopping wherever its
+    // name happened to end, are the harder thing to take a tally off.
     el.roll.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
     el.roll.style.gridTemplateRows = 'repeat(' + Math.ceil(n / cols) + ', auto)';
+  }
+
+  /*
+   * Fitting the roll to the screen.
+   *
+   * Seat count is only the opening guess. What actually decides this is
+   * whether the whole board fits, and that depends on everything above the
+   * roll — a long title, a motion, a reopened badge, a consent calendar
+   * listing twelve items. A rule keyed to seat count alone was right until the
+   * threshold bar was added and a twenty-five seat roll started running 44px
+   * past the bottom of a 1080p screen.
+   *
+   * So: guess, then measure, then add a column if it did not fit. Columns are
+   * cheaper than shrinking type on a board read from the back of a room.
+   */
+  function fitRoll(n) {
+    var cols = n > 24 ? 3 : (n > 12 ? 2 : 1);
+    setCols(n, cols);
+    while (cols < 4 && document.body.scrollHeight > window.innerHeight) {
+      cols += 1;
+      setCols(n, cols);
+    }
   }
 
   /*
@@ -133,27 +160,150 @@
   function layout() {
     fitText(el.title, 4.2, 1.8, 24);
     fitText(el.motion, 2.6, 1.4, 16);
+    // After the title is sized, because sizing it changes how much room the
+    // roll has. Only when there is a roll to fit.
+    var seats = el.roll.querySelectorAll('.seat').length;
+    if (seats) fitRoll(seats);
   }
+
+  /*
+   * The floor, when no vote is open.
+   *
+   * The clock is drawn client-side from the start time in the snapshot rather
+   * than pushed as a number: SSE frames arrive when something changes, and a
+   * countdown that only moved when the server spoke would sit still for three
+   * minutes. The tick below advances it between frames; the snapshot is what
+   * says whose clock it is.
+   *
+   * It counts past zero rather than stopping. Nothing here cuts a speaker off
+   * — that is a ruling the chair makes, not a board — so the useful thing to
+   * show a chair is how far over they have run.
+   */
+  var floorState = null;
+
+  function clockText(secs) {
+    var over = secs < 0;
+    var t = Math.abs(secs);
+    var m = Math.floor(t / 60);
+    var ss = t % 60;
+    return (over ? '+' : '') + m + ':' + (ss < 10 ? '0' : '') + ss;
+  }
+
+  function paintClock() {
+    if (!floorState || !floorState.speaking || !floorState.speaking.startedAt) return;
+    var el2 = el.floor.querySelector('[data-clock]');
+    if (!el2) return;
+    var started = Date.parse(String(floorState.speaking.startedAt).replace(' ', 'T') + 'Z');
+    if (isNaN(started)) return;
+    var left = Math.round(floorState.speaking.limitSeconds - (Date.now() - started) / 1000);
+    el2.textContent = clockText(left);
+    el2.className = 'floor-clock' + (left < 0 ? ' over' : '');
+  }
+
+  function renderFloor(floor) {
+    floorState = floor;
+    var has = floor && (floor.speaking || (floor.queue && floor.queue.length));
+    el.floor.hidden = !has;
+    if (!has) return '';
+
+    var out = '';
+    if (floor.speaking) {
+      out += '<div class="floor-label">Now speaking</div>'
+        + '<div class="floor-name">' + esc(floor.speaking.name) + '</div>'
+        + (floor.speaking.item ? '<div class="floor-item">On ' + esc(floor.speaking.item) + '</div>' : '')
+        + '<div class="floor-clock" data-clock>—</div>';
+    }
+    if (floor.queue && floor.queue.length) {
+      out += '<div class="floor-queue"><div class="floor-label">Next ('
+        + floor.queue.length + ')</div><ol>'
+        + floor.queue.slice(0, 6).map(function (q) {
+          return '<li>' + esc(q.name) + (q.item ? ' <span class="muted">' + esc(q.item) + '</span>' : '') + '</li>';
+        }).join('')
+        + (floor.queue.length > 6 ? '<li>… and ' + (floor.queue.length - 6) + ' more</li>' : '')
+        + '</ol></div>';
+    }
+    el.floor.innerHTML = out;
+    paintClock();
+    return out;
+  }
+
+  // One tick a second, only ever repainting digits that already exist.
+  setInterval(paintClock, 1000);
 
   function countBlock(label, n, cls) {
     return '<span>' + label + '<span class="n ' + cls + '">' + (n || 0) + '</span></span>';
   }
 
+  /*
+   * Where the count stands against what it takes.
+   *
+   * The denominator existed only as a line of small grey text under the tally
+   * — "5 of 25 eligible — majority of those voting" — which is the one thing
+   * on this board a room cannot read from the back, and the only thing it
+   * actually wants to know: is this carrying?
+   *
+   * Bars are drawn against the eligible roll, and the marker sits at the
+   * threshold. When the green passes the marker the motion has it.
+   */
+  function thresholdBar(a) {
+    if (!a.eligible || !a.required) return '';
+    var pct = function (n) { return Math.min(100, (n / a.eligible) * 100); };
+    var yea = a.tally.Yea || 0;
+    var nay = a.tally.Nay || 0;
+    return '<div class="thr-track">'
+      + '<div class="thr-yea" style="width:' + pct(yea) + '%"></div>'
+      + '<div class="thr-nay" style="width:' + pct(nay) + '%"></div>'
+      + '<div class="thr-mark" style="left:' + pct(a.required) + '%"></div>'
+      + '</div>'
+      + '<div class="thr-legend"><span>' + esc(String(a.required))
+      + ' of ' + esc(String(a.eligible)) + ' eligible needed</span>'
+      + '<span>' + esc(a.basis || '') + '</span></div>';
+  }
+
   function render(state) {
     var a = state.active;
+
+    // Somebody holding the floor outranks a finished vote.
+    //
+    // `active` falls back to the last closed item so the room keeps seeing a
+    // result after the roll shuts, which is right — until the chair gives
+    // somebody the floor. That is a deliberate act, later in time, and it is
+    // what is happening in the room; a tally from ten minutes ago is not.
+    if (state.floor && state.floor.speaking) {
+      el.banner.hidden = true;
+      el.head.hidden = true;
+      el.counts.hidden = true;
+      el.movers.hidden = true;
+      el.threshold.hidden = true;
+      el.reopened.hidden = true;
+      el.consent.hidden = true;
+      el.basis.textContent = '';
+      el.roll.innerHTML = '';
+      renderFloor(state.floor);
+      el.status.textContent = 'Public comment';
+      el.status.className = 'status open';
+      return;
+    }
+
     if (!a) {
       el.banner.hidden = true;
       el.head.hidden = true;
       el.counts.hidden = true;
       el.movers.hidden = true;
+      el.threshold.hidden = true;
+      el.reopened.hidden = true;
+      el.consent.hidden = true;
       el.basis.textContent = '';
+      // The floor takes the screen when somebody has it; only when nobody is
+      // speaking and nobody is waiting does the board fall back to saying so.
+      var onFloor = renderFloor(state.floor);
       fitRoll(1);
-      el.roll.innerHTML = '<div class="waiting">'
+      el.roll.innerHTML = onFloor ? '' : '<div class="waiting">'
         + esc(state.meeting && state.meeting.status === 'In Progress'
           ? 'The Board Meeting is in Recess.'
           : 'No item before the body') + '</div>';
-      el.status.textContent = 'Awaiting the chair';
-      el.status.className = 'status idle';
+      el.status.textContent = onFloor ? 'Public comment' : 'Awaiting the chair';
+      el.status.className = 'status ' + (onFloor ? 'open' : 'idle');
       return;
     }
 
@@ -168,6 +318,8 @@
       el.banner.hidden = true;
     }
 
+    el.floor.hidden = true;
+    floorState = null;
     el.head.hidden = false;
     el.itemNo.textContent = a.agenda_number ? String(a.agenda_number) : '';
     el.title.textContent = a.title || '';
@@ -175,6 +327,26 @@
     el.motion.hidden = !a.motion_text;
     el.needed.textContent = a.required ? '(' + a.required + ' VOTES REQUIRED)' : '';
     el.needed.hidden = !a.required;
+
+    // A roll taken more than once says so. The room is entitled to know it is
+    // watching a second answer to the same question.
+    el.reopened.hidden = !a.reopened;
+    if (a.reopened) {
+      el.reopened.innerHTML = '<span class="reopened">ROLL REOPENED'
+        + (a.reopened > 1 ? ' \u00d7' + a.reopened : '') + '</span>';
+    }
+
+    // What a consent calendar disposes of, listed, because one roll standing
+    // for twelve items must show the twelve.
+    el.consent.hidden = !(a.consentItems && a.consentItems.length);
+    if (a.consentItems && a.consentItems.length) {
+      el.consent.innerHTML = '<div class="consent-head">This vote adopts '
+        + a.consentItems.length + ' item' + (a.consentItems.length === 1 ? '' : 's')
+        + '</div><ol>' + a.consentItems.map(function (c) {
+          return '<li>' + esc(c.agenda_number ? c.agenda_number + '. ' : '')
+            + esc(c.file_number ? c.file_number + ' — ' : '') + esc(c.title || '') + '</li>';
+        }).join('') + '</ol>';
+    }
 
     var hasMovers = a.mover || a.seconder;
     el.movers.hidden = !hasMovers;
@@ -198,11 +370,13 @@
       + countBlock('Abstain', a.tally.Abstain, 'abstain')
       + (a.recused ? countBlock('Recused', a.recused, 'recused') : '');
 
-    // The denominator in words. "YES 2 NO 1" alone leaves the room unable to
-    // tell whether that carries.
-    el.basis.textContent = a.eligible != null
-      ? a.required + ' of ' + a.eligible + ' eligible — ' + (a.basis || '')
-      : '';
+    // The denominator, as a bar rather than a sentence. "YES 2 NO 1" alone
+    // leaves the room unable to tell whether that carries, and the sentence
+    // that used to say so was 2.2vh of grey text.
+    var bar = thresholdBar(a);
+    el.threshold.hidden = !bar;
+    el.threshold.innerHTML = bar;
+    el.basis.textContent = '';
 
     var s;
     if (a.certified) s = { text: 'Result certified', cls: 'certified' };
