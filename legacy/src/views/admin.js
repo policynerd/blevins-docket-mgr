@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate, todayISO } = require('../util');
-const { layout, card, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText } = require('./layout');
+const { layout, card, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText, publishControl } = require('./layout');
 const { ORG } = require('../org');
 const auth = require('../auth');
 const repo = require('../repo');
@@ -255,7 +255,18 @@ function matterForm(matter, opts = {}) {
 
   let extras = '';
   if (isEdit) {
-    extras = workflowPanel(matter) + actionRecorder(matter) + documentsPanel(matter)
+    // Publishing the file publishes its attachments with it — /files/:id now
+    // asks the same question of the matter the attachment hangs off — so the
+    // hint says so rather than leaving it to be discovered.
+    extras = card('Who can see this file', publishControl({
+      action: `/admin/matters/${matter.id}/publish`,
+      at: matter.published_at,
+      noun: 'file',
+      hint: 'Publishing makes the file, its text, its history and its attachments '
+        + 'readable by anyone, with no sign-in. Board letters on this file are '
+        + 'published separately, one at a time.',
+    }))
+      + workflowPanel(matter) + actionRecorder(matter) + documentsPanel(matter)
       + relationsPanel(matter) + implementationPanel(matter) + attachmentForm(matter);
   }
 
@@ -270,7 +281,8 @@ function matterForm(matter, opts = {}) {
       { label: isEdit ? matter.file_number : 'New file' },
     ],
     actions: isEdit
-      ? `<a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}">View public record</a>`
+      ? `<a class="btn" href="/legislation/${encodeURIComponent(matter.file_number)}">${
+        matter.published_at ? 'View public record' : 'View record (not public)'}</a>`
         + ` <a class="btn primary" href="/admin/legislation/${encodeURIComponent(matter.file_number)}/draft">Draft the text</a>`
       : '',
     active: '/admin',
@@ -741,9 +753,22 @@ function agendaManager(meeting, query) {
     ? '<p class="muted reorder-hint">Drag items by the ⠿ handle to reorder. <span class="reorder-status" data-reorder-status></span></p>'
     : '';
 
+  // Publication sits directly under the step strip, before the item work,
+  // because whether the room and the internet can see this agenda is a fact
+  // about the whole meeting rather than a step at the end of building it.
+  const publish = card('Who can see this agenda', publishControl({
+    action: `/admin/meetings/${meeting.id}/agenda/publish`,
+    at: meeting.agenda_published_at,
+    noun: 'agenda',
+    hint: 'Publishing also opens the chamber display and the public live board '
+      + 'for this meeting. Both need no sign-in, so the wall screen in the room '
+      + 'will stay blank until the agenda is published.',
+  }));
+
   const body = html`
     ${raw(meetingSteps(meeting, 'agenda'))}
     ${raw(placementBanner(query))}
+    ${raw(publish)}
     ${raw(readyQueue(meeting))}
     ${raw(card('Add an item by hand', addItemForm))}
     ${raw(card('Agenda items & voting',

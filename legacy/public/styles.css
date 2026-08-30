@@ -993,6 +993,18 @@ table.data.sortable thead th { padding: 0; }
 .topic-notice { background: var(--gold-dim); border: 1px solid var(--gold-line); border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; font-size: var(--t-body); }
 .att-list li { display: flex; gap: 10px; align-items: center; }
 
+/* Publication — who can see this
+   ------------------------------------------------------------------------
+   Deliberately loud where a page is NOT public, and quiet where it is. The
+   failure mode this whole feature exists to prevent is a clerk assuming a
+   draft is private; the opposite mistake, assuming a published thing is
+   private, is caught the moment they look at the badge. */
+.notice { background: var(--gold-dim); border: 1px solid var(--gold-line); border-left: 3px solid var(--gold-dark);
+  border-radius: 4px; padding: 10px 14px; margin: 0 0 var(--s5); font-size: var(--t-body); }
+.publish-control { display: flex; flex-direction: column; gap: var(--s4); align-items: flex-start; }
+.publish-state { display: flex; align-items: center; gap: var(--s3); }
+.publish-hint { margin: 0; max-width: 62ch; }
+
 /* Footer — anchored to the bottom, aligned with page content */
 .site-footer { border-top: 3px solid var(--gold); background: var(--banner); color: var(--on-navy);
   padding: 20px 24px; margin-top: 0; flex-shrink: 0; }

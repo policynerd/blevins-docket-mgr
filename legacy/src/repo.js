@@ -333,9 +333,13 @@ function ftsQuery(q) {
 
 const matters = {
   // Build the shared WHERE clause + bound args for search/count.
-  _filter({ q, type, status, bodyId, sponsorId, topicId, from, to } = {}) {
+  _filter({ q, type, status, bodyId, sponsorId, topicId, from, to, publicOnly } = {}) {
     const clauses = [];
     const args = [];
+    // The one place the public/insider split has to be enforced for lists.
+    // Search, count, the CSV, the RSS feeds and the JSON API all build on this
+    // clause, so filtering here means none of them can forget to.
+    if (publicOnly) clauses.push('m.published_at IS NOT NULL');
     if (q) {
       const match = ftsEnabled() ? ftsQuery(q) : '';
       if (match) {
@@ -492,6 +496,20 @@ const matters = {
     db.prepare(`UPDATE matters SET status=?, updated_at=datetime('now') WHERE id=?`)
       .run(status, id);
   },
+  // Publication, as an act with a time on it.
+  //
+  // Deliberately not folded into `setStatus`. A file's status is where it is in
+  // the Board's process; publication is who may read it. Tying them would mean
+  // that advancing a file to Introduced silently put it on the internet, which
+  // is the failure this whole change exists to undo.
+  publish(id) {
+    db.prepare(`UPDATE matters SET published_at=datetime('now'), updated_at=datetime('now')
+      WHERE id=? AND published_at IS NULL`).run(id);
+  },
+  unpublish(id) {
+    db.prepare(`UPDATE matters SET published_at=NULL, updated_at=datetime('now') WHERE id=?`)
+      .run(id);
+  },
   addSponsor(matterId, personId, type = 'Sponsor') {
     return db.prepare(`INSERT INTO matter_sponsors (matter_id, person_id, sponsor_type)
       VALUES (?,?,?)`).run(matterId, personId, type).lastInsertRowid;
@@ -607,18 +625,20 @@ const matters = {
 // Meetings & agendas
 // ---------------------------------------------------------------------------
 const meetings = {
-  all() {
+  all({ publicOnly = false } = {}) {
     return db.prepare(`
       SELECT mt.*, b.name AS body_name, b.type AS body_type,
         (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = mt.id) AS item_count
       FROM meetings mt JOIN bodies b ON b.id = mt.body_id
+      ${publicOnly ? 'WHERE mt.agenda_published_at IS NOT NULL' : ''}
       ORDER BY mt.meeting_date DESC, mt.meeting_time DESC`).all();
   },
-  upcoming(fromDate, limit = 25) {
+  upcoming(fromDate, limit = 25, { publicOnly = false } = {}) {
     return db.prepare(`
       SELECT mt.*, b.name AS body_name
       FROM meetings mt JOIN bodies b ON b.id = mt.body_id
       WHERE mt.meeting_date >= ? AND mt.status != 'Cancelled'
+      ${publicOnly ? 'AND mt.agenda_published_at IS NOT NULL' : ''}
       ORDER BY mt.meeting_date ASC LIMIT ?`).all(fromDate, limit);
   },
   past(fromDate, limit = 25) {
@@ -654,9 +674,12 @@ const meetings = {
   },
 
   // Filtered, paginated calendar query. view: upcoming | past | all.
-  _calFilter({ bodyId, from, to, view, today } = {}) {
+  _calFilter({ bodyId, from, to, view, today, publicOnly } = {}) {
     const clauses = [];
     const args = [];
+    // Same seam as matters._filter: countCalendar and searchCalendar both build
+    // on this, so the pager and the page agree about what exists.
+    if (publicOnly) clauses.push('mt.agenda_published_at IS NOT NULL');
     if (view === 'upcoming') { clauses.push('mt.meeting_date >= ?'); args.push(today); }
     else if (view === 'past') { clauses.push('mt.meeting_date < ?'); args.push(today); }
     if (bodyId) { clauses.push('mt.body_id = ?'); args.push(bodyId); }
@@ -857,6 +880,16 @@ const meetings = {
   setMinutes(meetingId, html, status) {
     db.prepare('UPDATE meetings SET minutes_html=?, minutes_status=? WHERE id=?')
       .run(html || null, status || 'draft', meetingId);
+  },
+  // Publishing the agenda is also what opens the room: the chamber display and
+  // the public live board are gated on it, because a board that showed an
+  // unpublished agenda on the wall would be publishing it by other means.
+  publishAgenda(meetingId) {
+    db.prepare(`UPDATE meetings SET agenda_published_at=datetime('now')
+      WHERE id=? AND agenda_published_at IS NULL`).run(meetingId);
+  },
+  unpublishAgenda(meetingId) {
+    db.prepare('UPDATE meetings SET agenda_published_at=NULL WHERE id=?').run(meetingId);
   },
   // Persist a new ordering. Only items that belong to the meeting are touched,
   // so a stale or tampered id list can't move items between meetings.
@@ -1219,6 +1252,17 @@ const reports = {
       LEFT JOIN users u ON u.id = r.author_id
       LEFT JOIN matters m ON m.id = r.matter_id
       ORDER BY r.updated_at DESC, r.id DESC LIMIT ?`).all(limit);
+  },
+  // A board letter is written in the open inside the organization and reaches
+  // the public only here. Publishing does not lock it: a published letter can
+  // still be edited, and unpublishing takes it back off the site.
+  publish(id) {
+    db.prepare(`UPDATE reports SET published_at=datetime('now'), updated_at=datetime('now')
+      WHERE id=? AND published_at IS NULL`).run(id);
+  },
+  unpublish(id) {
+    db.prepare(`UPDATE reports SET published_at=NULL, updated_at=datetime('now') WHERE id=?`)
+      .run(id);
   },
   insert(r) {
     return db.prepare(`INSERT INTO reports (matter_id, title, kind, body_html, author_id)
@@ -2137,22 +2181,35 @@ const users = {
 // ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
-function stats() {
+// The dashboard counters.
+//
+// These must follow publication or the front page both leaks and lies: it
+// would announce "169 legislative files" over a list showing none of them, and
+// the count alone tells a visitor how much work the Board has in hand. Bodies
+// and people are the roster, which is not draft work and stays as it was.
+function stats({ publicOnly = false } = {}) {
   const one = (sql, ...a) => db.prepare(sql).get(...a);
+  const pub = publicOnly ? 'AND m.published_at IS NOT NULL' : '';
+  const pubOnly = publicOnly ? 'WHERE m.published_at IS NOT NULL' : '';
   return {
-    matters: one('SELECT COUNT(*) AS n FROM matters').n,
+    matters: one(`SELECT COUNT(*) AS n FROM matters m ${pubOnly}`).n,
     pending: one(
-      `SELECT COUNT(*) AS n FROM matters WHERE status IN ('Introduced','In Committee','On Agenda')`).n,
-    enacted: one(`SELECT COUNT(*) AS n FROM matters WHERE status IN ('Passed','Enacted')`).n,
-    meetings: one('SELECT COUNT(*) AS n FROM meetings').n,
+      `SELECT COUNT(*) AS n FROM matters m
+       WHERE m.status IN ('Introduced','In Committee','On Agenda') ${pub}`).n,
+    enacted: one(
+      `SELECT COUNT(*) AS n FROM matters m WHERE m.status IN ('Passed','Enacted') ${pub}`).n,
+    meetings: one(`SELECT COUNT(*) AS n FROM meetings mt
+      ${publicOnly ? 'WHERE mt.agenda_published_at IS NOT NULL' : ''}`).n,
     bodies: one('SELECT COUNT(*) AS n FROM bodies WHERE active = 1').n,
     people: one('SELECT COUNT(*) AS n FROM people WHERE active = 1').n,
   };
 }
 
-function statusBuckets() {
+function statusBuckets({ publicOnly = false } = {}) {
   return db.prepare(
-    'SELECT status, COUNT(*) AS n FROM matters GROUP BY status ORDER BY n DESC').all();
+    `SELECT status, COUNT(*) AS n FROM matters m
+     ${publicOnly ? 'WHERE m.published_at IS NOT NULL' : ''}
+     GROUP BY status ORDER BY n DESC`).all();
 }
 
 // Permanently delete all domain data (people, bodies, legislation, meetings,

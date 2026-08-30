@@ -12,6 +12,7 @@ const queueView = require('./src/views/queue');
 const api = require('./src/api');
 const feeds = require('./src/exports');
 const auth = require('./src/auth');
+const visibility = require('./src/visibility');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
 const displayViews = require('./src/views/display');
@@ -87,6 +88,23 @@ const mimetype = require('./src/mimetype');
 // Each route: [method, RegExp, handler(req,res,{params,query,body})]
 const routes = [];
 function route(method, pattern, handler) { routes.push({ method, pattern, handler }); }
+
+/**
+ * Fetch a record and stop the request unless this viewer may read it.
+ *
+ * Returns the record, or null once it has written the response — so every call
+ * site reads `const m = visible(...); if (!m) return;` and cannot accidentally
+ * carry on with a record it was not allowed to have.
+ *
+ * 404, not 403, and the same 404 a missing record gets. A 403 would confirm
+ * that the file exists and that somebody is working on it, which for a private
+ * company's board is itself the disclosure we are closing.
+ */
+function visible(res, ctx, record, predicate) {
+  if (record && predicate(ctx.user, record)) return record;
+  sendHtml(res, pages.notFound(), 404);
+  return null;
+}
 
 // --- Health check -----------------------------------------------------------
 // Public, dependency-free liveness/readiness probe for container platforms and
@@ -203,8 +221,8 @@ route('GET', /^\/auth\/sso\/callback$/, async (req, res, ctx) => {
 });
 
 // Public portal --------------------------------------------------------------
-route('GET', /^\/$/, (req, res) => sendHtml(res, pages.dashboard()));
-route('GET', /^\/docket\/?$/, (req, res) => sendHtml(res, pages.docket()));
+route('GET', /^\/$/, (req, res, ctx) => sendHtml(res, pages.dashboard(ctx.user)));
+route('GET', /^\/docket\/?$/, (req, res, ctx) => sendHtml(res, pages.docket(ctx.user)));
 route('GET', /^\/legislation\/?$/, (req, res, ctx) => sendHtml(res, pages.legislationList(ctx.query, ctx.user)));
 // Save the current legislation search as a named alert (signed-in users).
 route('POST', /^\/legislation\/save-search$/, (req, res, ctx) => {
@@ -240,22 +258,26 @@ route('GET', /^\/legislation\.csv$/, (req, res, ctx) => {
     topicId: q.topic ? Number(q.topic) : undefined,
     from: q.from || undefined, to: q.to || undefined,
     sort: q.sort, dir: q.dir, limit: 1000,
+    publicOnly: !visibility.isInsider(ctx.user),
   });
   sendText(res, feeds.mattersCsv(rows), 'text/csv; charset=utf-8', { filename: 'legislation.csv' });
 });
-route('GET', /^\/legislation\.rss$/, (req, res) => {
-  const rows = repo.matters.search({ limit: 50 }).filter((m) => m.intro_date);
+route('GET', /^\/legislation\.rss$/, (req, res, ctx) => {
+  const rows = repo.matters
+    .search({ limit: 50, publicOnly: !visibility.isInsider(ctx.user) })
+    .filter((m) => m.intro_date);
   sendText(res, feeds.legislationRss(rows, baseUrl(req)), 'application/rss+xml; charset=utf-8');
 });
-route('GET', /^\/calendar\.ics$/, (req, res) => {
-  sendText(res, feeds.icalCalendar(repo.meetings.all(), baseUrl(req)), 'text/calendar; charset=utf-8',
+route('GET', /^\/calendar\.ics$/, (req, res, ctx) => {
+  const rows = repo.meetings.all({ publicOnly: !visibility.isInsider(ctx.user) });
+  sendText(res, feeds.icalCalendar(rows, baseUrl(req)), 'text/calendar; charset=utf-8',
     { filename: 'meetings.ics' });
 });
 
 // Per-file activity feed (RSS) — must be registered before the greedy route.
 route('GET', /^\/legislation\/(.+)\.rss$/, (req, res, ctx) => {
   const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
-  if (!m) return sendJson(res, { error: 'Not found' }, 404);
+  if (!visibility.canSeeMatter(ctx.user, m)) return sendJson(res, { error: 'Not found' }, 404);
   const events = [
     ...repo.matters.history(m.id).map((h) => ({
       date: h.action_date,
@@ -349,8 +371,10 @@ route('POST', /^\/procurement\/(\d+)\/bids$/, (req, res, ctx) => {
 
 // Comparative print ("changes to existing law") — before the greedy route.
 route('GET', /^\/legislation\/(.+)\/changes$/, (req, res, ctx) => {
-  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
-  if (!m || !m.amends_policy_id) return sendHtml(res, pages.notFound(), 404);
+  const m = visible(res, ctx, repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0])),
+    visibility.canSeeMatter);
+  if (!m) return;
+  if (!m.amends_policy_id) return sendHtml(res, pages.notFound(), 404);
   const policy = repo.policies.get(m.amends_policy_id);
   if (!policy) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.matterChangesPage(m, policy));
@@ -374,14 +398,16 @@ route('POST', /^\/admin\/relations\/(\d+)\/delete$/, (req, res, ctx) => {
 
 // Amendment comparison — must be registered before the greedy matter route.
 route('GET', /^\/legislation\/(.+)\/compare$/, (req, res, ctx) => {
-  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
-  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const m = visible(res, ctx, repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0])),
+    visibility.canSeeMatter);
+  if (!m) return;
   sendHtml(res, pages.matterComparePage(m, ctx.query));
 });
 // Archived text version — must be registered before the greedy matter route.
 route('GET', /^\/legislation\/(.+)\/v\/(\d+)$/, (req, res, ctx) => {
-  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
-  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const m = visible(res, ctx, repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0])),
+    visibility.canSeeMatter);
+  if (!m) return;
   const ver = repo.matters.getVersion(m.id, Number(ctx.params[1]));
   if (!ver) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, pages.matterVersionPage(m, ver));
@@ -410,7 +436,7 @@ const OFFICIAL_DOCS = {
 // The notice needs the meeting it gives notice of, so it takes one rather than
 // inventing a date. Without a meeting there is nothing lawful to publish.
 route('GET', /^\/legislation\/([^/]+)\/doc\/summary\.pdf$/, async (req, res, ctx) => {
-  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const m = matterOr404(res, ctx.params[0], ctx); if (!m) return;
   // The notice is only lawful against a meeting: it tells the public when and
   // where the body will consider the ordinance. Without one there is nothing
   // to publish, so this refuses rather than issuing a notice with no hearing.
@@ -435,7 +461,7 @@ route('GET', /^\/legislation\/([^/]+)\/doc\/summary\.pdf$/, async (req, res, ctx
 });
 
 route('GET', /^\/legislation\/([^/]+)\/doc\/([a-z-]+)\.pdf$/, async (req, res, ctx) => {
-  const m = matterOr404(res, ctx.params[0]); if (!m) return;
+  const m = matterOr404(res, ctx.params[0], ctx); if (!m) return;
   const spec = OFFICIAL_DOCS[ctx.params[1]];
   if (!spec) return sendHtml(res, pages.notFound(), 404);
   if (spec.types && !spec.types.includes(m.type)) return sendHtml(res, pages.notFound(), 404);
@@ -459,8 +485,9 @@ function sendPdf(res, bytes, filename) {
 }
 
 route('GET', /^\/legislation\/(.+)$/, (req, res, ctx) => {
-  const m = repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0]));
-  if (!m) return sendHtml(res, pages.notFound(), 404);
+  const m = visible(res, ctx, repo.matters.getByFileNumber(decodeURIComponent(ctx.params[0])),
+    visibility.canSeeMatter);
+  if (!m) return;
   sendHtml(res, pages.matterDetail(m, ctx.query, ctx.user));
 });
 
@@ -542,23 +569,23 @@ route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   if (ctx.body.status === 'Approved') notify.speakerApproved(s.id);
   redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
 });
-route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query)));
+route('GET', /^\/calendar\/?$/, (req, res, ctx) => sendHtml(res, pages.calendar(ctx.query, ctx.user)));
 // The meetings index. /meetings/:id existed without it, so the one object this
 // application is built around had no list and no way in but the calendar.
 route('GET', /^\/meetings\/?$/, (req, res, ctx) => sendHtml(res, pages.meetingsIndex(ctx.user)));
 route('GET', /^\/meetings\/(\d+)$/, (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
   sendHtml(res, pages.meetingDetail(mt, ctx.query, ctx.user));
 });
 route('GET', /^\/meetings\/(\d+)\/packet$/, (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
   sendHtml(res, pages.agendaPacket(mt));
 });
 route('GET', /^\/meetings\/(\d+)\/packet\.pdf$/, async (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
   try {
     const bytes = await pdfGen.generatePacket(mt);
     res.writeHead(200, {
@@ -573,8 +600,8 @@ route('GET', /^\/meetings\/(\d+)\/packet\.pdf$/, async (req, res, ctx) => {
   }
 });
 route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeMinutes);
+  if (!mt) return;
   sendHtml(res, minutesView.minutesView(mt));
 });
 route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
@@ -1361,9 +1388,14 @@ route('POST', /^\/admin\/vendors\/(\d+)\/status$/, (req, res, ctx) => {
 // unambiguously. Accepting the internal row id as a fallback would not: file
 // numbers are free-form on import, so a matter numbered "6" would shadow the
 // matter whose id is 6 and a clerk could act on the wrong record.
-function matterOr404(res, ref) {
+function matterOr404(res, ref, ctx) {
   const m = repo.matters.getByFileNumber(decodeURIComponent(String(ref)));
   if (!m) { sendHtml(res, pages.notFound(), 404); return null; }
+  // `ctx` is passed by the routes that are reachable without signing in; the
+  // /admin callers below are already behind the clerk gate and pass nothing.
+  if (ctx && !visibility.canSeeMatter(ctx.user, m)) {
+    sendHtml(res, pages.notFound(), 404); return null;
+  }
   return m;
 }
 
@@ -1843,6 +1875,11 @@ route('POST', /^\/admin\/attachments\/(\d+)\/delete$/, (req, res, ctx) => {
 route('GET', /^\/files\/(\d+)$/, (req, res, ctx) => {
   const a = repo.matters.getAttachment(Number(ctx.params[0]));
   if (!a || !a.file_path) return sendHtml(res, pages.notFound(), 404);
+  // An attachment is as readable as the file it hangs off. This route had no
+  // check at all, so every uploaded document was downloadable by walking the
+  // integer ids — regardless of the state of the matter it belonged to.
+  const owner = a.matter_id ? repo.matters.get(a.matter_id) : null;
+  if (!visibility.canSeeMatter(ctx.user, owner)) return sendHtml(res, pages.notFound(), 404);
   const abs = upload.uploadPath(a.file_path);
   if (!abs) return sendHtml(res, pages.notFound(), 404);
   const inline = /^(application\/pdf|image\/|text\/plain)/.test(a.content_type || '');
@@ -2043,9 +2080,9 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/delete$/, (req, res, ctx) => {
 
 // Reports / word processor (clerk) -------------------------------------------
 route('GET', /^\/reports\/(\d+)$/, (req, res, ctx) => {
-  const r = repo.reports.get(Number(ctx.params[0]));
-  if (!r) return sendHtml(res, pages.notFound(), 404);
-  sendHtml(res, reportsView.reportView(r));
+  const r = visible(res, ctx, repo.reports.get(Number(ctx.params[0])), visibility.canSeeReport);
+  if (!r) return;
+  sendHtml(res, reportsView.reportView(r, ctx.user));
 });
 route('POST', /^\/admin\/matters\/(\d+)\/reports\/draft$/, (req, res, ctx) => {
   const m = repo.matters.get(Number(ctx.params[0]));
@@ -2087,6 +2124,40 @@ route('GET', /^\/admin\/reports\/(\d+)\/edit$/, (req, res, ctx) => {
   if (!r) return sendHtml(res, pages.notFound(), 404);
   sendHtml(res, reportsView.reportForm(r, null));
 });
+// Publication, for the three things a clerk writes and a visitor reads.
+//
+// Each is a POST of its own rather than a checkbox on the save form, because
+// making something readable by the whole internet should be an act with its own
+// button and its own confirmation, not a field somebody tabs past.
+route('POST', /^\/admin\/reports\/(\d+)\/publish$/, (req, res, ctx) => {
+  const r = repo.reports.get(Number(ctx.params[0]));
+  if (!r) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.state === 'off') repo.reports.unpublish(r.id);
+  else repo.reports.publish(r.id);
+  redirect(res, `/admin/reports/${r.id}/edit`);
+});
+
+route('POST', /^\/admin\/matters\/(\d+)\/publish$/, (req, res, ctx) => {
+  const m = repo.matters.get(Number(ctx.params[0]));
+  if (!m) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.state === 'off') repo.matters.unpublish(m.id);
+  else repo.matters.publish(m.id);
+  redirect(res, `/admin/matters/${m.id}/edit`);
+});
+
+route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/publish$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const mt = repo.meetings.get(id);
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  if (ctx.body.state === 'off') repo.meetings.unpublishAgenda(id);
+  else repo.meetings.publishAgenda(id);
+  // The wall display and the public board are gated on this, and both are
+  // already-open tabs during a meeting. Push so they follow rather than
+  // sitting on a stale page until the next unrelated event.
+  live.pushUpdate(id);
+  redirect(res, `/admin/meetings/${id}/agenda`);
+});
+
 route('POST', /^\/admin\/reports\/(\d+)$/, (req, res, ctx) => {
   const r = repo.reports.get(Number(ctx.params[0]));
   if (!r) return sendHtml(res, pages.notFound(), 404);
@@ -2126,29 +2197,38 @@ route('POST', /^\/member\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
 
 // Live voting — public read view + SSE ---------------------------------------
 route('GET', /^\/live\/(\d+)$/, (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
   sendHtml(res, liveViews.publicLive(mt, ctx.user));
 });
 /**
  * The chamber display.
  *
- * Public and unauthenticated, like the live view it shares a stream with: it
- * shows the roll of a public body voting in a public meeting. It is served on
- * its own route rather than as a mode of /live because it is a different
- * medium — no navigation, no controls, nothing clickable, type sized for the
- * back of the room.
+ * Unauthenticated by necessity — it runs on a screen on the wall, and nobody
+ * is going to sign a television in — so it is gated on the agenda being
+ * published instead. That is the right hinge: putting an agenda on a screen in
+ * a room full of people *is* publishing it, so the board should not be able to
+ * do by projector what the site would refuse to do by URL.
+ *
+ * It is served on its own route rather than as a mode of /live because it is a
+ * different medium — no navigation, no controls, nothing clickable, type sized
+ * for the back of the room.
  */
 route('GET', /^\/display\/(\d+)$/, (req, res, ctx) => {
-  const mt = repo.meetings.get(Number(ctx.params[0]));
-  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
   // The body itself, not just its name off the meeting: the lockup is set in
   // the body's own accent, which lives on the body row.
   sendHtml(res, displayViews.displayBoard(mt, mt.body_id ? repo.bodies.get(mt.body_id) : null));
 });
 route('GET', /^\/live\/(\d+)\/stream$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
-  if (!repo.meetings.get(id)) return sendJson(res, { error: 'Not found' }, 404);
+  // The stream carries the roll, the tallies and the running result, so it is
+  // the same disclosure as the board it feeds and takes the same gate. Guarding
+  // only the page would leave the data a `curl` away.
+  if (!visibility.canSeeAgenda(ctx.user, repo.meetings.get(id))) {
+    return sendJson(res, { error: 'Not found' }, 404);
+  }
   live.subscribe(id, req, res);
   live.sendInitial(id, res);
 });
@@ -2310,10 +2390,10 @@ route('POST', /^\/admin\/meetings\/(\d+)\/attendance$/, (req, res, ctx) => {
 
 // JSON API -------------------------------------------------------------------
 route('GET', /^\/api\/v1\/?$/, (req, res) => api.index(res));
-route('GET', /^\/api\/v1\/matters\/?$/, (req, res, ctx) => api.matters(res, ctx.query));
-route('GET', /^\/api\/v1\/matters\/(.+)$/, (req, res, ctx) => api.matter(res, decodeURIComponent(ctx.params[0])));
-route('GET', /^\/api\/v1\/events\/?$/, (req, res) => api.events(res));
-route('GET', /^\/api\/v1\/events\/(\d+)$/, (req, res, ctx) => api.event(res, ctx.params[0]));
+route('GET', /^\/api\/v1\/matters\/?$/, (req, res, ctx) => api.matters(res, ctx.query, ctx.user));
+route('GET', /^\/api\/v1\/matters\/(.+)$/, (req, res, ctx) => api.matter(res, decodeURIComponent(ctx.params[0]), ctx.user));
+route('GET', /^\/api\/v1\/events\/?$/, (req, res, ctx) => api.events(res, ctx.user));
+route('GET', /^\/api\/v1\/events\/(\d+)$/, (req, res, ctx) => api.event(res, ctx.params[0], ctx.user));
 route('GET', /^\/api\/v1\/bodies\/?$/, (req, res) => api.bodies(res));
 route('GET', /^\/api\/v1\/bodies\/(\d+)$/, (req, res, ctx) => api.body(res, ctx.params[0]));
 route('GET', /^\/api\/v1\/persons\/?$/, (req, res) => api.persons(res));

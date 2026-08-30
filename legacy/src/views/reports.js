@@ -1,7 +1,7 @@
 'use strict';
 
 const { html, raw, formatDate } = require('../util');
-const { layout, card, escapeText } = require('./layout');
+const { layout, card, escapeText, publishControl } = require('./layout');
 const repo = require('../repo');
 
 const REPORT_KINDS = ['Staff Report', 'Memorandum', 'Fiscal Note', 'Legal Analysis', 'Draft Legislation'];
@@ -72,7 +72,19 @@ function reportForm(report, matter, opts = {}) {
 
   const fileNo = (matter && matter.file_number) || (report && report.file_number);
   const heading = isEdit ? 'Edit document' : 'New document';
-  const body = html`${raw(card('Word processor', form))}`;
+  // Only on an existing document: there is nothing to publish until it is
+  // saved, and the first thing a new letter contains is empty headings.
+  const publish = isEdit
+    ? card('Who can see this document', publishControl({
+      action: `/admin/reports/${report.id}/publish`,
+      at: report.published_at,
+      noun: 'board letter',
+      hint: 'A document stays internal until you publish it, however many times '
+        + 'it is saved. Publishing does not lock it — you can still edit, and '
+        + 'unpublish takes it back off the site.',
+    }))
+    : '';
+  const body = html`${raw(card('Word processor', form))}${raw(publish)}`;
   return layout({
     title: heading,
     active: '/admin',
@@ -86,8 +98,16 @@ function reportForm(report, matter, opts = {}) {
   });
 }
 
-function reportView(report) {
+function reportView(report, user = null) {
+  // An internal reader can reach an unpublished letter at its public URL, so
+  // the page has to say which it is. Without this the only way to tell a
+  // published letter from a draft is to sign out and try it.
+  const mark = !report.published_at
+    ? '<p class="notice">Not public — this document is visible to you because you are '
+      + 'signed in. Publish it from the editor to put it on the site.</p>'
+    : '';
   const body = html`
+    ${raw(mark)}
     <p class="crumbs"><a href="/legislation">Legislation</a>${report.file_number
       ? raw(` / <a href="/legislation/${encodeURIComponent(report.file_number)}">${escapeText(report.file_number)}</a>`) : ''} / Document</p>
     <article class="doc-view">
