@@ -62,15 +62,49 @@ function diffTokens(a, b) {
   return runs;
 }
 
-// Render an inline redline of two plain texts as safe HTML.
-function diffHtml(oldText, newText) {
+function wrap(op, safe) {
+  if (op === 'del') return `<del class="df-del">${safe}</del>`;
+  if (op === 'ins') return `<ins class="df-ins">${safe}</ins>`;
+  return safe;
+}
+
+/**
+ * Render an inline redline of two plain texts as safe HTML.
+ *
+ * With `lineNumbers`, the result is a numbered comparative print: one row per
+ * line of the resulting text, numbered down the left margin, which is how an
+ * amendment is cited — "page 4, line 12" — and the thing this could not do.
+ *
+ * The rows are built from the runs rather than by splitting the finished HTML.
+ * A single del or ins run can span a newline, so cutting the assembled markup
+ * at line breaks would leave a `<del>` opened in one row and closed in
+ * another; browsers would repair that, differently, and the redline would stop
+ * meaning what it says. Each run is instead cut at its own newlines and every
+ * fragment gets its own tag, so no element ever crosses a row.
+ */
+function diffHtml(oldText, newText, { lineNumbers = false } = {}) {
   const runs = diffTokens(tokenize(oldText), tokenize(newText));
-  return runs.map((r) => {
-    const safe = escapeHtml(r.text).replace(/\n/g, '<br>');
-    if (r.op === 'del') return `<del class="df-del">${safe}</del>`;
-    if (r.op === 'ins') return `<ins class="df-ins">${safe}</ins>`;
-    return safe;
-  }).join('');
+  if (!lineNumbers) {
+    return runs.map((r) => wrap(r.op, escapeHtml(r.text).replace(/\n/g, '<br>'))).join('');
+  }
+
+  const lines = [[]];
+  for (const r of runs) {
+    const pieces = r.text.split('\n');
+    for (let i = 0; i < pieces.length; i++) {
+      if (i > 0) lines.push([]);
+      if (pieces[i]) lines[lines.length - 1].push({ op: r.op, text: pieces[i] });
+    }
+  }
+
+  // Every line is numbered, blank ones included: a citation counts lines on the
+  // page, and skipping the empty ones would make the printed numbers disagree
+  // with anyone counting down the margin.
+  return '<div class="redline-numbered">' + lines.map((parts, i) => {
+    const inner = parts.map((p) => wrap(p.op, escapeHtml(p.text))).join('');
+    return `<div class="rl-line"><span class="rl-n">${i + 1}</span>`
+      + `<span class="rl-t">${inner || '&nbsp;'}</span></div>`;
+  }).join('') + '</div>';
 }
 
 function stats(oldText, newText) {

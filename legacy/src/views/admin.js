@@ -1002,6 +1002,14 @@ function speakerQueue(meeting) {
       </div>
       <div class="form-actions">
         ${s.status === 'Pending' ? raw(btn(s, 'Approved', 'Approve', 'btn primary') + btn(s, 'Rejected', 'Reject')) : ''}
+        ${s.status === 'Approved' && !s.started_at ? raw(`
+          <form method="post" action="/admin/speakers/${s.id}/floor" class="inline">
+            <button type="submit" class="btn primary"
+              title="Put this speaker on the chamber display and start their clock">\u23f5 Give the floor</button>
+          </form>`) : ''}
+        ${s.started_at && s.status !== 'Spoke'
+    ? raw(`<span class="muted">Holding the floor since ${escapeText(String(s.started_at).slice(11, 16))}</span> `)
+    : ''}
         ${s.status === 'Approved' ? raw(btn(s, 'Spoke', 'Mark as spoke')) : ''}
       </div>
     </li>`).join('');

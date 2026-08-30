@@ -857,6 +857,12 @@ const COLUMN_MIGRATIONS = {
     // or Scheduled and published, without one meaning implying the other.
     agenda_published_at: 'TEXT',
   },
+  speaker_requests: {
+    // When the chair gave this person the floor. A queue can say who is next;
+    // only a start time can say how long they have been talking, which is the
+    // thing a room and a chair both want and neither had.
+    started_at: 'TEXT',
+  },
   reports: {
     // A board letter had no state at all: `/reports/:id` sits outside the three
     // authorized prefixes, so a letter was at a public URL from the moment the

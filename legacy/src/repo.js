@@ -3540,6 +3540,45 @@ const speakers = {
     if (!['Pending', 'Approved', 'Rejected', 'Spoke'].includes(status)) return;
     db.prepare('UPDATE speaker_requests SET status = ? WHERE id = ?').run(status, id);
   },
+
+  /**
+   * Give this person the floor.
+   *
+   * Whoever held it before is marked as having spoken: only one person has the
+   * floor, and leaving the previous speaker started would leave the board
+   * counting two clocks and the record unable to say when the first sat down.
+   */
+  startSpeaking(id) {
+    const s = speakers.get(id);
+    if (!s) return null;
+    db.prepare(`UPDATE speaker_requests SET status = 'Spoke'
+      WHERE meeting_id = ? AND started_at IS NOT NULL AND status <> 'Spoke'`).run(s.meeting_id);
+    db.prepare("UPDATE speaker_requests SET started_at = datetime('now'), status = 'Approved' WHERE id = ?")
+      .run(id);
+    return speakers.get(id);
+  },
+
+  /** Whoever currently holds the floor, if anyone. */
+  speaking(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ? AND s.started_at IS NOT NULL AND s.status <> 'Spoke'
+      ORDER BY s.started_at DESC LIMIT 1`).get(meetingId);
+  },
+
+  /** Approved and still waiting, in the order they signed up. */
+  queue(meetingId) {
+    return db.prepare(`
+      SELECT s.*, ai.agenda_number, COALESCE(m.title, ai.title) AS item_title
+      FROM speaker_requests s
+      LEFT JOIN agenda_items ai ON ai.id = s.agenda_item_id
+      LEFT JOIN matters m ON m.id = ai.matter_id
+      WHERE s.meeting_id = ? AND s.status = 'Approved' AND s.started_at IS NULL
+      ORDER BY s.created_at`).all(meetingId);
+  },
 };
 
 // ---------------------------------------------------------------------------

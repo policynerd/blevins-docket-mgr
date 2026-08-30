@@ -27,6 +27,7 @@
     threshold: document.querySelector('[data-threshold]'),
     reopened: document.querySelector('[data-reopened]'),
     consent: document.querySelector('[data-consent]'),
+    floor: document.querySelector('[data-floor]'),
     basis: document.querySelector('[data-basis]'),
     status: document.querySelector('[data-status]'),
     stale: document.querySelector('[data-stale]')
@@ -165,6 +166,70 @@
     if (seats) fitRoll(seats);
   }
 
+  /*
+   * The floor, when no vote is open.
+   *
+   * The clock is drawn client-side from the start time in the snapshot rather
+   * than pushed as a number: SSE frames arrive when something changes, and a
+   * countdown that only moved when the server spoke would sit still for three
+   * minutes. The tick below advances it between frames; the snapshot is what
+   * says whose clock it is.
+   *
+   * It counts past zero rather than stopping. Nothing here cuts a speaker off
+   * — that is a ruling the chair makes, not a board — so the useful thing to
+   * show a chair is how far over they have run.
+   */
+  var floorState = null;
+
+  function clockText(secs) {
+    var over = secs < 0;
+    var t = Math.abs(secs);
+    var m = Math.floor(t / 60);
+    var ss = t % 60;
+    return (over ? '+' : '') + m + ':' + (ss < 10 ? '0' : '') + ss;
+  }
+
+  function paintClock() {
+    if (!floorState || !floorState.speaking || !floorState.speaking.startedAt) return;
+    var el2 = el.floor.querySelector('[data-clock]');
+    if (!el2) return;
+    var started = Date.parse(String(floorState.speaking.startedAt).replace(' ', 'T') + 'Z');
+    if (isNaN(started)) return;
+    var left = Math.round(floorState.speaking.limitSeconds - (Date.now() - started) / 1000);
+    el2.textContent = clockText(left);
+    el2.className = 'floor-clock' + (left < 0 ? ' over' : '');
+  }
+
+  function renderFloor(floor) {
+    floorState = floor;
+    var has = floor && (floor.speaking || (floor.queue && floor.queue.length));
+    el.floor.hidden = !has;
+    if (!has) return '';
+
+    var out = '';
+    if (floor.speaking) {
+      out += '<div class="floor-label">Now speaking</div>'
+        + '<div class="floor-name">' + esc(floor.speaking.name) + '</div>'
+        + (floor.speaking.item ? '<div class="floor-item">On ' + esc(floor.speaking.item) + '</div>' : '')
+        + '<div class="floor-clock" data-clock>—</div>';
+    }
+    if (floor.queue && floor.queue.length) {
+      out += '<div class="floor-queue"><div class="floor-label">Next ('
+        + floor.queue.length + ')</div><ol>'
+        + floor.queue.slice(0, 6).map(function (q) {
+          return '<li>' + esc(q.name) + (q.item ? ' <span class="muted">' + esc(q.item) + '</span>' : '') + '</li>';
+        }).join('')
+        + (floor.queue.length > 6 ? '<li>… and ' + (floor.queue.length - 6) + ' more</li>' : '')
+        + '</ol></div>';
+    }
+    el.floor.innerHTML = out;
+    paintClock();
+    return out;
+  }
+
+  // One tick a second, only ever repainting digits that already exist.
+  setInterval(paintClock, 1000);
+
   function countBlock(label, n, cls) {
     return '<span>' + label + '<span class="n ' + cls + '">' + (n || 0) + '</span></span>';
   }
@@ -197,6 +262,29 @@
 
   function render(state) {
     var a = state.active;
+
+    // Somebody holding the floor outranks a finished vote.
+    //
+    // `active` falls back to the last closed item so the room keeps seeing a
+    // result after the roll shuts, which is right — until the chair gives
+    // somebody the floor. That is a deliberate act, later in time, and it is
+    // what is happening in the room; a tally from ten minutes ago is not.
+    if (state.floor && state.floor.speaking) {
+      el.banner.hidden = true;
+      el.head.hidden = true;
+      el.counts.hidden = true;
+      el.movers.hidden = true;
+      el.threshold.hidden = true;
+      el.reopened.hidden = true;
+      el.consent.hidden = true;
+      el.basis.textContent = '';
+      el.roll.innerHTML = '';
+      renderFloor(state.floor);
+      el.status.textContent = 'Public comment';
+      el.status.className = 'status open';
+      return;
+    }
+
     if (!a) {
       el.banner.hidden = true;
       el.head.hidden = true;
@@ -206,13 +294,16 @@
       el.reopened.hidden = true;
       el.consent.hidden = true;
       el.basis.textContent = '';
+      // The floor takes the screen when somebody has it; only when nobody is
+      // speaking and nobody is waiting does the board fall back to saying so.
+      var onFloor = renderFloor(state.floor);
       fitRoll(1);
-      el.roll.innerHTML = '<div class="waiting">'
+      el.roll.innerHTML = onFloor ? '' : '<div class="waiting">'
         + esc(state.meeting && state.meeting.status === 'In Progress'
           ? 'The Board Meeting is in Recess.'
           : 'No item before the body') + '</div>';
-      el.status.textContent = 'Awaiting the chair';
-      el.status.className = 'status idle';
+      el.status.textContent = onFloor ? 'Public comment' : 'Awaiting the chair';
+      el.status.className = 'status ' + (onFloor ? 'open' : 'idle');
       return;
     }
 
@@ -227,6 +318,8 @@
       el.banner.hidden = true;
     }
 
+    el.floor.hidden = true;
+    floorState = null;
     el.head.hidden = false;
     el.itemNo.textContent = a.agenda_number ? String(a.agenda_number) : '';
     el.title.textContent = a.title || '';

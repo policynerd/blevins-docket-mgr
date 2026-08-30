@@ -562,6 +562,16 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/video$/, (req, res, ctx) => {
   redirect(res, `/admin/meetings/${item.meeting_id}/agenda`);
 });
 
+// Give a speaker the floor: they go on the chamber display and their clock
+// starts. Pushed, because the board and the wall are what this is for.
+route('POST', /^\/admin\/speakers\/(\d+)\/floor$/, (req, res, ctx) => {
+  const s = repo.speakers.get(Number(ctx.params[0]));
+  if (!s) return sendHtml(res, pages.notFound(), 404);
+  repo.speakers.startSpeaking(s.id);
+  live.pushUpdate(s.meeting_id);
+  redirect(res, `/admin/meetings/${s.meeting_id}/agenda`);
+});
+
 // Speaker queue moderation (clerk).
 route('POST', /^\/admin\/speakers\/(\d+)\/status$/, (req, res, ctx) => {
   const s = repo.speakers.get(Number(ctx.params[0]));

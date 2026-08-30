@@ -4,6 +4,13 @@
 // the clerk console and public/member live views receive pushed tally updates.
 // Built on the raw HTTP response object — no websocket dependency.
 const repo = require('./repo');
+
+// How long a public speaker has. Three minutes is the usual allowance and the
+// board has no per-meeting setting for it, so it is stated once here rather
+// than guessed at in the client. The clock is advisory — nothing stops a
+// speaker at zero, and a board display that cut somebody off would be making a
+// ruling the chair has not made.
+const SPEAKER_LIMIT_SECONDS = 180;
 const channels = new Map(); // meetingId -> Set<res>
 
 function nameOf(id) {
@@ -135,9 +142,33 @@ function snapshot(meetingId) {
   // meeting needs to know during it, not months later during an audit.
   const chain = repo.voteLedger.verify(meetingId);
 
+  // The floor, when nobody is voting on anything.
+  //
+  // Between items the board said "Awaiting the chair" over an empty screen —
+  // during public comment, which is exactly when the room is fullest and has
+  // the most to look at. The queue and the clock have both existed as data;
+  // neither had anywhere to appear.
+  const holder = repo.speakers.speaking(meetingId);
+  const floor = {
+    speaking: holder ? {
+      name: holder.name,
+      item: holder.agenda_number
+        ? `${holder.agenda_number}. ${holder.item_title || ''}`.trim() : (holder.item_title || null),
+      position: holder.position || null,
+      startedAt: holder.started_at,
+      limitSeconds: SPEAKER_LIMIT_SECONDS,
+    } : null,
+    queue: repo.speakers.queue(meetingId).map((s) => ({
+      name: s.name,
+      item: s.agenda_number ? `${s.agenda_number}.` : null,
+      position: s.position || null,
+    })),
+  };
+
   return {
     ts: Date.now(),
     chain: { ok: chain.ok, brokenAt: chain.brokenAt ?? null, reason: chain.reason || null },
+    floor,
     meeting: { id: meeting.id, body: meeting.body_name, status: meeting.status,
       date: meeting.meeting_date, time: meeting.meeting_time },
     active,

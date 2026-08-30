@@ -147,6 +147,23 @@ const STYLE = `
     font-size: 2vh; color: var(--faint); letter-spacing: .05em;
   }
 
+  /* The floor, between votes.
+     The board's idle state was the words "Awaiting the chair" over an empty
+     screen — shown during public comment, which is when the room is fullest
+     and has most to look at. */
+  .floor { flex: 1; display: flex; flex-direction: column; justify-content: center;
+    align-items: center; gap: 2vh; text-align: center; }
+  .floor-label { font-size: 2.2vh; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--label); font-weight: 700; }
+  .floor-name { font-size: 7vh; font-weight: 800; line-height: 1.1; }
+  .floor-item { font-size: 2.8vh; color: var(--motion); }
+  .floor-clock { font-size: 12vh; font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums; }
+  .floor-clock.over { color: var(--fail); }
+  .floor-queue { font-size: 2.4vh; color: var(--dim); }
+  .floor-queue ol { margin: .6vh 0 0; padding: 0; list-style: none; }
+  .floor-queue li { line-height: 1.5; }
+
   /* What a consent calendar carries. */
   .consent { padding: 0 6vw; }
   .consent-head {
@@ -324,6 +341,7 @@ function displayBoard(meeting, body) {
     <div data-reopened hidden></div>
   </div>
   <div class="consent" data-consent hidden></div>
+  <div class="floor" data-floor hidden></div>
   <div class="roll" data-roll></div>
   <div class="counts" data-counts hidden></div>
   <div class="threshold" data-threshold hidden></div>

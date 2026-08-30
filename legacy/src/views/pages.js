@@ -535,11 +535,18 @@ function matterComparePage(matter, query = {}) {
   const st = diff.stats(from.text, to.text);
   const opts = (sel) => Array.from({ length: currentVersion }, (_, i) => i + 1)
     .map((n) => `<option value="${n}"${n === sel.n ? ' selected' : ''}>Version ${n}${n === currentVersion ? ' (current)' : ''}</option>`).join('');
+  // Line numbers are how an amendment is cited — "page 4, line 12" — so the
+  // choice belongs beside the version pickers rather than in a preference
+  // somewhere. Off by default: continuous prose is the easier read, and the
+  // numbers are wanted at the point of drafting an amendment, not before.
+  const numbered = String(query.lines || '') === '1';
   const picker = `
     <form class="form inline-form" method="get" action="/legislation/${encodeURIComponent(matter.file_number)}/compare">
       <div class="form-row">
         <label>From<select name="from">${opts(from)}</select></label>
         <label>To<select name="to">${opts(to)}</select></label>
+        <label class="check"><input type="checkbox" name="lines" value="1"${
+  numbered ? ' checked' : ''}> Line numbers</label>
         <button type="submit" class="btn">Compare</button>
       </div>
     </form>
@@ -548,7 +555,9 @@ function matterComparePage(matter, query = {}) {
       <strong>${st.ins}</strong> word(s) added, <strong>${st.del}</strong> removed.</p>`;
 
   const body = html`
-    ${raw(card('Compare versions', picker + `<div class="doc-body redline">${diff.diffHtml(from.text, to.text) || emptyState('Neither version has text.')}</div>`))}`;
+    ${raw(card('Compare versions', picker + `<div class="doc-body redline">${
+  diff.diffHtml(from.text, to.text, { lineNumbers: numbered })
+    || emptyState('Neither version has text.')}</div>`))}`;
   return layout({
     title: matter.title,
     subtitle: `Comparing versions of ${matter.file_number}`,
