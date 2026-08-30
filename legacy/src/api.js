@@ -18,6 +18,7 @@ function index(res) {
     resources: {
       matters: '/api/v1/matters',
       matter: '/api/v1/matters/{fileNumberOrId}',
+      document: '/api/v1/matters/{fileNumberOrId}/document',
       events: '/api/v1/events',
       event: '/api/v1/events/{id}',
       bodies: '/api/v1/bodies',
@@ -27,6 +28,9 @@ function index(res) {
     },
     query_params: {
       matters: ['q', 'type', 'status', 'body_id', 'sponsor_id', 'limit'],
+    },
+    schemas: {
+      document: 'https://blevins.co/schemas/universal-document.schema.json',
     },
   });
 }
@@ -71,8 +75,24 @@ function matters(res, query, user) {
   sendJson(res, { count: rows.length, results: rows.map((m) => matterDTO(m)) });
 }
 
+/**
+ * Resolve `{fileNumberOrId}` — file number first.
+ *
+ * This tested `/^\d+$/` and took the id branch when the key was all digits,
+ * which is every file number this application issues: 260806 is a file number
+ * and not row 260806, so the documented public identifier never resolved and
+ * only the internal row id worked. The file number is what the index
+ * advertises, what the URLs elsewhere use and what a person has in front of
+ * them, so it is tried first and the row id is the fallback.
+ */
+function resolveMatter(key) {
+  const byNumber = repo.matters.getByFileNumber(String(key));
+  if (byNumber) return byNumber;
+  return /^\d+$/.test(key) ? repo.matters.get(Number(key)) : null;
+}
+
 function matter(res, key, user) {
-  const m = /^\d+$/.test(key) ? repo.matters.get(Number(key)) : repo.matters.getByFileNumber(key);
+  const m = resolveMatter(key);
   if (!visibility.canSeeMatter(user, m)) return sendJson(res, { error: 'Matter not found' }, 404);
   sendJson(res, matterDTO(m, true));
 }
@@ -154,4 +174,5 @@ function person(res, id) {
   });
 }
 
-module.exports = { index, matters, matter, events, event, bodies, body, persons, person };
+module.exports = {
+  resolveMatter, index, matters, matter, events, event, bodies, body, persons, person };
