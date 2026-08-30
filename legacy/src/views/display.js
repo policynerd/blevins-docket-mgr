@@ -19,11 +19,61 @@ const { sealSvg, dataUri } = require('../seal');
 const lockupArt = require('../lockup');
 const { ORG } = require('../org');
 
+// The board's palette, as tokens.
+//
+// These were seventeen hex literals scattered through the stylesheet below,
+// which meant the only way to answer "what colour is a Nay here?" was to read
+// the whole thing, and the only way to change one was to find every place it
+// appeared. Gathered here they can be read at a glance and overridden in one
+// place — a deployment that needs the board to match a room's other signage
+// redefines a token rather than editing layout rules.
+//
+// Deliberately NOT wired to the body accent that `brandHead()` emits as
+// `--accent`. That colour identifies a body; these identify a vote. A board
+// that rendered Nay in the Planning Commission's brand blue because the
+// Planning Commission is sitting would be worse than one that ignored branding
+// entirely — the room reads these as meaning, not as decoration.
+//
+// The vote colours keep their letters (see `chip` in display.js): the palette
+// is overridable, so it cannot be the only thing carrying the vote.
+const PALETTE = `
+  :root {
+    --ground: #000;
+    --ink: #fff;
+    --banner-bg: #1a1a1a;
+
+    /* The four choices, and the two non-choices. */
+    --vote-yea: #4caf25;
+    --vote-nay: #cc0000;
+    --vote-abstain: #17a5f2;
+    --vote-recused: #d99b00;
+    --vote-present: #5b6b7d;
+    --vote-pending: #4a5561;
+
+    /* Where the roll stands. --status-open is its own token rather than a
+       reference to --vote-yea: they are the same green today, and a board that
+       recoloured Yea should not thereby recolour "voting open". */
+    --status-open: #4caf25;
+    --status-closed: #ffd45e;
+    --status-certified: #7fb0ff;
+    --status-idle: #4a5561;
+    --fail: #ff8a8a;
+
+    /* Supporting type, in descending prominence. */
+    --label: #7fb0ff;
+    --attention: #ffd45e;
+    --waiting: #dbe4ef;
+    --motion: #c6d0dc;
+    --dim: #b9c6d6;
+    --faint: #93a1b1;
+  }
+`;
+
 const STYLE = `
   *, *::before, *::after { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%;
-    background: #000; color: #fff;
+    background: var(--ground); color: var(--ink);
     font-family: "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
     /* Tabular figures so the counts do not jitter as digits change. */
     font-variant-numeric: tabular-nums;
@@ -51,72 +101,123 @@ const STYLE = `
   /* The result banner. Its own bar across the top, because the outcome is what
      the room is waiting for and it must not have to be read out of a tally. */
   .banner {
-    background: #1a1a1a; text-align: center;
+    background: var(--banner-bg); text-align: center;
     font-size: 8vh; font-weight: 800; line-height: 1.1;
     padding: 1.2vh 2vw; margin: -1vh -2vw 0;
   }
-  .banner.passes { color: #fff; }
-  .banner.fails  { color: #ff8a8a; }
+  .banner.passes { color: var(--ink); }
+  .banner.fails  { color: var(--fail); }
 
-  .label { font-size: 2.2vh; letter-spacing: .3em; text-transform: uppercase; color: #7fb0ff; font-weight: 700; }
-  .item-no { font-size: 2.6vh; letter-spacing: .2em; color: #b9c6d6; }
+  .label { font-size: 2.2vh; letter-spacing: .3em; text-transform: uppercase; color: var(--label); font-weight: 700; }
+  .item-no { font-size: 2.6vh; letter-spacing: .2em; color: var(--dim); }
+  /* Sized by fitText in display.js, which measures. These are the starting
+     points it scales down from, and what the board falls back to if the script
+     does not run. */
   h1 { margin: 0; font-size: 4.2vh; line-height: 1.2; font-weight: 700; }
-  h1.long { font-size: 3vh; }
-  .motion { margin: 0; font-size: 2.6vh; color: #c6d0dc; line-height: 1.35; }
-  .votes-needed { font-size: 2.6vh; letter-spacing: .16em; color: #ffd45e; font-weight: 700; }
+  .motion { margin: 0; font-size: 2.6vh; color: var(--motion); line-height: 1.35; }
+  .votes-needed { font-size: 2.6vh; letter-spacing: .16em; color: var(--attention); font-weight: 700; }
 
-  .movers { display: grid; grid-template-columns: auto 1fr; gap: .4vh 2vw; font-size: 2.6vh; color: #b9c6d6; }
-  .movers dt { color: #7fb0ff; }
-  .movers dd { margin: 0; font-weight: 600; color: #fff; }
+  .movers { display: grid; grid-template-columns: auto 1fr; gap: .4vh 2vw; font-size: 2.6vh; color: var(--dim); }
+  .movers dt { color: var(--label); }
+  .movers dd { margin: 0; font-weight: 600; color: var(--ink); }
 
   /* Counts as solid blocks. A number in a coloured box reads across a room in
      a way a coloured numeral does not. */
   .counts { display: flex; align-items: center; justify-content: center; gap: 2.4vw; font-size: 5.5vh; font-weight: 700; }
   .counts .n {
     display: inline-block; min-width: 2ch; text-align: center;
-    padding: 0 .5vw; margin-left: 1vw; font-weight: 800; color: #fff;
+    padding: 0 .5vw; margin-left: 1vw; font-weight: 800; color: var(--ink);
   }
-  .n.yea { background: #4caf25; }
-  .n.nay { background: #cc0000; }
-  .n.abstain { background: #17a5f2; }
-  .n.recused { background: #d99b00; }
+  .n.yea { background: var(--vote-yea); }
+  .n.nay { background: var(--vote-nay); }
+  .n.abstain { background: var(--vote-abstain); }
+  .n.recused { background: var(--vote-recused); }
 
-  .roll { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: .9vh; }
+  /* The roll.
+     A single flex column, which is right for a board of nine and wrong for
+     anything much larger: seats simply ran off the bottom of the screen with
+     nothing to catch them. A grid instead, with the column count set by the
+     client from the size of the roll (see fitRoll in display.js) rather than
+     by auto-fit — the constraint here is vertical space, and auto-fit
+     responds to width, so on a 1920px screen it would spread nine seats into
+     five sparse columns to solve a problem the board did not have. */
+  .roll {
+    flex: 1; display: grid; grid-auto-flow: column; align-content: center;
+    grid-template-columns: 1fr; gap: .9vh 3vw;
+  }
   .seat { display: flex; align-items: center; gap: 1.5vw; font-size: 4vh; line-height: 1.15; }
+  /* In one column the chip belongs at the right margin: that is the roll-call
+     board every chamber already reads, and with a single column there is
+     nothing it could be mistaken for.
+
+     In two or three it cannot stay there. A stretched name pushes the chip to
+     its column's right edge, which puts it a few pixels from the *next*
+     column's name and a third of the screen from its own — so the board reads
+     as though every member had voted as the person to their left. The chip
+     follows its name instead, and the name gives up its stretch.
+
+     A name too long for its column is then truncated rather than allowed to
+     wrap and push the roll out of vertical alignment. */
+  .roll[data-cols="2"] .seat .name,
+  .roll[data-cols="3"] .seat .name {
+    flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .roll[data-cols="2"] .seat { font-size: 3.2vh; }
+  .roll[data-cols="3"] .seat { font-size: 2.6vh; }
   .seat .name { flex: 1; }
   /* The chip carries a letter, so the vote is legible without relying on hue —
      a board read by people with any colour vision must not encode the vote in
      colour alone. */
   .chip {
     display: inline-block; min-width: 2.6ch; text-align: center;
-    font-weight: 800; padding: 0 .4vw; color: #fff;
+    font-weight: 800; padding: 0 .4vw; color: var(--ink);
   }
-  .chip.yea { background: #4caf25; }
-  .chip.nay { background: #cc0000; }
-  .chip.abstain { background: #17a5f2; }
-  .chip.present { background: #5b6b7d; }
-  .chip.recused { background: #d99b00; }
-  .chip.pending { background: transparent; color: #4a5561; }
-  .mark { font-size: .38em; letter-spacing: .1em; color: #93a1b1; margin-left: .8vw; }
+  .chip.yea { background: var(--vote-yea); }
+  .chip.nay { background: var(--vote-nay); }
+  .chip.abstain { background: var(--vote-abstain); }
+  .chip.present { background: var(--vote-present); }
+  .chip.recused { background: var(--vote-recused); }
+  .chip.pending { background: transparent; color: var(--vote-pending); }
+  .mark { font-size: .38em; letter-spacing: .1em; color: var(--faint); margin-left: .8vw; }
+
+  /* A ballot landing.
+     Votes appeared instantly and silently, so a room watching the board had
+     nothing to tell them a member had just voted as against having voted some
+     time ago — the chip was simply green now. One short pulse marks the
+     moment, on the chip that changed and no other.
+
+     Honours prefers-reduced-motion. The board is bolted to a wall in a public
+     room and cannot know who is in front of it, so the setting is the only
+     signal available; the pulse is emphasis, never the only indication, and
+     the chip's letter and colour carry the vote without it. */
+  @keyframes vote-cast {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+  .chip.just-cast { animation: vote-cast 340ms ease-in-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .chip.just-cast { animation: none; }
+  }
 
   .status {
     text-align: center; font-size: 3.4vh; font-weight: 700;
     letter-spacing: .3em; text-transform: uppercase;
   }
-  .open { color: #4caf25; }
-  .closed { color: #ffd45e; }
-  .certified { color: #7fb0ff; }
-  .idle { color: #4a5561; }
-  .basis { text-align: center; font-size: 2.2vh; color: #93a1b1; letter-spacing: .05em; }
+  .open { color: var(--status-open); }
+  .closed { color: var(--status-closed); }
+  .certified { color: var(--status-certified); }
+  .idle { color: var(--status-idle); }
+  .basis { text-align: center; font-size: 2.2vh; color: var(--faint); letter-spacing: .05em; }
   .waiting {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    text-align: center; font-size: 5.5vh; color: #dbe4ef; line-height: 1.3; font-weight: 600;
+    text-align: center; font-size: 5.5vh; color: var(--waiting); line-height: 1.3; font-weight: 600;
   }
   /* A board frozen on a live vote is worse than a dark one: it looks
      authoritative while being wrong. */
   .stale { position: fixed; inset: 0; background: rgba(0,0,0,.94);
     display: flex; align-items: center; justify-content: center;
-    font-size: 4vh; color: #ff8a8a; letter-spacing: .1em; text-align: center; }
+    font-size: 4vh; color: var(--fail); letter-spacing: .1em; text-align: center; }
   [hidden] { display: none !important; }
 `;
 
@@ -166,7 +267,7 @@ function displayBoard(meeting, body) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(meeting.body_name)} — Chamber Display</title>
-<style>:root { --seal: url("${seal}"); }${STYLE}</style>
+<style>${PALETTE}:root { --seal: url("${seal}"); }${STYLE}</style>
 </head>
 <body>
 <div class="board" data-meeting="${meeting.id}">
