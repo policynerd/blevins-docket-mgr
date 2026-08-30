@@ -14,6 +14,7 @@ const feeds = require('./src/exports');
 const auth = require('./src/auth');
 const visibility = require('./src/visibility');
 const itemReportView = require('./src/views/itemreport');
+const universaldoc = require('./src/universaldoc');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
 const displayViews = require('./src/views/display');
@@ -2466,6 +2467,20 @@ route('POST', /^\/admin\/meetings\/(\d+)\/attendance$/, (req, res, ctx) => {
 
 // JSON API -------------------------------------------------------------------
 route('GET', /^\/api\/v1\/?$/, (req, res) => api.index(res));
+// One file as a Universal Document. Registered before the greedy matter route
+// below, which would otherwise swallow the /document suffix as part of the
+// file number.
+route('GET', /^\/api\/v1\/matters\/(.+)\/document$/, (req, res, ctx) => {
+  // The same resolution the rest of /api/v1 uses: file number first, row id as
+  // the fallback. See api.resolveMatter.
+  const m = api.resolveMatter(decodeURIComponent(ctx.params[0]));
+  // The same gate the file itself has. A reader who may not see it gets
+  // nothing rather than a husk with the body removed, which would confirm the
+  // file exists and describe its shape.
+  if (!visibility.canSeeMatter(ctx.user, m)) return sendJson(res, { error: 'Matter not found' }, 404);
+  sendJson(res, universaldoc.forMatter(m));
+});
+
 route('GET', /^\/api\/v1\/matters\/?$/, (req, res, ctx) => api.matters(res, ctx.query, ctx.user));
 route('GET', /^\/api\/v1\/matters\/(.+)$/, (req, res, ctx) => api.matter(res, decodeURIComponent(ctx.params[0]), ctx.user));
 route('GET', /^\/api\/v1\/events\/?$/, (req, res, ctx) => api.events(res, ctx.user));
