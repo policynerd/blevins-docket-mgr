@@ -110,6 +110,23 @@ function snapshot(meetingId) {
       late: o.late,
       announced: !!open.result_announced_at,
       computedAt: open.result_computed_at || null,
+      // Whether this roll has been taken more than once.
+      //
+      // Reopening is consequential — it strips certification, voids the
+      // matter's history rows for the superseded outcome, and starts a fresh
+      // roll under the item's current threshold — and until now nothing said
+      // it had happened. A result that is the second answer to the same
+      // question should not look identical to the first.
+      reopened: Math.max(0, repo.voteLedger.forItem(open.id)
+        .filter((e) => e.event_type === 'ROLL_OPENED').length - 1),
+      // The consent calendar this roll disposes of, if it is one.
+      consentItems: open.is_consent_group
+        ? repo.meetings.consentMembers(open.id).map((c) => ({
+          agenda_number: c.agenda_number,
+          title: c.matter_id ? c.matter_title : c.title,
+          file_number: c.file_number || null,
+        }))
+        : null,
     };
   }
 

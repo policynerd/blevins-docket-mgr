@@ -2145,6 +2145,26 @@ route('POST', /^\/admin\/matters\/(\d+)\/publish$/, (req, res, ctx) => {
   redirect(res, `/admin/matters/${m.id}/edit`);
 });
 
+// The consent calendar: group items into one roll, or take one back off.
+route('POST', /^\/admin\/meetings\/(\d+)\/consent$/, (req, res, ctx) => {
+  const id = Number(ctx.params[0]);
+  const mt = repo.meetings.get(id);
+  if (!mt) return sendHtml(res, pages.notFound(), 404);
+  // One ticked box posts a string, several post an array; asArray is the
+  // existing helper for exactly that shape.
+  repo.meetings.groupIntoConsent(id, asArray(ctx.body.item_ids));
+  live.pushUpdate(id);
+  redirect(res, `/admin/meetings/${id}/agenda`);
+});
+
+route('POST', /^\/admin\/agenda-items\/(\d+)\/ungroup$/, (req, res, ctx) => {
+  const it = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!it) return sendHtml(res, pages.notFound(), 404);
+  repo.meetings.ungroupConsent(it.id);
+  live.pushUpdate(it.meeting_id);
+  redirect(res, `/admin/meetings/${it.meeting_id}/agenda`);
+});
+
 route('POST', /^\/admin\/meetings\/(\d+)\/agenda\/publish$/, (req, res, ctx) => {
   const id = Number(ctx.params[0]);
   const mt = repo.meetings.get(id);
@@ -2240,7 +2260,15 @@ route('GET', /^\/admin\/meetings\/(\d+)\/live$/, (req, res, ctx) => {
   sendHtml(res, liveViews.clerkConsole(mt, ctx.user));
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
-  const r = repo.voteAdmin.reopen(Number(ctx.params[0]), { userId: ctx.user ? ctx.user.id : null });
+  let r;
+  try {
+    r = repo.voteAdmin.reopen(Number(ctx.params[0]), { userId: ctx.user ? ctx.user.id : null });
+  } catch (e) {
+    // ROLL_ALREADY_OPEN, and now ON_CONSENT_CALENDAR: both are the clerk being
+    // told why this is not the item to open, which is worth a sentence rather
+    // than a 500.
+    return sendJson(res, { error: e.message }, 409);
+  }
   if (!r) return sendJson(res, { error: 'Not found' }, 404);
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   live.pushUpdate(item.meeting_id);
@@ -2299,15 +2327,32 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   // to exist before the outcome is computed against it.
   const outcome = repo.voteAdmin.closeRoll(item.id, { userId: ctx.user ? ctx.user.id : null });
   const result = outcome.result;
+  const tallyNote = `${outcome.yea}-${outcome.nay}, ${outcome.basis}`
+    + (outcome.recused ? `, ${outcome.recused} recused` : '');
   // Reflect the outcome on the matter's legislative history.
   if (item.matter_id) {
     repo.matters.addHistory({
       matter_id: item.matter_id, action_date: require('./src/util').todayISO(),
       body_id: item.body_id, action: 'Vote taken in live session', result,
-      notes: `${outcome.yea}-${outcome.nay}, ${outcome.basis}`
-        + (outcome.recused ? `, ${outcome.recused} recused` : ''),
+      notes: tallyNote,
       meeting_id: item.meeting_id, agenda_item_id: item.id,
     });
+  }
+  // Every file on a consent calendar gets its own history entry, naming the
+  // calendar. A file adopted with eleven others still has to be able to answer
+  // "when was this decided, and by what vote" from its own page — and it has
+  // to say that the vote was taken on the calendar rather than on it alone,
+  // because those are different facts about how the board considered it.
+  if (item.is_consent_group) {
+    for (const member of repo.meetings.consentMembers(item.id)) {
+      if (!member.matter_id) continue;
+      repo.matters.addHistory({
+        matter_id: member.matter_id, action_date: require('./src/util').todayISO(),
+        body_id: item.body_id, action: 'Adopted on the consent calendar', result,
+        notes: `${tallyNote} — taken on ${item.agenda_number || 'the consent calendar'}`,
+        meeting_id: item.meeting_id, agenda_item_id: item.id,
+      });
+    }
   }
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true, result, tally: outcome });

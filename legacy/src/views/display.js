@@ -117,6 +117,45 @@ const STYLE = `
   .motion { margin: 0; font-size: 2.6vh; color: var(--motion); line-height: 1.35; }
   .votes-needed { font-size: 2.6vh; letter-spacing: .16em; color: var(--attention); font-weight: 700; }
 
+  /* A roll taken twice.
+     Reopening strips certification and supersedes the previous outcome, and
+     the board said nothing about it — a second answer to the same question
+     looked exactly like a first. Stated in words, because a room cannot be
+     expected to infer it. */
+  .reopened {
+    display: inline-block; background: var(--status-closed); color: var(--ground);
+    font-size: 2vh; font-weight: 800; letter-spacing: .16em; padding: .2vh 1vw;
+  }
+
+  /* How the count stands against what it takes.
+     The denominator was a line of 2.2vh grey text under the tally, which is
+     the one thing on the board nobody could read from the back: whether this
+     is carrying. The bar puts the threshold where the counts are. */
+  .threshold { display: flex; flex-direction: column; gap: .6vh; padding: 0 8vw; }
+  .thr-track {
+    position: relative; height: 2.2vh; background: var(--banner-bg);
+    display: flex; overflow: hidden;
+  }
+  .thr-yea { background: var(--vote-yea); }
+  .thr-nay { background: var(--vote-nay); }
+  .thr-mark {
+    position: absolute; top: -.6vh; bottom: -.6vh; width: .3vw;
+    background: var(--ink);
+  }
+  .thr-legend {
+    display: flex; justify-content: space-between;
+    font-size: 2vh; color: var(--faint); letter-spacing: .05em;
+  }
+
+  /* What a consent calendar carries. */
+  .consent { padding: 0 6vw; }
+  .consent-head {
+    font-size: 2.2vh; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--label); font-weight: 700; margin-bottom: .6vh;
+  }
+  .consent ol { margin: 0; padding-left: 4vw; columns: 2; column-gap: 4vw; }
+  .consent li { font-size: 2.4vh; color: var(--motion); line-height: 1.4; }
+
   .movers { display: grid; grid-template-columns: auto 1fr; gap: .4vh 2vw; font-size: 2.6vh; color: var(--dim); }
   .movers dt { color: var(--label); }
   .movers dd { margin: 0; font-weight: 600; color: var(--ink); }
@@ -146,24 +185,27 @@ const STYLE = `
     grid-template-columns: 1fr; gap: .9vh 3vw;
   }
   .seat { display: flex; align-items: center; gap: 1.5vw; font-size: 4vh; line-height: 1.15; }
-  /* In one column the chip belongs at the right margin: that is the roll-call
-     board every chamber already reads, and with a single column there is
-     nothing it could be mistaken for.
+  /* Chips align down the right of their column.
+     
+     The eye takes a tally off a straight line of results, so the chips are
+     right-aligned in equal columns rather than stopping wherever each name
+     happens to end. That does put a chip nearer the next column's name than
+     its own — but every column repeats the same name-then-chip pattern, and a
+     room reads that structure once and then reads the board correctly.
 
-     In two or three it cannot stay there. A stretched name pushes the chip to
-     its column's right edge, which puts it a few pixels from the *next*
-     column's name and a third of the screen from its own — so the board reads
-     as though every member had voted as the person to their left. The chip
-     follows its name instead, and the name gives up its stretch.
-
-     A name too long for its column is then truncated rather than allowed to
-     wrap and push the roll out of vertical alignment. */
-  .roll[data-cols="2"] .seat .name,
-  .roll[data-cols="3"] .seat .name {
-    flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+     A name longer than its column is truncated rather than allowed to wrap and
+     push the roll out of vertical alignment. Written as "any layout that is
+     not a single column" rather than by listing column counts: the count is
+     chosen by measurement now (see fitRoll), so a rule that named 2 and 3
+     silently stopped applying the moment a fourth column was needed — and a
+     fourth column rendering at the single-column size made the board taller
+     than the three it was called in to shrink. */
+  .roll:not([data-cols="1"]) .seat .name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .roll[data-cols="2"] .seat { font-size: 3.2vh; }
   .roll[data-cols="3"] .seat { font-size: 2.6vh; }
+  .roll[data-cols="4"] .seat { font-size: 2.2vh; }
   .seat .name { flex: 1; }
   /* The chip carries a letter, so the vote is legible without relying on hue —
      a board read by people with any colour vision must not encode the vote in
@@ -279,9 +321,12 @@ function displayBoard(meeting, body) {
     <h1 data-title></h1>
     <p class="motion" data-motion></p>
     <div class="votes-needed" data-votes-needed></div>
+    <div data-reopened hidden></div>
   </div>
+  <div class="consent" data-consent hidden></div>
   <div class="roll" data-roll></div>
   <div class="counts" data-counts hidden></div>
+  <div class="threshold" data-threshold hidden></div>
   <dl class="movers" data-movers hidden>
     <dt>Moved by</dt><dd data-mover></dd>
     <dt>Seconded by</dt><dd data-seconder></dd>

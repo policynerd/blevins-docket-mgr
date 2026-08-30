@@ -765,11 +765,30 @@ function agendaManager(meeting, query) {
       + 'will stay blank until the agenda is published.',
   }));
 
+  // The consent calendar's own control.
+  //
+  // A bare <form> outside the item list, which the per-item checkboxes join by
+  // `form=` attribute. It has to live outside because the items are draggable
+  // and get reordered in the DOM — a form wrapping them would be torn apart by
+  // the first drag.
+  const anyGroupable = items.some((it) => !it.is_consent_group && !it.consent_group_id
+    && !it.result && (it.vote_status || 'pending') === 'pending');
+  const consentForm = anyGroupable
+    ? `<form id="consent-group-form" method="post"
+        action="/admin/meetings/${meeting.id}/consent">
+        <p class="muted">Tick <strong>consent</strong> on the routine items below, then group them
+          into a single roll. One vote adopts all of them, and each file's own record still shows
+          the tally and says it was taken on the calendar.</p>
+        <button type="submit" class="btn">Group ticked items into a consent calendar</button>
+      </form>`
+    : '';
+
   const body = html`
     ${raw(meetingSteps(meeting, 'agenda'))}
     ${raw(placementBanner(query))}
     ${raw(publish)}
     ${raw(readyQueue(meeting))}
+    ${raw(consentForm ? card('Consent calendar', consentForm) : '')}
     ${raw(card('Add an item by hand', addItemForm))}
     ${raw(card('Agenda items & voting',
       loadTemplateBtn + reorderHint + `<div class="agenda-manage" data-meeting="${meeting.id}">${itemBlocks}</div>`))}
@@ -1045,12 +1064,46 @@ function voteBlock(meeting, it) {
   const toggleLabel = needsVote ? 'Voted' : 'No vote';
   const toggleTitle = needsVote ? 'Click to mark as procedural (no vote)' : 'Click to enable voting for this item';
 
+  // The consent calendar.
+  //
+  // Three states an item can be in and each needs saying: it carries a
+  // calendar, it travels on one, or it could be put on one. Only the last gets
+  // a checkbox — an item already voted, or already grouped, is not on offer.
+  const carried = it.is_consent_group ? repo.meetings.consentMembers(it.id) : [];
+  const groupable = !it.is_consent_group && !it.consent_group_id && !it.result
+    && (it.vote_status || 'pending') === 'pending';
+
+  const consentMark = it.is_consent_group
+    ? `<span class="badge st-passed" title="One roll disposes of every item on this calendar">`
+      + `Consent calendar · ${carried.length} item${carried.length === 1 ? '' : 's'}</span>`
+    : (it.consent_group_id
+      ? `<span class="badge st-draft" title="This item is decided by the consent calendar's roll">`
+        + `On the consent calendar</span>`
+        + ` <form class="inline" method="post" action="/admin/agenda-items/${it.id}/ungroup">`
+        + `<button type="submit" class="btn-link" title="Consider this item on its own">`
+        + `↥ Take off calendar</button></form>`
+      : '');
+
+  const groupCheck = groupable
+    ? `<label class="consent-pick" title="Put this item on the consent calendar">`
+      + `<input type="checkbox" name="item_ids" value="${it.id}" form="consent-group-form"> consent</label>`
+    : '';
+
+  // What the calendar carries, listed on the calendar's own row, because a
+  // clerk about to open this roll is about to dispose of all of them.
+  const carriedList = carried.length
+    ? `<ol class="consent-carried">${carried.map((c) => `<li>${escapeText(c.agenda_number || '')} `
+      + `${escapeText(c.matter_id ? `${c.file_number} — ${c.matter_title}` : (c.title || '(item)'))}</li>`).join('')}</ol>`
+    : '';
+
   return `<div class="agenda-manage-item" draggable="true" data-id="${it.id}">
     <div class="ami-head">
       <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
       <span class="ai-num">${escapeText(it.agenda_number || '')}</span>
       <strong>${titleLine}</strong>
       ${itemTypeBadge}
+      ${consentMark}
+      ${groupCheck}
       ${it.section ? `<span class="sub">${escapeText(it.section)}</span>` : ''}
       <form class="inline" method="post" action="/admin/agenda-items/${it.id}/toggle-vote">
         <button type="submit" class="btn-link${needsVote ? ' vote-on' : ' vote-off'}" title="${toggleTitle}">${toggleLabel}</button>
@@ -1065,6 +1118,7 @@ function voteBlock(meeting, it) {
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">
         <button type="submit" class="btn-link danger" title="Remove from agenda">✕ Delete</button>
       </form></div>
+    ${carriedList}
     ${voteForm}
   </div>`;
 }
