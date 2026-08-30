@@ -13,6 +13,7 @@ const api = require('./src/api');
 const feeds = require('./src/exports');
 const auth = require('./src/auth');
 const visibility = require('./src/visibility');
+const itemReportView = require('./src/views/itemreport');
 const live = require('./src/live');
 const liveViews = require('./src/views/live');
 const displayViews = require('./src/views/display');
@@ -599,6 +600,26 @@ route('GET', /^\/meetings\/(\d+)\/packet\.pdf$/, async (req, res, ctx) => {
       String(e.message).replace(/</g, '&lt;') + '</p>', 500);
   }
 });
+/**
+ * One item, on one page.
+ *
+ * Gated as the agenda is — this is a part of the agenda, and a part of an
+ * unpublished agenda is no more public than the whole of it. Where the item
+ * carries a file, the file's own publication is checked too: a published
+ * agenda that listed an unpublished measure should not become the way to read
+ * it.
+ */
+route('GET', /^\/meetings\/(\d+)\/items\/(\d+)$/, (req, res, ctx) => {
+  const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeAgenda);
+  if (!mt) return;
+  const item = repo.meetings.getItem(Number(ctx.params[1]));
+  if (!item || item.meeting_id !== mt.id) return sendHtml(res, pages.notFound(), 404);
+  if (item.matter_id && !visibility.canSeeMatter(ctx.user, repo.matters.get(item.matter_id))) {
+    return sendHtml(res, pages.notFound(), 404);
+  }
+  sendHtml(res, itemReportView.itemReport(mt, item, ctx.user));
+});
+
 route('GET', /^\/meetings\/(\d+)\/minutes$/, (req, res, ctx) => {
   const mt = visible(res, ctx, repo.meetings.get(Number(ctx.params[0])), visibility.canSeeMinutes);
   if (!mt) return;

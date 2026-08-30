@@ -1113,6 +1113,8 @@ function voteBlock(meeting, it) {
         <input type="text" name="video_ts" value="${escapeText(it.video_ts || '')}" placeholder="▶ 0:14:32" size="8">
         <button type="submit" class="btn-link">set</button>
       </form>
+      <a class="btn-link" href="/meetings/${it.meeting_id}/items/${it.id}"
+        title="One-page report for this item — print or save as PDF">\u2399 Report</a>
       <a class="btn-link" href="/admin/agenda-items/${it.id}/edit" title="Amend this item">\u270e Edit</a>
       <form class="inline ami-del" method="post" action="/admin/agenda-items/${it.id}/delete"
         onsubmit="return confirm('Remove this item from the agenda? Recorded votes for it are also deleted.')">

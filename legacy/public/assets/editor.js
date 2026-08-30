@@ -38,10 +38,17 @@
   }
 
   // Strip a pasted subtree down to the allowlist, in place.
+  //
+  // Returns what it took out. Pasting from Word silently lost fonts, colours,
+  // sizes and every <style> block, and the editor said nothing — so a clerk
+  // who had carefully formatted a passage elsewhere watched it arrive plain
+  // and had no way to know whether that was the paste or a bug. The counts are
+  // for telling them, not for deciding anything.
   function scrub(root) {
+    var removed = { blocks: 0, tags: 0, attrs: 0 };
     var gone = root.querySelectorAll(DROP_WHOLE);
     for (var g = 0; g < gone.length; g++) {
-      if (gone[g].parentNode) gone[g].parentNode.removeChild(gone[g]);
+      if (gone[g].parentNode) { gone[g].parentNode.removeChild(gone[g]); removed.blocks++; }
     }
     var els = root.querySelectorAll('*');
     // Reverse document order, so a child is cleaned before its parent is
@@ -49,9 +56,10 @@
     for (var i = els.length - 1; i >= 0; i--) {
       var el = els[i];
       var name = el.nodeName.toLowerCase();
-      if (!ALLOWED[name]) { unwrap(el); continue; }
+      if (!ALLOWED[name]) { unwrap(el); removed.tags++; continue; }
       var keep = name === 'a' && safeHref(el.getAttribute('href'))
         ? el.getAttribute('href') : null;
+      removed.attrs += el.attributes.length - (keep ? 1 : 0);
       for (var j = el.attributes.length - 1; j >= 0; j--) {
         el.removeAttribute(el.attributes[j].name);
       }
@@ -60,6 +68,41 @@
         el.setAttribute('rel', 'noopener noreferrer');
       }
     }
+    return removed;
+  }
+
+  /*
+   * Say what the paste lost.
+   *
+   * Not a dialog: this happens mid-typing and must not take the keyboard or
+   * need dismissing. It states the fact and goes away. Only shown when
+   * something was actually removed — a notice that appears on every paste is
+   * a notice nobody reads by the third one.
+   */
+  var noticeTimer = null;
+  function pasteNotice(area, removed) {
+    var parts = [];
+    if (removed.tags) parts.push(removed.tags + ' unsupported tag' + (removed.tags === 1 ? '' : 's'));
+    if (removed.attrs) parts.push(removed.attrs + ' style' + (removed.attrs === 1 ? '' : 's'));
+    if (removed.blocks) parts.push(removed.blocks + ' script or style block'
+      + (removed.blocks === 1 ? '' : 's'));
+    if (!parts.length) return;
+
+    var host = area.parentNode;
+    if (!host) return;
+    var el = host.querySelector('.paste-notice');
+    if (!el) {
+      el = document.createElement('p');
+      el.className = 'paste-notice';
+      el.setAttribute('role', 'status');
+      host.insertBefore(el, area.nextSibling);
+    }
+    el.textContent = 'Pasted as plain formatting — removed ' + parts.join(', ')
+      + '. The text came through; this editor keeps only the formatting the '
+      + 'published document can carry.';
+    el.hidden = false;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { el.hidden = true; }, 8000);
   }
 
   function nodeAtCursor(area) {
@@ -208,7 +251,8 @@
         // before scrub() could strip it — the element belongs to this
         // document, so the load is attempted even while it is detached.
         var doc = new DOMParser().parseFromString(pastedHtml, 'text/html');
-        scrub(doc.body);
+        var removed = scrub(doc.body);
+        pasteNotice(area, removed);
         // The scrubbed nodes are moved across directly rather than serialized
         // back to a string and re-parsed. Nothing here is ever handed to an
         // HTML parser a second time, which is where mutation-XSS lives: a
