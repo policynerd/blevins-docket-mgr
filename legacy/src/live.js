@@ -41,8 +41,26 @@ function snapshot(meetingId) {
   // shows the outcome, which is the moment the room is actually waiting for.
   // A real chamber board holds the result up until the chair calls the next
   // item, and so does this.
+  // An open roll always wins. Otherwise the board keeps showing the last item
+  // decided, so the room can still read the result — but only until the clerk
+  // says they are done with it.
+  //
+  // "Last decided" is by the clock, not by agenda order. This walked the items
+  // backwards and took the first closed one it found, which is the closed item
+  // furthest down the agenda — a different question whenever the body takes
+  // items out of order, or resumes a meeting where later items were already
+  // decided. Closing a roll then jumped the wall board to some other item's
+  // result, in the moment the room is actually looking at it.
+  //
+  // Items carried on a consent calendar are skipped: they share the calendar's
+  // close to the second, and the calendar is the item that took the roll.
+  const decided = items
+    .filter((i) => i.vote_status === 'closed' && i.result_computed_at && !i.cleared_at
+      && !i.consent_group_id)
+    .sort((a, b) => String(a.vote_closed_at || a.result_computed_at || '')
+      .localeCompare(String(b.vote_closed_at || b.result_computed_at || '')));
   const open = items.find((i) => i.vote_status === 'open')
-    || [...items].reverse().find((i) => i.vote_status === 'closed' && i.result_computed_at)
+    || decided[decided.length - 1]
     || null;
 
   const seatCount = members.length;
@@ -126,6 +144,35 @@ function snapshot(meetingId) {
       // question should not look identical to the first.
       reopened: Math.max(0, repo.voteLedger.forItem(open.id)
         .filter((e) => e.event_type === 'ROLL_OPENED').length - 1),
+      // How the body got to the question now on the floor.
+      //
+      // An item that was moved, amended, and put again as amended holds three
+      // motions and two rolls. The item's own fields carry only the last of
+      // them, so a console reading the item alone shows the final wording with
+      // nothing saying it was ever anything else — and the clerk taking the
+      // second roll cannot see the result of the first.
+      motions: (() => {
+        const all = repo.motionVersions.all(open.id);
+        // The immediately pending question: the last motion that has neither
+        // been voted nor replaced. With an amendment moved there are two
+        // pending motions — the main one and the amendment before it — and
+        // only one of them is what the body is about to vote on.
+        const pending = all.filter((m) => !m.vote_closed_at && !m.superseded_at);
+        const nowBefore = pending.length ? pending[pending.length - 1].id : null;
+        return all.map((m) => ({
+          seq: m.seq,
+          kind: m.kind || 'main',
+          text: m.motion_text || null,
+          mover: m.mover_name || null,
+          seconder: m.seconder_name || null,
+          threshold: m.threshold,
+          result: m.result || null,
+          closed: !!m.vote_closed_at,
+          superseded: !!m.superseded_at,
+          pending: !m.vote_closed_at && !m.superseded_at,
+          current: m.id === nowBefore,
+        }));
+      })(),
       // The consent calendar this roll disposes of, if it is one.
       consentItems: open.is_consent_group
         ? repo.meetings.consentMembers(open.id).map((c) => ({
@@ -176,6 +223,20 @@ function snapshot(meetingId) {
       id: i.id, agenda_number: i.agenda_number,
       title: i.matter_id ? `${i.file_number} — ${i.matter_title}` : (i.title || '(item)'),
       vote_status: i.vote_status || 'pending', result: i.result || null,
+      // Which items vote on their own and which travel on a calendar. Without
+      // this the console offered "Open voting" on every row, including the
+      // ones the repo refuses to open because they are disposed of by the
+      // calendar's roll — a button whose only outcome is a 409.
+      isConsentGroup: !!i.is_consent_group,
+      // Laid on the table, and when the body actually reached it. Both are
+      // facts about the running of the meeting that the agenda's written order
+      // cannot carry.
+      tabled: !!i.tabled_at,
+      tabledReason: i.tabled_reason || null,
+      reachedAt: i.reached_at || null,
+      onConsentCalendar: i.consent_group_id
+        ? (items.find((g) => g.id === i.consent_group_id) || {}).agenda_number || true
+        : null,
     })),
   };
 }

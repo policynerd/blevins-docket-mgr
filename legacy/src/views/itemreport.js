@@ -78,6 +78,26 @@ function supporting(matter) {
   }).join('') + '</ul>';
 }
 
+/**
+ * How the body got from the motion to the result.
+ *
+ * The item carries one motion_text, so a measure that was moved, amended and
+ * adopted as amended printed the final wording and nothing else — the report
+ * said what was adopted and never that it had been changed, by whom, or that
+ * the amendment was voted on first. Printed only where the body actually
+ * amended: with one motion, the recommendation above already says it.
+ */
+function proceedings(item) {
+  const seq = repo.motionVersions.narrative(item.id);
+  if (!seq.length) return '';
+  return '<ol class="ir-motions">' + seq.map((m) =>
+    `<li><strong>${escapeText(m.label)}.</strong>`
+    + `${m.text ? ' ' + escapeText(m.text) : ''}`
+    + `${m.moved ? ` <span class="muted">${escapeText(m.moved)}.</span>` : ''}`
+    + `${m.outcome ? ` <strong>${escapeText(m.outcome)}.</strong>` : ''}`
+    + '</li>').join('') + '</ol>';
+}
+
 // How the item was disposed of, when it has been. Printed from the certified
 // arithmetic rather than the mutable projection, for the same reason the
 // minutes are: the two must not be able to disagree about one roll.
@@ -149,6 +169,7 @@ function itemReport(meeting, item, user) {
       ${raw(section('Agenda Item Details', details(item, matter)))}
       ${raw(carriedBlock)}
       ${raw(section('Supporting Documents', supporting(matter)))}
+      ${raw(section('Proceedings', proceedings(item)))}
       ${raw(section('Disposition', disposition(item)))}
       ${raw(provenance(matter))}
     </article>`;

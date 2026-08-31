@@ -217,6 +217,44 @@ const bodies = {
   },
 
   /**
+   * The roster, reconciled against the roll.
+   *
+   * The membership screen listed `members()` — every row in body_members — and
+   * the quorum denominator came from `votingRoll()`, which is a different
+   * list. Nothing on the screen said which was which, so a body could show
+   * eight members and take a quorum of four from five, and both numbers were
+   * right about different questions.
+   *
+   * It also catches the contradiction that put a former governor in a live
+   * quorum: `people.title` is prose a clerk types, and it can say "Former
+   * Member" while the seat record it is meant to describe has no end date.
+   * The seat record governs — a title is not a resignation — so this does not
+   * quietly pick a side. It reports that the two disagree, which is the only
+   * honest answer and the only one a clerk can act on.
+   */
+  seatStatus(bodyId, asOf = null) {
+    const today = asOf || require('./util').todayISO();
+    const onRoll = new Set(this.votingRoll(bodyId, today).map((r) => r.id));
+    return this.members(bodyId).map((m) => {
+      let reason = null;
+      if (!onRoll.has(m.person_id)) {
+        if (m.start_date && m.start_date > today) reason = 'term has not begun';
+        else if (m.voting !== 1) reason = 'holds the seat without a vote';
+        else if (m.end_date && m.end_date < today) reason = 'term expired, seat filled';
+        else reason = 'not on the roll';
+      }
+      // Prose against the record. Only the plainly retrospective words: a
+      // title is free text and guessing harder than this would flag titles
+      // that are simply descriptive.
+      const contradiction = (onRoll.has(m.person_id)
+        && /\b(former|past|outgoing|retired|ex[- ]member)\b/i.test(String(m.title || '')))
+        ? `recorded as “${m.title}” but holds an open seat and counts toward quorum`
+        : null;
+      return Object.assign({}, m, { onRoll: onRoll.has(m.person_id), reason, contradiction });
+    });
+  },
+
+  /**
    * May a ballot be recorded for this person on this body?
    *
    * The question both cast routes have to answer before writing one. A vote
@@ -813,9 +851,38 @@ const meetings = {
   },
   addItem(it) {
     const existing = db.prepare(
-      'SELECT section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
+      'SELECT id, section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
       .all(it.meeting_id);
     const maxOrder = existing.length ? existing[existing.length - 1].sort_order : 0;
+
+    /**
+     * Where the new item physically goes.
+     *
+     * It went at the end of the agenda, always. An item filed under a section
+     * that already exists therefore landed *below* every other section, and
+     * because the agenda prints a heading whenever the section changes, the
+     * clerk got a second copy of that heading at the bottom of the page — the
+     * item in a duplicate of a category that was already there. renumber()
+     * then gave it a number from its section's rank, so the running order and
+     * the numbers disagreed: a consent calendar numbered 3A sitting after 4A
+     * and 5A, or a packet listing Tab 12 4D after 7A Adjournment.
+     *
+     * So an item joins the block its section already occupies, after the last
+     * item in it. Where the section is new to this meeting there is nothing to
+     * join and the end of the agenda is right.
+     */
+    let insertAt = maxOrder + 1;
+    if (it.section) {
+      const inSection = existing.filter((r) => r.section === it.section);
+      if (inSection.length) {
+        const lastOfSection = inSection[inSection.length - 1].sort_order;
+        // Everything at or below that point stays; everything after it moves
+        // down one to make room.
+        db.prepare(`UPDATE agenda_items SET sort_order = sort_order + 1
+          WHERE meeting_id = ? AND sort_order > ?`).run(it.meeting_id, lastOfSection);
+        insertAt = lastOfSection + 1;
+      }
+    }
 
     // Auto-assign agenda_number when not provided: "1A", "1B" within sections,
     // or "1", "2", "3" for unsectioned items. Derived from existing agenda_number
@@ -869,7 +936,7 @@ const meetings = {
       (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes,
        requires_vote, item_type, is_consent_group)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
+      it.meeting_id, it.matter_id || null, it.sort_order || insertAt,
       agendaNum, it.section || null, it.title || null,
       it.action || null, it.result || null, it.notes || null, requiresVote, itemType,
       it.is_consent_group ? 1 : 0).lastInsertRowid;
@@ -993,6 +1060,23 @@ const meetings = {
    * loses it here, which is the trade: one authority for the numbering, and it
    * is the order of business.
    */
+  /**
+   * Recompute the running order and the numbers, so they agree.
+   *
+   * This numbered by the canonical section order and left `sort_order` alone,
+   * which let the two drift apart: an item appended to a section it did not
+   * physically sit near got that section's number while staying where it was,
+   * so an agenda could read Consent Agenda, New Business, Consent Agenda, New
+   * Business — the same heading printed four times, with numbers that did not
+   * follow the page. Sorting is part of numbering, not a separate act.
+   *
+   * The model this settles on: sections run in the canonical order
+   * AGENDA_SECTIONS declares, and items run in their existing order within a
+   * section. Dragging reorders items inside a section; moving an item to a
+   * different section is done by editing the item, which is where its section
+   * is actually recorded. That is the only arrangement in which an item's
+   * number can be trusted to describe where it is.
+   */
   renumber(meetingId) {
     const items = db.prepare(
       'SELECT id, section FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order, id').all(meetingId);
@@ -1003,18 +1087,31 @@ const meetings = {
       .sort((a, b) => (order.has(a) ? order.get(a) : 999) - (order.has(b) ? order.get(b) : 999));
     const prefixOf = new Map(used.map((name, i) => [name, i + 1]));
 
+    // Gather each section's items into one block, keeping the order they are
+    // already in, and lay the blocks out in canonical order. Unsectioned items
+    // keep their relative order and follow, having no section to sit in.
+    const ranked = [...items].sort((a, b) => {
+      const ra = a.section ? (order.has(a.section) ? order.get(a.section) : 998) : 999;
+      const rb = b.section ? (order.has(b.section) ? order.get(b.section) : 998) : 999;
+      if (ra !== rb) return ra - rb;
+      return items.indexOf(a) - items.indexOf(b);
+    });
+
     const seen = new Map();
     let plain = 0;
-    const upd = db.prepare('UPDATE agenda_items SET agenda_number = ? WHERE id = ?');
+    const upd = db.prepare(
+      'UPDATE agenda_items SET agenda_number = ?, sort_order = ? WHERE id = ?');
     db.exec('SAVEPOINT sp_renumber');
     try {
-      for (const it of items) {
-        if (!it.section) { upd.run(String(++plain), it.id); continue; }
+      let pos = 0;
+      for (const it of ranked) {
+        pos += 1;
+        if (!it.section) { upd.run(String(++plain), pos, it.id); continue; }
         const n = (seen.get(it.section) || 0) + 1;
         seen.set(it.section, n);
         // Past Z, fall back to a numeric suffix rather than emitting punctuation.
         const letter = n <= 26 ? String.fromCharCode(64 + n) : `-${n}`;
-        upd.run(`${prefixOf.get(it.section)}${letter}`, it.id);
+        upd.run(`${prefixOf.get(it.section)}${letter}`, pos, it.id);
       }
       db.exec('RELEASE sp_renumber');
     } catch (e) {
@@ -2943,12 +3040,17 @@ const voteLedger = {
 
     db.prepare(`INSERT INTO session_events
       (event_id, meeting_id, event_type, payload_json, previous_hash, event_hash, received_at,
-       agenda_item_id, person_id, choice, source, entered_by, supersedes_event_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+       agenda_item_id, person_id, choice, source, entered_by, supersedes_event_id,
+       motion_version_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       eventId, meetingId, eventType, JSON.stringify(full),
       built.previousEventHash, built.entryHash, now,
       cols.agendaItemId || null, cols.personId || null, cols.choice || null,
-      cols.source || null, cols.enteredBy || null, cols.supersedesEventId || null);
+      cols.source || null, cols.enteredBy || null, cols.supersedesEventId || null,
+      // Which question this event belongs to. An index over what the payload
+      // already carried; the hash is taken over the payload, so this column
+      // is invisible to verification.
+      cols.motionVersionId || null);
 
     return { eventId, eventHash: built.entryHash, receivedAt: now };
   },
@@ -2965,13 +3067,24 @@ const voteLedger = {
     const item = meetings.getItem(agendaItemId);
     if (!item) throw new Error(`No agenda item ${agendaItemId}`);
     const source = opts.source || 'MEMBER_TERMINAL';
+    // The question this ballot answers. Taken from the item unless the caller
+    // names one, so that no route has to remember: a ballot that does not say
+    // which motion it was cast on is a ballot that can be counted twice.
+    const version = opts.motionVersionId !== undefined
+      ? opts.motionVersionId : this.motionVersionFor(agendaItemId);
 
-    const standing = this.current(agendaItemId, { asOf: null, throughSeq: null }).get(personId);
+    // Superseding is within the question, not across it. A member who voted
+    // Yea on the amendment and Nay on the measure has not changed their vote;
+    // they answered two questions. Reading the standing position across
+    // versions would file the second ballot as a retraction of the first.
+    const standing = this.current(agendaItemId, {
+      asOf: null, throughSeq: null, motionVersionId: version,
+    }).get(personId);
     return this.appendEvent(item.meeting_id, standing ? 'VOTE_CHANGED' : 'VOTE_CAST', {
       agendaItemId,
       choice,
       credentialId: opts.credentialId || null,
-      motionVersionId: opts.motionVersionId || null,
+      motionVersionId: version || null,
       personId,
       source,
       stationId: opts.stationId || null,
@@ -2981,14 +3094,30 @@ const voteLedger = {
       agendaItemId, personId, choice, source,
       enteredBy: opts.userId || null,
       supersedesEventId: standing ? standing.event_id : null,
+      motionVersionId: version || null,
     });
   },
 
+  /**
+   * The question currently before the body on this item.
+   *
+   * Undefined — not null — where the item has no motion versions at all, so
+   * that every item recorded before amendments existed windows exactly as it
+   * always did rather than being narrowed to "the ballots with no version",
+   * which is a filter it has never been asked to pass.
+   */
+  motionVersionFor(agendaItemId) {
+    const latest = motionVersions.latest(agendaItemId);
+    return latest ? latest.id : undefined;
+  },
+
   /** Where the roll closed, as a position in the chain. */
-  closedSeq(agendaItemId) {
+  closedSeq(agendaItemId, motionVersionId) {
     const item = meetings.getItem(agendaItemId);
     if (!item) return null;
-    return ledger.closedAtSeq(this.forMeeting(item.meeting_id), agendaItemId);
+    const version = motionVersionId !== undefined
+      ? motionVersionId : this.motionVersionFor(agendaItemId);
+    return ledger.closedAtSeq(this.forMeeting(item.meeting_id), agendaItemId, version);
   },
 
   /**
@@ -2998,18 +3127,32 @@ const voteLedger = {
    * sequence number cannot be backdated, a timestamp column can.
    */
   current(agendaItemId, opts = {}) {
-    const throughSeq = opts.throughSeq !== undefined ? opts.throughSeq : this.closedSeq(agendaItemId);
-    return ledger.currentChoices(this.forItem(agendaItemId), {
+    const version = opts.motionVersionId !== undefined
+      ? opts.motionVersionId : this.motionVersionFor(agendaItemId);
+    const throughSeq = opts.throughSeq !== undefined
+      ? opts.throughSeq : this.closedSeq(agendaItemId, version);
+    const entries = this.forItem(agendaItemId);
+    return ledger.currentChoices(entries, {
       asOf: opts.asOf !== undefined ? opts.asOf : null,
       throughSeq,
+      motionVersionId: version,
+      // A vote the Board has struck stops counting. The ballots stay in the
+      // chain; this is the floor beneath which they no longer project.
+      afterSeq: opts.afterSeq !== undefined
+        ? opts.afterSeq : ledger.voidedAtSeq(entries, agendaItemId),
     });
   },
 
   /** Ballots recorded after the roll closed: kept, counted by nothing. */
-  late(agendaItemId) {
-    const throughSeq = this.closedSeq(agendaItemId);
+  late(agendaItemId, motionVersionId) {
+    const version = motionVersionId !== undefined
+      ? motionVersionId : this.motionVersionFor(agendaItemId);
+    const throughSeq = this.closedSeq(agendaItemId, version);
     if (throughSeq == null) return [];
-    return ledger.lateEvents(this.forItem(agendaItemId), { throughSeq });
+    const entries = version === undefined ? this.forItem(agendaItemId)
+      : this.forItem(agendaItemId)
+        .filter((e) => (e.motion_version_id ?? null) === (version ?? null));
+    return ledger.lateEvents(entries, { throughSeq });
   },
 
   /**
@@ -3082,14 +3225,28 @@ const voteAdmin = {
     // for ever, and a clerk who corrected the threshold and reopened got the
     // old arithmetic with no indication anything had been ignored.
     const rule = item.vote_threshold || item.threshold_rule || 'majority';
+    // The first time the body actually reaches this item, whatever the agenda
+    // said the order would be. Set once: a reopened roll is the same item being
+    // reconsidered, not the body arriving at it again.
+    db.prepare(`UPDATE agenda_items SET reached_at = COALESCE(reached_at, datetime('now'))
+      WHERE id = ?`).run(itemId);
     db.prepare(`UPDATE agenda_items
       SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
+          cleared_at = NULL, tabled_at = NULL, tabled_reason = NULL,
           threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
           result_certified_at = NULL, result_certified_by = NULL, result_published_at = NULL,
           certification_checkpoint = NULL
       WHERE id = ?`).run(rule, itemId);
+    // The question this roll is on. An item with no motion recorded takes its
+    // roll unversioned, exactly as every item did before amendments existed —
+    // so nothing already in the record windows differently.
+    const version = motionVersions.latest(itemId);
+    if (version) motionVersions.recordOpen(version.id);
     voteLedger.appendEvent(item.meeting_id, 'ROLL_OPENED',
-      { agendaItemId: itemId, thresholdRule: rule }, { agendaItemId: itemId, enteredBy: userId });
+      { agendaItemId: itemId, thresholdRule: rule,
+        motionVersionId: version ? version.id : null },
+      { agendaItemId: itemId, enteredBy: userId,
+        motionVersionId: version ? version.id : null });
     return meetings.getItem(itemId);
   },
 
@@ -3109,12 +3266,20 @@ const voteAdmin = {
     // it twice on purpose — until this was fixed the button simply never
     // stopped saying "Close roll & record result".
     if (item.vote_status === 'closed') return eligibility.outcome(itemId);
+    const version = motionVersions.latest(itemId);
     voteLedger.appendEvent(item.meeting_id, 'ROLL_CLOSED',
-      { agendaItemId: itemId }, { agendaItemId: itemId, enteredBy: userId });
+      { agendaItemId: itemId, motionVersionId: version ? version.id : null },
+      { agendaItemId: itemId, enteredBy: userId,
+        motionVersionId: version ? version.id : null });
     db.prepare(`UPDATE agenda_items
       SET vote_status = 'closed', vote_closed_at = datetime('now') WHERE id = ?`).run(itemId);
 
     const outcome = eligibility.outcome(itemId);
+    // The result belongs to the question, not only to the item. An item that
+    // was amended holds several: the vote on the amendment and the vote on the
+    // measure as amended are both real results, and the item's own `result` is
+    // the last of them — the disposition of the business.
+    if (version) motionVersions.recordClose(version.id, outcome.result);
     // Persist the result here, where it is computed. It used to be set by the
     // route instead, so closing the roll through the repo left the item with
     // a computed timestamp and no outcome on it — and the board, which reads
@@ -3137,12 +3302,24 @@ const voteAdmin = {
     // there is exactly one roll, on the group, and each item points at it.
     if (item.is_consent_group) {
       const carried = meetings.consentMembers(itemId);
-      const stamp = db.prepare(
-        "UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?");
+      // Closed, not merely resulted.
+      //
+      // This stamped result_computed_at and set the result but left
+      // vote_status at 'pending', so every screen that asks "has this been
+      // voted?" — the agenda manager, the live console's item list, the
+      // minutes, the per-item report — answered no while a result hung off
+      // the row. The calendar worked and looked as though it had not.
+      //
+      // The close time is the calendar's own: these items were disposed of at
+      // the instant that roll shut, not at some later moment of bookkeeping.
+      const stamp = db.prepare(`UPDATE agenda_items
+        SET vote_status = 'closed', vote_closed_at = ?, result_computed_at = datetime('now')
+        WHERE id = ?`);
+      const closedAt = meetings.getItem(itemId).vote_closed_at;
       for (const member of carried) {
         meetings.setItemResult(member.id,
           member.action || 'Adopted on the consent calendar', outcome.result);
-        stamp.run(member.id);
+        stamp.run(closedAt, member.id);
       }
       voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
         agendaItemId: itemId, consentCalendar: true,
@@ -3150,6 +3327,62 @@ const voteAdmin = {
       }, { agendaItemId: itemId, enteredBy: userId });
     }
     return outcome;
+  },
+
+  /**
+   * Lay the item on the table.
+   *
+   * A state on the item, not a string a clerk types. 'Tabled' existed only as
+   * a *matter* status, inferred by regex from the action text — so an item
+   * laid on the table went on reading 'pending' beside items genuinely still
+   * to come, and an agenda could not show which was which.
+   *
+   * The matter's status follows, where there is one, because a file whose item
+   * was tabled is a tabled file. Taking it back up clears both.
+   */
+  table(itemId, { reason = '', userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    if (item.vote_status === 'open') {
+      const e = new Error('Close or void the open roll before tabling this item.');
+      e.code = 'ROLL_OPEN';
+      throw e;
+    }
+    db.prepare(`UPDATE agenda_items
+      SET tabled_at = datetime('now'), tabled_reason = ?, cleared_at = datetime('now')
+      WHERE id = ?`).run(String(reason || '').trim() || null, itemId);
+    voteLedger.appendEvent(item.meeting_id, 'AGENDA_ITEM_CALLED',
+      { agendaItemId: itemId, tabled: true, reason: String(reason || '').trim() || null },
+      { agendaItemId: itemId, enteredBy: userId });
+    if (item.matter_id) matters.setStatus(item.matter_id, 'Tabled');
+    return meetings.getItem(itemId);
+  },
+
+  /** Take it back up. */
+  untable(itemId, { userId = null } = {}) {
+    const item = meetings.getItem(itemId);
+    if (!item || !item.tabled_at) return null;
+    db.prepare(`UPDATE agenda_items
+      SET tabled_at = NULL, tabled_reason = NULL, cleared_at = NULL WHERE id = ?`).run(itemId);
+    voteLedger.appendEvent(item.meeting_id, 'AGENDA_ITEM_CALLED',
+      { agendaItemId: itemId, tabled: false },
+      { agendaItemId: itemId, enteredBy: userId });
+    if (item.matter_id) matters.setStatus(item.matter_id, 'On Agenda');
+    return meetings.getItem(itemId);
+  },
+
+  /**
+   * Done with this item: take it off the board.
+   *
+   * Deliberately not part of the vote lifecycle. It records nothing in the
+   * ledger and changes no result — it is the clerk saying the room has moved
+   * on, and it is undone the moment the item is opened again.
+   */
+  clear(itemId) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    db.prepare("UPDATE agenda_items SET cleared_at = datetime('now') WHERE id = ?").run(itemId);
+    return meetings.getItem(itemId);
   },
 
   /** The chair states the result to the room. */
@@ -3228,7 +3461,22 @@ const voteAdmin = {
       e.code = 'ON_CONSENT_CALENDAR';
       throw e;
     }
-    const wasClosed = item.vote_status === 'closed';
+    /*
+     * Putting a new question is not reopening the old one.
+     *
+     * After a body amends, the item's roll has closed on the amendment and the
+     * main question as amended is still to be taken — on the same item, so it
+     * arrives here. Retracting would strip the amendment's certification and
+     * void the matter's history rows for a result that stands: the body did
+     * vote on the amendment, and that outcome is not superseded by the vote
+     * that follows it.
+     *
+     * A motion version created since the last close and never put to a roll is
+     * exactly that case, and nothing else is.
+     */
+    const pending = motionVersions.latest(item.id);
+    const newQuestion = !!pending && !pending.vote_opened_at && !pending.vote_closed_at;
+    const wasClosed = item.vote_status === 'closed' && !newQuestion;
     if (wasClosed) {
       this.retractOutcome(item, {
         reason: 'Vote reopened; this outcome was superseded', userId,
@@ -3281,8 +3529,23 @@ const voteAdmin = {
       threshold_rule = NULL,
       result_announced_at = NULL, result_certified_at = NULL, result_published_at = NULL
       WHERE id = ?`).run(item.id);
-    voteLedger.appendEvent(item.meeting_id, 'CORRECTION_APPROVED',
-      { agendaItemId: item.id, reason: clean }, { agendaItemId: item.id, enteredBy: userId });
+    // The question the void was on gives up its result too. Leaving it would
+    // put the item back to pending with a decided motion still sitting on it,
+    // and the next attempt to state the motion would be refused as an edit to
+    // something already voted on — a vote the board has said did not happen.
+    const version = motionVersions.latest(item.id);
+    if (version) {
+      db.prepare(`UPDATE motion_versions
+        SET vote_closed_at = NULL, result = NULL WHERE id = ?`).run(version.id);
+    }
+    // VOTE_VOIDED, not CORRECTION_APPROVED. This borrowed the corrections type
+    // because there was nothing else, which left the striking of a vote
+    // indistinguishable from an approved minutes correction — and left nothing
+    // for the projection to key on, so the struck ballots went on counting.
+    voteLedger.appendEvent(item.meeting_id, 'VOTE_VOIDED',
+      { agendaItemId: item.id, reason: clean,
+        motionVersionId: version ? version.id : null },
+      { agendaItemId: item.id, enteredBy: userId });
     if (item.matter_id) {
       // The voiding is itself an act the record should show. A history that
       // simply loses the entry would read as though the vote never happened.
@@ -3338,8 +3601,9 @@ const eligibility = {
     // No bound here on purpose: the roll shown to the clerk is what has been
     // received. Whether a given event counts is decided by outcome(), against
     // the close.
-    const standing = voteLedger.current(agendaItemId,
-      opts.throughSeq !== undefined ? { throughSeq: opts.throughSeq } : {});
+    const standing = voteLedger.current(agendaItemId, Object.assign({},
+      opts.throughSeq !== undefined ? { throughSeq: opts.throughSeq } : {},
+      opts.motionVersionId !== undefined ? { motionVersionId: opts.motionVersionId } : {}));
     const roll = seated.map((p) => {
       const att = attendance.get(p.id) || 'Present';
       const ev = standing.get(p.id);
@@ -3390,16 +3654,27 @@ const eligibility = {
    * only "Fail" cannot check the ruling, and the chair has to be able to state
    * the basis aloud.
    */
-  outcome(agendaItemId, { throughSeq } = {}) {
+  outcome(agendaItemId, { throughSeq, motionVersionId } = {}) {
     const item = meetings.getItem(agendaItemId);
     if (!item) return null;
+    // Which question is being counted. An item the body amended took more than
+    // one roll, and re-deriving the amendment's tally after the measure was
+    // voted on must read the amendment's ballots, not the measure's.
+    const version = motionVersionId !== undefined
+      ? motionVersionId : voteLedger.motionVersionFor(agendaItemId);
     // Bounded by the close's position in the chain. Anything after it is kept
     // and excluded here, so a settled result cannot drift.
-    const bound = throughSeq !== undefined ? throughSeq : voteLedger.closedSeq(agendaItemId);
-    const e = this.forItem(agendaItemId, { throughSeq: bound });
+    const bound = throughSeq !== undefined
+      ? throughSeq : voteLedger.closedSeq(agendaItemId, version);
+    const e = this.forItem(agendaItemId, { throughSeq: bound, motionVersionId: version });
     if (!e) return null;
-    // The rule recorded with the roll, not whatever the config says today.
-    const threshold = item.threshold_rule || item.vote_threshold || 'majority';
+    // The rule recorded with the roll, not whatever the config says today. A
+    // version carries the rule its own roll was taken under, which is not
+    // necessarily the item's: an amendment can need a majority where the
+    // measure it amends needs two thirds.
+    const forVersion = version != null ? motionVersions.get(version) : null;
+    const threshold = (forVersion && forVersion.vote_closed_at && forVersion.threshold)
+      || item.threshold_rule || item.vote_threshold || 'majority';
     const yea = e.roll.filter((r) => r.choice === 'Yea').length;
     const nay = e.roll.filter((r) => r.choice === 'Nay').length;
 
@@ -3419,8 +3694,9 @@ const eligibility = {
     return {
       ...e, yea, nay, threshold, required, passes,
       throughSeq: bound,
+      motionVersionId: version ?? null,
       closed: bound != null,
-      late: bound != null ? voteLedger.late(agendaItemId).length : 0,
+      late: bound != null ? voteLedger.late(agendaItemId, version).length : 0,
       result: passes ? 'Pass' : 'Fail',
       basis: threshold === 'majority_full'
         ? `majority of ${e.eligible} eligible`
@@ -3430,28 +3706,158 @@ const eligibility = {
 };
 
 /** Motion text, versioned, so a vote binds to what was actually on the floor. */
+/**
+ * The motion as the body actually put it, version by version.
+ *
+ * This table has existed since the vote ledger did and nothing wrote to it.
+ * `agenda_items` carries one motion_text, one mover, one threshold and one
+ * result, so a question that was moved, amended, and then voted on as amended
+ * could be recorded only as its final state — the record said what was adopted
+ * and never that it had been changed, by whom, or that the amendment was itself
+ * voted on first. That is the difference between recording outcomes and
+ * recording proceedings, and it is why a clerk still keeps a paper pad.
+ *
+ * Two verbs, deliberately different acts:
+ *
+ *   ensure()  states the motion as it stands. It creates the first version and
+ *             thereafter edits it in place. Typing in the motion box is not an
+ *             amendment; it is a clerk writing down what was moved.
+ *   amend()   puts a new question. A new version, a new roll, a new result.
+ *
+ * The distinction is not cosmetic. Ballots are windowed by version, so a
+ * version created by accident — a clerk fixing a typo mid-roll — would silently
+ * discard every vote already cast. `ensure` can therefore never create one.
+ */
+const MOTION_KINDS = ['main', 'amendment', 'substitute', 'procedural'];
+
 const motionVersions = {
   /**
-   * Record the motion as it stands and return the version.
+   * Record the motion as it stands, in place.
    *
-   * Reuses the current version when nothing has changed, so merely reopening
-   * an item does not manufacture a new one.
+   * Never creates a second version: see above. Returns the version the item's
+   * ballots belong to.
    */
-  ensure(agendaItemId, { motionText, moverId, seconderId, threshold, userId = null } = {}) {
+  ensure(agendaItemId, { motionText, moverId, seconderId, threshold, kind, userId = null } = {}) {
     const latest = this.latest(agendaItemId);
-    const same = latest
-      && (latest.motion_text || null) === (motionText || null)
-      && (latest.mover_id || null) === (moverId || null)
-      && (latest.seconder_id || null) === (seconderId || null)
-      && latest.threshold === (threshold || 'majority');
-    if (same) return latest;
+    if (!latest) {
+      const id = db.prepare(`INSERT INTO motion_versions
+        (agenda_item_id, seq, motion_text, mover_id, seconder_id, threshold, kind, created_by)
+        VALUES (?,1,?,?,?,?,?,?)`).run(agendaItemId, motionText || null,
+        moverId || null, seconderId || null, threshold || 'majority',
+        MOTION_KINDS.includes(kind) ? kind : 'main', userId).lastInsertRowid;
+      const item = meetings.getItem(agendaItemId);
+      if (item) {
+        voteLedger.appendEvent(item.meeting_id, 'MOTION_CREATED',
+          { agendaItemId, motionVersionId: id, seq: 1, motionText: motionText || null },
+          { agendaItemId, enteredBy: userId, motionVersionId: id });
+      }
+      return this.get(id);
+    }
+    // Rewording the question is not the same edit as naming who moved it.
+    //
+    // motion_text and threshold are the question and the arithmetic: change
+    // either and the ballots already cast answered something else. Mover and
+    // seconder are attribution, and a clerk filling in a seconder they missed
+    // is bookkeeping, not a new motion — so those stay editable throughout.
+    const wantsThreshold = threshold || latest.threshold || 'majority';
+    const changesQuestion = (motionText || null) !== (latest.motion_text || null)
+      || wantsThreshold !== latest.threshold;
+    if (changesQuestion) {
+      if (latest.vote_closed_at) {
+        const e = new Error('This motion has already been voted on. '
+          + 'Move an amendment to put a new question.');
+        e.code = 'MOTION_DECIDED';
+        throw e;
+      }
+      // Ballots, not the open roll.
+      //
+      // The console's motion form lives on the active card, which exists only
+      // once the roll is open — so refusing every edit under an open roll made
+      // the form unusable for the thing it is for. What is actually unsafe is
+      // rewording a question somebody has already answered; before the first
+      // ballot the clerk is still writing down what was moved.
+      if (voteLedger.current(agendaItemId, { throughSeq: null, motionVersionId: latest.id }).size) {
+        const e = new Error('Members have already voted on this question. '
+          + 'Void the roll to reword it, or move an amendment to put a new one.');
+        e.code = 'MOTION_ON_FLOOR';
+        throw e;
+      }
+    }
+    db.prepare(`UPDATE motion_versions
+      SET motion_text = ?, mover_id = ?, seconder_id = ?, threshold = ? WHERE id = ?`)
+      .run(motionText || null, moverId || null, seconderId || null,
+        wantsThreshold, latest.id);
+    return this.get(latest.id);
+  },
+
+  /**
+   * Put a new question on this item.
+   *
+   * The act a body performs when it amends, substitutes, or moves something
+   * incidental during consideration. A version that never took a roll is
+   * marked superseded rather than deleted: it was moved, and the record of a
+   * meeting includes what was moved and withdrawn.
+   */
+  amend(agendaItemId, { motionText, moverId, seconderId, threshold, kind = 'amendment',
+    userId = null } = {}) {
+    const latest = this.latest(agendaItemId);
+    // Ballots, not the roll, are what makes this unsafe.
+    //
+    // A chair opens the roll and a member moves to amend before anybody has
+    // voted: ordinary, and nothing is lost by putting the new question. Once
+    // ballots exist they were cast on the question as it stood, and a new
+    // version would window them out of every tally — the votes would still be
+    // in the ledger and counted by nothing. So that case is refused, and the
+    // clerk voids the roll with a reason instead, which leaves a record of why
+    // the first question was abandoned.
+    if (latest && !latest.vote_closed_at
+      && voteLedger.current(agendaItemId, { throughSeq: null, motionVersionId: latest.id }).size) {
+      const e = new Error('Members have already voted on this question. '
+        + 'Close or void the roll before putting a new one.');
+      e.code = 'BALLOTS_CAST';
+      throw e;
+    }
     const seq = latest ? latest.seq + 1 : 1;
+    // An amendment is subsidiary: it does not withdraw the motion it amends.
+    //
+    // Marking the main motion superseded the moment an amendment was moved
+    // made the minutes read "Main motion: … Withdrawn before the question was
+    // put", which is the opposite of what happened — the body was about to
+    // vote on it, as amended. Only a motion that replaces the question itself
+    // supersedes what came before.
+    const replaces = kind === 'main' || kind === 'substitute';
+    if (replaces) {
+      db.prepare(`UPDATE motion_versions SET superseded_at = datetime('now')
+        WHERE agenda_item_id = ? AND vote_closed_at IS NULL AND superseded_at IS NULL
+          AND kind IN ('main','substitute')`).run(agendaItemId);
+    }
     const id = db.prepare(`INSERT INTO motion_versions
-      (agenda_item_id, seq, motion_text, mover_id, seconder_id, threshold, created_by)
-      VALUES (?,?,?,?,?,?,?)`).run(agendaItemId, seq, motionText || null,
-      moverId || null, seconderId || null, threshold || 'majority', userId).lastInsertRowid;
+      (agenda_item_id, seq, motion_text, mover_id, seconder_id, threshold, kind, created_by)
+      VALUES (?,?,?,?,?,?,?,?)`).run(agendaItemId, seq, motionText || null,
+      moverId || null, seconderId || null,
+      threshold || (latest && latest.threshold) || 'majority',
+      MOTION_KINDS.includes(kind) ? kind : 'amendment', userId).lastInsertRowid;
+    const item = meetings.getItem(agendaItemId);
+    if (item) {
+      voteLedger.appendEvent(item.meeting_id, 'MOTION_AMENDED',
+        { agendaItemId, motionVersionId: id, seq, kind, motionText: motionText || null,
+          supersedes: latest ? latest.id : null },
+        { agendaItemId, enteredBy: userId, motionVersionId: id });
+    }
     return this.get(id);
   },
+
+  /** The roll on one version, written where the version can be read with it. */
+  recordOpen(id) {
+    db.prepare(`UPDATE motion_versions
+      SET vote_opened_at = datetime('now'), vote_closed_at = NULL, result = NULL
+      WHERE id = ?`).run(id);
+  },
+  recordClose(id, result) {
+    db.prepare("UPDATE motion_versions SET vote_closed_at = datetime('now'), result = ? WHERE id = ?")
+      .run(result || null, id);
+  },
+
   get(id) {
     return db.prepare('SELECT * FROM motion_versions WHERE id = ?').get(id);
   },
@@ -3460,10 +3866,67 @@ const motionVersions = {
       'SELECT * FROM motion_versions WHERE agenda_item_id = ? ORDER BY seq DESC LIMIT 1')
       .get(agendaItemId);
   },
+  /**
+   * The whole sequence, with the people named.
+   *
+   * The minutes and the item report both need "moved by X, seconded by Y",
+   * and joining people at every call site is how two screens end up
+   * disagreeing about the same motion.
+   */
   all(agendaItemId) {
-    return db.prepare(
-      'SELECT * FROM motion_versions WHERE agenda_item_id = ? ORDER BY seq').all(agendaItemId);
+    return db.prepare(`
+      SELECT mv.*, mo.full_name AS mover_name, se.full_name AS seconder_name
+      FROM motion_versions mv
+      LEFT JOIN people mo ON mo.id = mv.mover_id
+      LEFT JOIN people se ON se.id = mv.seconder_id
+      WHERE mv.agenda_item_id = ? ORDER BY mv.seq`).all(agendaItemId);
   },
+  /**
+   * The sequence in the words minutes use.
+   *
+   * Phrased once, here, because the meeting page, the per-item report, the
+   * minutes and the packet all have to say the same thing about the same
+   * motion — and a phrase assembled independently at four call sites is four
+   * chances for two screens to describe one vote differently.
+   *
+   * Returns nothing at all for an item with a single motion: that is already
+   * printed as the item's motion line, and a one-entry "sequence" would be an
+   * elaborate way of repeating it.
+   */
+  narrative(agendaItemId) {
+    const all = this.all(agendaItemId);
+    if (all.length < 2) return [];
+    const LABEL = {
+      main: 'Main motion', amendment: 'Amendment',
+      substitute: 'Substitute motion', procedural: 'Procedural motion',
+    };
+    return all.map((m) => {
+      const who = [];
+      if (m.mover_name) who.push(`moved by ${m.mover_name}`);
+      if (m.seconder_name) who.push(`seconded by ${m.seconder_name}`);
+      // A motion replaced after the body amended it was not withdrawn — it was
+      // amended, and the amendment is in this same sequence saying so. Only a
+      // motion replaced with nothing carried against it was given up on.
+      const amended = all.some((o) => o.seq > m.seq && o.kind === 'amendment' && o.result === 'Pass');
+      let outcome = null;
+      if (m.result) outcome = m.result === 'Pass' ? 'Carried' : 'Failed';
+      else if (m.superseded_at && !amended) outcome = 'Withdrawn before the question was put';
+      // A motion is a sentence and is printed as one. Clerks type "That it be
+      // adopted" without a full stop, which ran into the next clause: "That it
+      // be adopted Moved by Daniel Cho".
+      const text = m.motion_text ? m.motion_text.trim() : null;
+      return {
+        seq: m.seq,
+        kind: m.kind || 'main',
+        label: LABEL[m.kind] || 'Motion',
+        text: text && !/[.!?]$/.test(text) ? `${text}.` : text,
+        moved: who.length ? who.join(', ').replace(/^m/, 'M') : null,
+        outcome,
+        threshold: m.threshold,
+      };
+    });
+  },
+  MOTION_KINDS,
 };
 
 const audit = {

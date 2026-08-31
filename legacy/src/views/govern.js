@@ -351,12 +351,21 @@ function membersPage(user) {
     <p class="muted">Set authorized seats on each body (Admin → Bodies), and term dates in the rosters below.</p>`);
 
   // Current rosters with remove-propose (clerk only)
+  // The roster, reconciled against the roll it is supposed to describe.
+  //
+  // This listed every row in body_members while the quorum denominator came
+  // from votingRoll() — a different list — and nothing here said which was
+  // which. A body could show eight members and take its quorum from five, and
+  // both numbers were right about different questions. The seat count printed
+  // beside the body name was counting the wrong one.
   const rosterCards = allBodies.map((b) => {
-    const members = repo.bodies.members(b.id);
+    const members = repo.bodies.seatStatus(b.id);
     const rows = members.length ? members.map((mm) => html`
-      <tr>
-        <td><a href="/people/${mm.person_id}">${mm.full_name}</a></td>
-        <td>${mm.role || 'Member'}</td>
+      <tr class="${mm.onRoll ? '' : 'off-roll'}">
+        <td><a href="/people/${mm.person_id}">${mm.full_name}</a>${mm.contradiction
+    ? raw(`<div class="seat-flag">${escapeText(mm.contradiction)}</div>`) : ''}</td>
+        <td>${mm.role || 'Member'}${mm.onRoll
+    ? '' : raw(`<div class="muted seat-why">${escapeText(mm.reason)}</div>`)}</td>
         <td>${isClerk ? raw(`
           <form class="inline term-form" method="post" action="/govern/members/${mm.id}/term" title="Term dates">
             <input type="date" name="start_date" value="${escapeText(mm.start_date || '')}" aria-label="Term start">
@@ -367,8 +376,13 @@ function membersPage(user) {
     ? `<span class="muted">Concluded ${escapeText(mm.end_date)}${mm.end_reason ? ` · ${escapeText(mm.end_reason)}` : ''}</span>`
     : `<a class="btn-link" href="/govern/members/retire?member=${mm.id}">Retire…</a>`) : ''}</td>
       </tr>`).join('') : `<tr><td colspan="4" class="muted">No members.</td></tr>`;
+    // Seats filled is about occupancy; votes is what a quorum is taken from.
+    // They are different numbers and were printed as one.
+    const voting = members.filter((m) => m.onRoll).length;
     const seatNote = b.seats != null
-      ? ` — ${members.length}/${b.seats} seats${b.seats > members.length ? `, ${b.seats - members.length} vacant` : ''}` : '';
+      ? ` — ${members.length}/${b.seats} seats${b.seats > members.length ? `, ${b.seats - members.length} vacant` : ''}`
+        + (voting === members.length ? '' : `, ${voting} voting`)
+      : '';
     return card(b.name + seatNote,
       `<table class="data compact"><thead><tr><th>Member</th><th>Role</th><th>Term</th><th></th></tr></thead><tbody>${rows}</tbody></table>`);
   }).join('');

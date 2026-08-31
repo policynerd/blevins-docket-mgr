@@ -824,11 +824,19 @@ function agendaManager(meeting, query) {
 //
 // It flags rather than blocks. A clerk may have reason to agendise something
 // unfinished; the point is that they should know they are doing it.
+//
+// The reasons are printed, not hovered. They were in a `title` attribute,
+// which is invisible on a touch screen, invisible in a printed agenda packet,
+// and invisible to anyone who does not happen to rest a pointer on a badge
+// they have no reason to suspect is hiding anything. "Not ready" without the
+// reason is a verdict with no appeal: it tells a clerk to go looking without
+// saying where. The reasons are two short phrases; there is room for them.
 function readyFlag(matter) {
   const { ready, reasons } = repo.matters.readiness(matter);
   if (ready) return '<span class="badge st-passed">Ready</span>';
-  const why = reasons.map((r) => r.label).join('; ');
-  return `<span class="badge st-draft" title="${escapeText(why)}">Not ready</span>`;
+  const why = reasons.map((r) => escapeText(r.label)).join('; ');
+  return `<span class="badge st-draft">Not ready</span>`
+    + `<div class="rq-why">${why}</div>`;
 }
 
 function readyQueue(meeting) {

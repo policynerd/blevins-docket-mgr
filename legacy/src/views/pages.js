@@ -783,9 +783,21 @@ function meetingDetail(meeting, query = {}, user = null) {
     }
     const mover = it.mover_id ? repo.people.get(it.mover_id) : null;
     const seconder = it.seconder_id ? repo.people.get(it.seconder_id) : null;
-    const motionLine = (it.motion_text || mover || seconder)
-      ? `<div class="sub">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
-      : '';
+    // The motion as it ended up, and — where the body amended — how it got
+    // there. An item that was moved, amended and adopted as amended carries
+    // one motion_text, so this line alone said what was adopted and never that
+    // it had been anything else.
+    const sequence = repo.motionVersions.narrative(it.id);
+    const motionLine = sequence.length
+      ? `<ol class="motion-seq">${sequence.map((m) => `<li>`
+          + `<span class="ms-kind">${escapeText(m.label)}</span>`
+          + `${m.text ? ' ' + escapeText(m.text) : ''}`
+          + `${m.moved ? `<span class="sub"> ${escapeText(m.moved)}</span>` : ''}`
+          + `${m.outcome ? ` <span class="ms-outcome">— ${escapeText(m.outcome)}</span>` : ''}`
+          + `</li>`).join('')}</ol>`
+      : ((it.motion_text || mover || seconder)
+        ? `<div class="sub">${it.motion_text ? escapeText(it.motion_text) + ' · ' : ''}${mover ? 'Moved by ' + escapeText(mover.full_name) : ''}${seconder ? ', seconded by ' + escapeText(seconder.full_name) : ''}</div>`
+        : '');
     const fileCell = it.matter_id
       ? `<a href="/legislation/${encodeURIComponent(it.file_number)}">${escapeText(it.file_number)}</a><div class="sub">${escapeText(it.matter_type)}</div>`
       : '';

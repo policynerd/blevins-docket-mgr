@@ -774,10 +774,74 @@ const COLUMN_MIGRATIONS = {
     // all go on working unchanged, taking one roll on one item — and the items
     // it covers point at it. Nothing about how a vote is recorded changes;
     // what changes is how many items one recorded vote disposes of.
+    // When the body actually reached this item.
+    //
+    // sort_order is the order the agenda was *written* in. A meeting takes
+    // items out of order — by unanimous consent, or because somebody is late —
+    // and the record had no way to say so: the minutes could report what was
+    // decided but never that item 7 was taken before item 4.
+    //
+    // For reading, not for ordering. datetime('now') resolves to the second,
+    // which cannot separate two items taken in the same minute — the order
+    // the body took things in comes from the ROLL_OPENED events, whose seq is
+    // monotonic and cannot be backdated.
+    reached_at: 'TEXT',
+    // Laid on the table.
+    //
+    // 'Tabled' existed only as a matter status, inferred by regex from
+    // whatever action text the clerk typed. The item itself had no such state,
+    // so an agenda carrying a tabled item could not show it, and the item sat
+    // at 'pending' for ever alongside items genuinely still to come.
+    tabled_at: 'TEXT',
+    tabled_reason: 'TEXT',
+    // When the clerk finished with this item on the console.
+    //
+    // Closing a roll closes the roll; the item stays on the board because the
+    // live snapshot falls back to the last decided item so the room can still
+    // read the result. That is right until the clerk is done with it, and
+    // there was no way to say so — the only exits were opening another item or
+    // giving somebody the floor. This records the saying-so. It is not part of
+    // the vote record: clearing changes nothing about what was decided.
+    cleared_at: 'TEXT',
     consent_group_id: 'INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL',
     // Marks the group item itself, so it can be told from an ordinary item
     // that happens to have nothing pointing at it yet.
     is_consent_group: 'INTEGER NOT NULL DEFAULT 0',
+  },
+  // The motion as the body actually amended it.
+  //
+  // motion_versions has existed since the vote ledger did, and nothing wrote
+  // to it: `agenda_items` carried one motion_text, one mover, one threshold,
+  // one result, so a question that was moved, amended, and then voted on as
+  // amended could be recorded only as its last state. The record said what
+  // was adopted and never that it had been changed, or by whom, or that the
+  // amendment itself was voted on first. These columns give each version the
+  // roll taken on it, so the sequence is a record of proceedings rather than
+  // a single surviving outcome.
+  motion_versions: {
+    // What kind of motion this is against the one before it. The main
+    // question, an amendment to it, a substitute for it, or a procedural
+    // motion taken during its consideration.
+    kind: "TEXT NOT NULL DEFAULT 'main'",
+    // The roll on this version, if one was taken. The item keeps its own
+    // result — the disposition of the business — and these say how the body
+    // got there.
+    vote_opened_at: 'TEXT',
+    vote_closed_at: 'TEXT',
+    result: 'TEXT',
+    // Set when a later version replaced this one without a vote: a motion
+    // withdrawn, or reworded before the question was put.
+    superseded_at: 'TEXT',
+  },
+  // Which motion a ballot, an opening, or a close belongs to.
+  //
+  // The payload has carried motionVersionId since the ledger was written; it
+  // was always null and nothing could query it without parsing JSON. This is
+  // the index for it, and it is only an index: the hash is taken over the
+  // payload, so adding the column changes no entry's hash and no chain
+  // verifies differently because of it.
+  session_events: {
+    motion_version_id: 'INTEGER REFERENCES motion_versions(id)',
   },
   matters: {
     body_html: 'TEXT',

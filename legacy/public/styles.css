@@ -882,6 +882,28 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 .la-myvote { margin-top: 14px; padding: 14px; background: var(--gold-dim); border: 1px solid var(--gold-line); border-radius: 4px; display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap; }
 .vote-btn { background: var(--accent); }
 .la-actions { margin-top: 16px; }
+/* The clerk's controls as a sequence.
+   Close, announce, certify, publish, clear is a fixed order, and the bar used
+   to draw whichever steps were available as buttons of equal weight — so the
+   act the meeting was waiting on looked identical to the one that abandons it.
+   The trail marks where the item is; exactly one button below is primary. */
+.la-steps { list-style: none; display: flex; flex-wrap: wrap; gap: var(--s3); padding: 0;
+  margin: 0 0 12px; font-size: var(--t-small); color: var(--muted); }
+.la-step { display: flex; align-items: center; gap: var(--s2); }
+.la-step + .la-step::before { content: ''; width: 14px; height: 1px; background: var(--line);
+  margin-right: var(--s2); }
+.la-step-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--line);
+  background: #fff; flex: none; }
+.la-step.done { color: var(--good); }
+.la-step.done .la-step-dot { background: var(--good); border-color: var(--good); }
+.la-step.current { color: var(--accent-dark); font-weight: 600; }
+.la-step.current .la-step-dot { border-color: var(--accent-dark); box-shadow: 0 0 0 3px var(--accent-soft); }
+.la-act-row { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center; }
+.la-act-aside { display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  margin-top: 10px; font-size: var(--t-small); }
+/* A tabled item is neither pending nor decided. It stays legible and stops
+   competing for attention with the items still to come. */
+.live-ag-item.tabled .lai-title { color: var(--muted); }
 .outcome-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 4px; background: var(--accent-soft); border: 1px solid var(--line); margin-bottom: 14px; font-size: var(--t-body); }
 .ob-sep { color: var(--muted); }
 .ob-threshold { color: var(--muted); }
@@ -895,6 +917,31 @@ textarea.mono, .mono { font-family: "Cascadia Code", ui-monospace, Menlo, Consol
 .la-motion-fields { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 4px; margin-top: 6px; }
 .la-motion-fields label { display: flex; flex-direction: column; gap: var(--s2); font-size: var(--t-small); font-weight: 600; color: var(--muted); }
 .la-motion-fields select, .la-motion-fields input { font-size: var(--t-body); padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; }
+.la-mf-wide { flex: 1 1 320px; }
+.la-mf-wide input { width: 100%; }
+.la-amend-note { flex: 1 1 100%; margin: 0; font-size: var(--t-small); }
+/* How the body got to the question on the floor. An item that was moved,
+   amended and put again as amended holds three motions and two rolls; the
+   item's own fields carry only the last of them. */
+.la-motions { margin-bottom: 14px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--accent-soft); }
+.la-motions-head { font-size: var(--t-small); font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; padding: 8px 12px 0; }
+.la-motions ol { list-style: none; margin: 0; padding: 8px 12px 12px; }
+.la-motions li { padding: 8px 0 8px 14px; border-left: 2px solid var(--line); }
+.la-motions li + li { margin-top: 2px; }
+.la-motions li.current { border-left-color: var(--gold-dark); }
+.lm-kind { font-size: var(--t-small); font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; margin-right: var(--s3); }
+.lm-text { font-size: var(--t-body); margin-top: var(--s2); }
+.lm-who { font-size: var(--t-small); margin-top: var(--s1); }
+/* The motion sequence on the meeting page, where the item is a record rather
+   than a control. Printed only when the body actually amended. */
+.motion-seq { list-style: none; margin: var(--s2) 0 0; padding: 0; font-size: var(--t-small); }
+.motion-seq li { padding: var(--s1) 0 var(--s1) 10px; border-left: 2px solid var(--line);
+  color: var(--muted); }
+.ms-kind { font-weight: 600; color: var(--ink); }
+.ms-outcome { font-weight: 600; }
 .live-agenda { list-style: none; padding: 0; margin: 0; }
 .live-ag-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .lai-title { flex: 1; }
@@ -993,6 +1040,19 @@ table.data.sortable thead th { padding: 0; }
 .topic-notice { background: var(--gold-dim); border: 1px solid var(--gold-line); border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; font-size: var(--t-body); }
 .att-list li { display: flex; gap: 10px; align-items: center; }
 
+/* The consent calendar, on the clerk's console
+   ------------------------------------------------------------------------
+   What one roll is about to dispose of, named on the card the vote is taken
+   from. It was on the wall board and not here, so the person taking the vote
+   could not see what they were carrying. */
+.la-consent { margin: var(--s4) 0; padding: var(--s4) var(--s5);
+  background: var(--stone); border-left: 3px solid var(--accent); border-radius: 4px; }
+.la-consent-head { font-size: var(--t-micro); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; margin-bottom: var(--s3); }
+.la-consent ol { margin: 0; padding-left: 1.4em; }
+.la-consent li { font-size: var(--t-body); line-height: 1.5; }
+.lai-note { font-size: var(--t-micro); font-style: italic; }
+
 /* Line-numbered comparative print
    ------------------------------------------------------------------------
    How an amendment is cited: "page 4, line 12". The number column is
@@ -1025,6 +1085,10 @@ table.data.sortable thead th { padding: 0; }
   font-size: var(--t-body); }
 .ir-files, .ir-carried { margin: 0; padding-left: 1.3em; }
 .ir-files li, .ir-carried li { margin-bottom: 4px; }
+/* The motion sequence on a per-item report, which is a printed document: a
+   numbered list, because the order is the point. */
+.ir-motions { margin: 0; padding-left: 1.3em; }
+.ir-motions li { margin-bottom: 6px; }
 .ir-provenance { color: var(--muted); font-size: var(--t-micro); border-top: 1px solid var(--line);
   padding-top: var(--s4); margin-top: var(--s7); }
 
@@ -1235,6 +1299,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .ready-queue label { display: block; cursor: pointer; font-weight: inherit; margin: 0; }
 .ready-queue tbody tr:hover td { background: var(--gold-dim); }
 .rq-material { font-size: var(--t-small); white-space: nowrap; }
+/* Why a file is not ready, printed on the row. This was a title tooltip:
+   invisible on a touch screen, invisible in print, invisible to anyone not
+   hovering a badge they had no reason to suspect was hiding anything. */
+.rq-why { font-size: var(--t-small); color: var(--muted); margin-top: var(--s2); max-width: 20ch; }
+/* A roster row that holds a seat but is not on the voting roll, and a row
+   whose recorded title contradicts the seat record it describes. */
+.off-roll td { background: var(--stone); }
+.seat-why { font-size: var(--t-small); }
+.seat-flag { font-size: var(--t-small); color: var(--gold-dark); margin-top: var(--s2); }
 .rq-actions { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end;
   gap: var(--s5); margin-top: var(--s5); padding-top: var(--s5);
   border-top: 1px solid var(--line-soft); }

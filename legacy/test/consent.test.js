@@ -98,6 +98,46 @@ test('one roll disposes of every item on the calendar', () => {
   assert.equal(opened[0].agenda_item_id, group.id);
 });
 
+test('a carried item reads as voted, not merely as having a result', () => {
+  // The bug this fixes: closeRoll set the result and stamped
+  // result_computed_at but left vote_status at 'pending', so every screen that
+  // asks "has this been voted?" — the agenda manager, the console's item list,
+  // the minutes, the per-item report — answered no while a result hung off the
+  // row. The calendar worked and looked as though it had not.
+  const { meetingId, items } = newMeeting(2);
+  const group = repo.meetings.groupIntoConsent(meetingId, items);
+  repo.voteAdmin.openRoll(group.id);
+  carry(group.id, 'Yea');
+  repo.voteAdmin.closeRoll(group.id);
+
+  const closedAt = repo.meetings.getItem(group.id).vote_closed_at;
+  for (const id of items) {
+    const it = repo.meetings.getItem(id);
+    assert.equal(it.vote_status, 'closed', 'a carried item is voted');
+    assert.ok(it.vote_closed_at, 'and carries the instant it was decided');
+    assert.equal(it.vote_closed_at, closedAt,
+      'which is the calendar\'s own close, not a later moment of bookkeeping');
+  }
+});
+
+test('an item on a calendar is not offered as separately votable', () => {
+  // The console read this off the snapshot and offered "Open voting" on every
+  // row, including the ones the repo refuses — a button whose only outcome is
+  // a 409.
+  const { meetingId, items } = newMeeting(2);
+  const group = repo.meetings.groupIntoConsent(meetingId, items);
+  const live = require('../src/live');
+  const snap = live.snapshot ? live.snapshot(meetingId) : null;
+  if (snap) {
+    const rows = new Map(snap.items.map((i) => [i.id, i]));
+    for (const id of items) {
+      assert.ok(rows.get(id).onConsentCalendar, 'a carried item says where it votes');
+    }
+    assert.equal(rows.get(group.id).isConsentGroup, true);
+    assert.equal(rows.get(group.id).onConsentCalendar, null);
+  }
+});
+
 test('a failed calendar carries the failure to every item on it', () => {
   const { meetingId, items } = newMeeting(2);
   const group = repo.meetings.groupIntoConsent(meetingId, items);

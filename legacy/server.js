@@ -2307,6 +2307,35 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
   sendJson(res, { ok: true, reopened: r.reopened });
 });
 
+// Lay an item on the table, or take it back up.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/table$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  try {
+    if (item.tabled_at) repo.voteAdmin.untable(item.id, { userId: ctx.user ? ctx.user.id : null });
+    else {
+      repo.voteAdmin.table(item.id, {
+        reason: ctx.body && ctx.body.reason,
+        userId: ctx.user ? ctx.user.id : null,
+      });
+    }
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 409);
+  }
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true, tabled: !item.tabled_at });
+});
+
+// Done with an item: take it off the board. Not part of the vote lifecycle —
+// it records nothing and changes no result.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/clear$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  repo.voteAdmin.clear(item.id);
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+
 /**
  * Void a vote. Distinct from reopening — see repo.voteAdmin.
  */
@@ -2389,18 +2418,83 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/close$/, (req, res, ctx) => {
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true, result, tally: outcome });
 });
+// Stating the motion as it stands.
+//
+// The item's own fields are what every screen reads, and the motion version is
+// what the ballots bind to; both are written here so they cannot drift. This
+// is not an amendment — see /amend below — so the repo refuses it if it would
+// reword a question already before the body or already decided.
 route('POST', /^\/admin\/agenda-items\/(\d+)\/motion$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
   if (!item) return sendJson(res, { error: 'Not found' }, 404);
   const b = ctx.body;
-  repo.meetings.setMotion(item.id, {
+  const motion = {
     mover_id: b.mover_id ? Number(b.mover_id) : null,
     seconder_id: b.seconder_id ? Number(b.seconder_id) : null,
     motion_text: b.motion_text || null,
     vote_threshold: b.vote_threshold || undefined,
-  });
+  };
+  try {
+    repo.motionVersions.ensure(item.id, {
+      motionText: motion.motion_text,
+      moverId: motion.mover_id,
+      seconderId: motion.seconder_id,
+      threshold: motion.vote_threshold,
+      userId: ctx.user ? ctx.user.id : null,
+    });
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 409);
+  }
+  repo.meetings.setMotion(item.id, motion);
   live.pushUpdate(item.meeting_id);
   sendJson(res, { ok: true });
+});
+
+// Putting a new question on the same item.
+//
+// An amendment, a substitute, or a procedural motion taken during
+// consideration. Each is its own version with its own roll and its own result,
+// so the record carries the sequence — moved, amended, adopted as amended —
+// rather than only whatever the motion text said last.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/amend$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  const b = ctx.body;
+  const text = String(b.motion_text || '').trim();
+  if (!text) return sendJson(res, { error: 'A motion needs its text.' }, 400);
+  let version;
+  try {
+    version = repo.motionVersions.amend(item.id, {
+      motionText: text,
+      moverId: b.mover_id ? Number(b.mover_id) : null,
+      seconderId: b.seconder_id ? Number(b.seconder_id) : null,
+      threshold: b.vote_threshold || undefined,
+      kind: b.kind || 'amendment',
+      userId: ctx.user ? ctx.user.id : null,
+    });
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 409);
+  }
+  // The item shows the question now before the body. Its own result is left
+  // alone: the vote on the amendment stands, and the item's disposition is
+  // settled by whichever roll turns out to be the last.
+  repo.meetings.setMotion(item.id, {
+    mover_id: version.mover_id,
+    seconder_id: version.seconder_id,
+    motion_text: version.motion_text,
+    vote_threshold: version.threshold,
+  });
+  // A question put is a question before the body, and the console offers the
+  // cast buttons for it immediately. Without opening the roll here the ledger
+  // would take ballots on a roll it has no record of opening — votes hanging
+  // off a version whose consideration never began.
+  try {
+    repo.voteAdmin.openRoll(item.id, { userId: ctx.user ? ctx.user.id : null });
+  } catch (e) {
+    return sendJson(res, { error: e.message }, 409);
+  }
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true, seq: version.seq, kind: version.kind });
 });
 route('POST', /^\/admin\/agenda-items\/(\d+)\/cast$/, (req, res, ctx) => {
   const item = repo.meetings.getItem(Number(ctx.params[0]));
