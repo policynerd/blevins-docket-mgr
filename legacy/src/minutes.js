@@ -30,6 +30,34 @@ function generate(meetingId) {
     out.push('</ul>');
   }
 
+  // Business taken out of the order it was printed in.
+  //
+  // The minutes are laid out in agenda order, which is right — a reader
+  // follows the printed agenda — but a meeting departs from it, by unanimous
+  // consent or because somebody is late, and the record had no way to say so.
+  // The order comes from the ledger, not from the clock. `reached_at` is
+  // stamped with datetime('now'), which resolves to the second — fine for a
+  // person reading it, useless for ordering two items taken in the same
+  // minute. The chain's seq is monotonic and cannot be backdated, so the
+  // ROLL_OPENED events say exactly what order the body took things in.
+  //
+  // Only the items that jumped are marked. Marking every item in a meeting
+  // that once departed from its agenda would say nothing.
+  const firstOpened = new Map();
+  for (const e of repo.voteLedger.forMeeting(meetingId)) {
+    if (e.event_type !== 'ROLL_OPENED' || !e.agenda_item_id) continue;
+    if (!firstOpened.has(e.agenda_item_id)) firstOpened.set(e.agenda_item_id, e.seq);
+  }
+  const outOfOrder = new Set();
+  let furthest = -Infinity;
+  for (const i of items.slice().sort((a, b) =>
+    (firstOpened.get(a.id) ?? Infinity) - (firstOpened.get(b.id) ?? Infinity))) {
+    if (!firstOpened.has(i.id)) continue;
+    const place = Number(i.sort_order ?? 0);
+    if (place < furthest) outOfOrder.add(i.id);
+    else furthest = place;
+  }
+
   // Agenda items
   let lastSection = null;
   for (const it of items) {
@@ -41,6 +69,7 @@ function generate(meetingId) {
       ? `${escapeHtml(it.agenda_number || '')} ${escapeHtml(it.file_number)} — ${escapeHtml(it.matter_title)}`
       : `${escapeHtml(it.agenda_number || '')} ${escapeHtml(it.title || '')}`;
     out.push(`<p><strong>${heading.trim()}</strong></p>`);
+    if (outOfOrder.has(it.id)) out.push('<p><em>Taken out of order.</em></p>');
 
     // Laid on the table.
     //

@@ -230,3 +230,42 @@ test('an ordinary title is not mistaken for a contradiction', () => {
   repo.bodies.addMember(b, p, 'Member', 1, {});
   assert.equal(repo.bodies.seatStatus(b)[0].contradiction, null);
 });
+
+// --- Business taken out of order ----------------------------------------------
+
+test('the minutes say when business was taken out of order', () => {
+  // The minutes are laid out in agenda order, which is right — a reader
+  // follows the printed agenda — but a meeting departs from it, and the record
+  // had no way to say so. This is what reached_at is for; without it the
+  // column is decoration.
+  const minutes = require('../src/minutes');
+  const { meetingId, items } = newMeeting(3);
+  repo.voteAdmin.openRoll(items[2]);
+  carry(items[2], 'Yea');
+  repo.voteAdmin.closeRoll(items[2]);
+  repo.voteAdmin.openRoll(items[0]);
+  carry(items[0], 'Yea');
+  repo.voteAdmin.closeRoll(items[0]);
+
+  const html = minutes.generate(meetingId);
+  assert.equal((html.match(/Taken out of order/g) || []).length, 1,
+    'exactly the item that jumped is marked');
+  // It is the first item — reached after the third, which is printed below it.
+  const first = html.indexOf('Item 1');
+  const note = html.indexOf('Taken out of order');
+  const second = html.indexOf('Item 2');
+  assert.ok(first < note && note < second, 'and it is marked on that item');
+});
+
+test('a meeting taken in its printed order says nothing about order', () => {
+  // Marking every item in a meeting that once departed from its agenda would
+  // say nothing at all.
+  const minutes = require('../src/minutes');
+  const { meetingId, items } = newMeeting(3);
+  for (const id of items) {
+    repo.voteAdmin.openRoll(id);
+    carry(id, 'Yea');
+    repo.voteAdmin.closeRoll(id);
+  }
+  assert.doesNotMatch(minutes.generate(meetingId), /Taken out of order/);
+});

@@ -780,6 +780,11 @@ const COLUMN_MIGRATIONS = {
     // items out of order — by unanimous consent, or because somebody is late —
     // and the record had no way to say so: the minutes could report what was
     // decided but never that item 7 was taken before item 4.
+    //
+    // For reading, not for ordering. datetime('now') resolves to the second,
+    // which cannot separate two items taken in the same minute — the order
+    // the body took things in comes from the ROLL_OPENED events, whose seq is
+    // monotonic and cannot be backdated.
     reached_at: 'TEXT',
     // Laid on the table.
     //
