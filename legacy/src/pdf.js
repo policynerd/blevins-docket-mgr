@@ -6,6 +6,8 @@ const repo = require('./repo');
 const { formatDate, formatDateTime } = require('./util');
 const { Doc, MUTED: MUTED2 } = require('./pdfdoc');
 const documents = require('./documents');
+const render = require('./render');
+const docprint = require('./docprint');
 const upload = require('./upload');
 const fs = require('node:fs');
 
@@ -87,6 +89,24 @@ async function generatePacket(meeting) {
     return pages.length;
   };
 
+  /**
+   * One sheet of the packet's own furniture — a cover, a divider, a separator.
+   *
+   * HTML through the browser where there is one, and the drawn version where
+   * there is not. Every caller gets bytes either way, so a container without
+   * the browser package still assembles a complete packet; it just assembles
+   * the one that was drawn.
+   */
+  const sheet = async (html, drawn) => {
+    if (render.available()) {
+      try { return await render.render(html, { footerTemplate: packetFooter }); } catch (_) {
+        // Fall through. A fault in the markup throws before this, while the
+        // string is being built, so a real bug still surfaces.
+      }
+    }
+    return drawn();
+  };
+
   // Generate a document, but never let one bad item take the whole packet
   // down. A packet that fails entirely on the morning of a meeting is worse
   // than one that names what is missing, and the name is what lets a clerk
@@ -102,6 +122,15 @@ async function generatePacket(meeting) {
   // No page count in this footer: the front matter does not know how long the
   // packet is, and reporting its own length here read "1 of 1" on the cover of
   // a twelve-page packet. Packet-wide numbering is stamped after the merge.
+  const packetFooter = docprint.footerPlain(`${ORG.name} \u00b7 Agenda packet`);
+  const entries = rows.filter((r) => r.included).map((r) => {
+    const it = r.item;
+    return {
+      tab: r.tab ? `Tab ${r.tab}` : '',
+      label: (it.agenda_number ? `${it.agenda_number}. ` : '')
+        + (it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)')),
+    };
+  });
   const front = await Doc.create({
     footer: (d) => {
       d.at(d.margin.left, d.margin.bottom - 26, `${ORG.name} \u00b7 Agenda packet`,
@@ -147,7 +176,9 @@ async function generatePacket(meeting) {
     // this one" without claiming anything.
     front.field(tab, `${num}${title}`, { size: 10.5, labelW: 52, after: 3 });
   }
-  await merge(await front.save());
+  await merge(await sheet(
+    docprint.packetCover(meeting, formatDateTime(meeting.meeting_date, meeting.meeting_time), entries),
+    () => front.save()));
 
   // --- Each item's material, behind its tab ---
   for (const r of rows) {
@@ -158,16 +189,21 @@ async function generatePacket(meeting) {
     const matter = it.matter_id ? repo.matters.get(it.matter_id) : null;
 
     // Divider: what this tab is, so a packet opened at random is navigable.
-    const div = await Doc.create({});
-    div.gap(150);
-    div.text(`TAB ${r.tab}`, { size: 28, style: 'b', align: 'center', after: 14 });
-    if (it.agenda_number) {
-      div.text(`Agenda item ${it.agenda_number}`, { size: 12, style: 'sans', color: MUTED2, align: 'center', after: 8 });
-    }
-    div.text(matter ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || ''),
-      { size: 13, align: 'center', after: 6 });
-    if (it.section) div.text(it.section, { size: 10, style: 'sans', color: MUTED2, align: 'center' });
-    await merge(await div.save());
+    const dividerTitle = matter ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '');
+    await merge(await sheet(
+      docprint.divider({ tab: r.tab, agendaNumber: it.agenda_number,
+        title: dividerTitle, section: it.section }),
+      async () => {
+        const div = await Doc.create({});
+        div.gap(150);
+        div.text(`TAB ${r.tab}`, { size: 28, style: 'b', align: 'center', after: 14 });
+        if (it.agenda_number) {
+          div.text(`Agenda item ${it.agenda_number}`, { size: 12, style: 'sans', color: MUTED2, align: 'center', after: 8 });
+        }
+        div.text(dividerTitle, { size: 13, align: 'center', after: 6 });
+        if (it.section) div.text(it.section, { size: 10, style: 'sans', color: MUTED2, align: 'center' });
+        return div.save();
+      }));
 
     if (matter) {
       await merge(await safely(`${it.file_number} board letter`,
@@ -206,10 +242,7 @@ async function generatePacket(meeting) {
       // Uploaded first: a file held on the volume is the copy this board
       // controls, and it needs no network to bind.
       const bytes = localPdfBytes(f) || (f.url ? await fetchPdfBytes(f.url) : null);
-      const sep = await Doc.create({});
-      sep.gap(120);
-      sep.text(f.kind.toUpperCase(), { size: 10, style: 'sans', color: MUTED2, align: 'center', after: 8 });
-      sep.text(f.name, { size: 14, style: 'b', align: 'center', after: 8 });
+      let sepNote = null;
       if (!bytes) {
         // Three different reasons, which want three different answers. A Word
         // document is not a retrieval failure and never will be: telling a
@@ -217,18 +250,28 @@ async function generatePacket(meeting) {
         // know is that it has to be converted or handed round separately.
         const notPdf = /\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || '')
           || (f.file_path && !/\.pdf$/i.test(f.file_path));
-        sep.text(notPdf
+        sepNote = notPdf
           ? 'This document is not a PDF and cannot be bound into the packet. '
             + 'Convert it to PDF to include it, or distribute it separately.'
           : (f.url
             ? 'This document is stored outside the packet and could not be retrieved when the packet was built.'
-            : 'This document has no file or link attached to it.'),
-        { size: 10.5, style: 'i', color: MUTED2, align: 'center' });
-        if (f.url && !notPdf) sep.text(f.url, { size: 9, color: MUTED2, align: 'center' });
+            : 'This document has no file or link attached to it.');
         problems.push(`${it.file_number || it.title}: ${f.name} `
           + (notPdf ? 'is not a PDF and was not bound' : 'could not be bound'));
       }
-      await merge(await sep.save());
+      const sepUrl = (!bytes && f.url && !/\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || ''))
+        ? f.url : null;
+      await merge(await sheet(
+        docprint.separator({ kind: f.kind, name: f.name, note: sepNote, url: sepUrl }),
+        async () => {
+          const sep = await Doc.create({});
+          sep.gap(120);
+          sep.text(f.kind.toUpperCase(), { size: 10, style: 'sans', color: MUTED2, align: 'center', after: 8 });
+          sep.text(f.name, { size: 14, style: 'b', align: 'center', after: 8 });
+          if (sepNote) sep.text(sepNote, { size: 10.5, style: 'i', color: MUTED2, align: 'center' });
+          if (sepUrl) sep.text(sepUrl, { size: 9, color: MUTED2, align: 'center' });
+          return sep.save();
+        }));
       if (bytes) await safely(`${f.name}`, () => merge(bytes));
     }
   }
