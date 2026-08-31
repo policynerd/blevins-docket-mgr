@@ -132,21 +132,39 @@ async function boardLetter(matter, opts = {}) {
   doc.rule({ after: 14 });
 
   // --- Member roster down the left rail ---
+  //
+  // Labelled, because seven names alone in a margin say nothing about what
+  // they are — a reader has no way to tell a membership roster from a
+  // distribution list or a list of sponsors.
+  //
+  // And labelled with the office where there is one. members() orders by
+  // Chair, then Vice Chair, then name; the sub-label showed the district, so
+  // the rail read "Seat 1, Seat 2, At-Large, Seat 3, Seat 5, Seat 6, Seat 4"
+  // — an order with no visible reason, which reads as a sorting bug. Printing
+  // the office that put those two at the top explains the order on the page.
   let railY = doc.size.h - 60;
+  doc.at(72, railY, 'MEMBERS', { size: 7, style: 'sansB', color: MUTED });
+  railY -= 14;
   for (const m of members) {
     doc.at(72, railY, m.full_name.toUpperCase(), { size: 8, style: 'sansB' });
     railY -= 10;
-    const sub = m.district || m.role || '';
+    const office = m.role && m.role !== 'Member' ? m.role : '';
+    const sub = office && m.district ? `${office} · ${m.district}`
+      : (office || m.district || '');
     if (sub) { doc.at(72, railY, sub, { size: 7.5, style: 'sans', color: MUTED }); railY -= 10; }
     railY -= 5;
     if (railY < 140) break;
   }
 
   // --- Head matter ---
+  // Three labelled values, in a column. These were padded with spaces —
+  // `DATE:  `, `TO:    ` — which aligns nothing: the layout draws word by word
+  // at computed positions, so the padding is gone before anything reaches the
+  // page. The values landed at x=232.0, 219.4 and 227.7.
   const when = opts.date || matter.intro_date || null;
-  doc.text(`DATE:  ${when ? formatDate(when) : '________________'}`, { size: 10.5, after: 4 });
-  doc.text(`TO:    ${bodyName}`, { size: 10.5, after: 4 });
-  doc.text(`FILE:  ${matter.file_number}`, { size: 10.5, after: 12 });
+  doc.field('DATE:', when ? formatDate(when) : '________________', { size: 10.5, after: 4 });
+  doc.field('TO:', bodyName, { size: 10.5, after: 4 });
+  doc.field('FILE:', matter.file_number, { size: 10.5, after: 12 });
 
   doc.heading('SUBJECT', { size: 11 });
   doc.text(subject, { size: 11, style: 'b', after: 12 });
