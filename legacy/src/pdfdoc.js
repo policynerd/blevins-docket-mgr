@@ -410,6 +410,42 @@ class Doc {
   }
 
   // Absolute placement, for mastheads and footers that sit outside the flow.
+  /**
+   * A label and its value, in two columns.
+   *
+   * The pattern this replaces was padding: `DATE:  ${when}`, `TO:    ${body}`,
+   * with runs of spaces meant to line the values up. It cannot work here and
+   * never did. Text is laid out word by word at computed x positions, so runs
+   * of whitespace are collapsed to a single inter-word gap before anything is
+   * drawn — and even if they survived, a proportional font has no space wide
+   * enough to align against varying label widths. The board letter's three
+   * head-matter values landed at x=232.0, 219.4 and 227.7: a ragged column
+   * that reads as a fault, from code that looks like it is aligning something.
+   *
+   * `labelW` is the column, measured from the left margin. The value wraps
+   * inside the remaining width and hangs to the column, so a long value's
+   * second line sits under the first rather than under the label.
+   *
+   * An empty label still consumes the column, which is how a list mixing
+   * labelled and unlabelled rows keeps one left edge for its values.
+   */
+  field(label, value, opts = {}) {
+    const size = opts.size || 10.5;
+    const labelW = opts.labelW || 52;
+    if (label) {
+      // Drawn, not flowed: the label is one short string that must not wrap,
+      // and flowing it would advance y before the value is placed.
+      this.need(size * 1.32);
+      this.at(this.margin.left, this.y - size, String(label),
+        { size, style: opts.labelStyle || opts.style, color: opts.labelColor || opts.color });
+    }
+    return this.text(String(value == null ? '' : value), Object.assign({}, opts, {
+      indent: labelW,
+      hanging: 0,
+      size,
+    }));
+  }
+
   at(x, y, str, opts = {}) {
     const size = opts.size || 9;
     this.page.drawText(String(str == null ? '' : str), {

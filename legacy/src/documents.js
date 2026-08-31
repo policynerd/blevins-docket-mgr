@@ -17,7 +17,9 @@ const { ORG } = require('./org');
 const repo = require('./repo');
 const legisdoc = require('./legisdoc');
 const amend = require('./amend');
-const { formatDate } = require('./util');
+const { formatDate, escapeHtml } = require('./util');
+const render = require('./render');
+const docprint = require('./docprint');
 
 const RAIL_W = 128;   // left rail carrying the member roster on page 1
 
@@ -96,7 +98,107 @@ function attachmentLabel(i) {
 // members down the left rail, then SUBJECT and the standing report sections.
 // Continuation pages repeat the subject, which is what makes a page found on
 // its own identifiable.
+/**
+ * The board letter.
+ *
+ * Set as HTML and printed by the browser, which is what makes its head matter
+ * an actual column and lets a section keep the list markup a clerk wrote
+ * instead of flattening it to "• item" strings. `boardLetterDrawn` below is
+ * the same letter drawn with pdf-lib; it stays as the fallback, because a
+ * board meeting cannot be held up by a container that came back without its
+ * browser package.
+ */
 async function boardLetter(matter, opts = {}) {
+  if (render.available()) {
+    const html = boardLetterHtml(matter, opts);
+    try {
+      return await render.render(html, {
+        footerTemplate: docprint.footer(`${ORG.name} \u00b7 ${matter.file_number}`),
+      });
+    } catch (_) {
+      // Any failure of the browser falls through to the drawn letter. A fault
+      // in the template itself throws above this, while building the HTML, so
+      // a real bug still surfaces rather than being papered over by a fallback
+      // that quietly produces a different-looking document for ever.
+    }
+  }
+  return boardLetterDrawn(matter, opts);
+}
+
+/** The letter's markup. Pure: it reads the record and returns a string. */
+function boardLetterHtml(matter, opts = {}) {
+  const body = matter.body_id ? repo.bodies.get(matter.body_id) : null;
+  const bodyName = (body && body.name) || ORG.primaryBody || ORG.name;
+  const members = body ? repo.bodies.members(body.id) : [];
+  const when = opts.date || matter.intro_date || null;
+
+  let out = docprint.rail(members);
+  out += docprint.masthead('Agenda item', bodyName);
+  out += docprint.headMatter([
+    ['DATE:', when ? formatDate(when) : '________________'],
+    ['TO:', bodyName],
+    ['FILE:', matter.file_number],
+  ]);
+  out += docprint.section('Subject',
+    `<p class="subject">${escapeHtml(matter.title || '')}</p>`);
+
+  // The letter's own sections, in their configured order. The stored markup
+  // goes through as markup: a list a clerk wrote stays a list, and a table
+  // stays a table, instead of being flattened to text and re-marked with
+  // bullet characters. That flattening is why the two renderings of one
+  // section could look different in the first place.
+  const composed = repo.letters.compose(matter.id);
+  for (const sec of composed) {
+    let html = '';
+    if (sec.filled) html = sec.body_html;
+    else if (sec.key === 'overview' && matter.summary) html = `<p>${escapeHtml(matter.summary)}</p>`;
+    else if (sec.key === 'fiscal') html = fiscalHtml(matter);
+    if (html) out += docprint.section(sec.label, html);
+  }
+
+  if (!composed.some((sec) => sec.filled) && !matter.summary) {
+    out += `<p class="muted"><em>[No board letter has been written for this file.]</em></p>`;
+  }
+
+  const sponsors = repo.matters.sponsors(matter.id);
+  if (sponsors.length) {
+    out += docprint.section('Sponsor(s)',
+      `<p>${escapeHtml(sponsors.map((sp) => sp.full_name).join(', '))}</p>`);
+  }
+
+  out += `<div class="sign"><p>Respectfully submitted,</p>`
+    + `<div class="sign-line"></div>`
+    + `<div class="sign-role">${escapeHtml(opts.submitterTitle || ORG.clerkTitle || 'Clerk of the Board')}</div>`
+    + `</div>`;
+
+  // Attachments are lettered here and cited that way in debate ("Attachment
+  // B"), so the letter is where the lettering is fixed.
+  const atts = repo.matters.attachments(matter.id);
+  if (atts.length) {
+    out += docprint.section('Attachment(s)',
+      '<ul>' + atts.map((a, i) =>
+        `<li>Attachment ${escapeHtml(attachmentLabel(i))}: ${escapeHtml(a.name || '')}</li>`)
+        .join('') + '</ul>');
+  }
+
+  return docprint.page(`${matter.file_number} — ${matter.title || 'Board letter'}`, out,
+    docprint.RAIL_PAGE_CSS);
+}
+
+// Silence on cost reads as "not considered", and a board acts on the number.
+function fiscalHtml(matter) {
+  const out = [];
+  if (matter.fiscal_impact != null && matter.fiscal_impact !== '') {
+    const amt = Number(matter.fiscal_impact);
+    out.push(`Estimated impact: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      + (matter.fiscal_recurring ? ' (ongoing annual cost)' : ' (one-time)'));
+  }
+  if (matter.fiscal_note) out.push(...paragraphs(matter.fiscal_note));
+  if (!out.length) out.push('There is no fiscal impact associated with this action.');
+  return out.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
+async function boardLetterDrawn(matter, opts = {}) {
   const body = matter.body_id ? repo.bodies.get(matter.body_id) : null;
   const bodyName = (body && body.name) || ORG.primaryBody || ORG.name;
   const members = body ? repo.bodies.members(body.id) : [];
@@ -132,21 +234,39 @@ async function boardLetter(matter, opts = {}) {
   doc.rule({ after: 14 });
 
   // --- Member roster down the left rail ---
+  //
+  // Labelled, because seven names alone in a margin say nothing about what
+  // they are — a reader has no way to tell a membership roster from a
+  // distribution list or a list of sponsors.
+  //
+  // And labelled with the office where there is one. members() orders by
+  // Chair, then Vice Chair, then name; the sub-label showed the district, so
+  // the rail read "Seat 1, Seat 2, At-Large, Seat 3, Seat 5, Seat 6, Seat 4"
+  // — an order with no visible reason, which reads as a sorting bug. Printing
+  // the office that put those two at the top explains the order on the page.
   let railY = doc.size.h - 60;
+  doc.at(72, railY, 'MEMBERS', { size: 7, style: 'sansB', color: MUTED });
+  railY -= 14;
   for (const m of members) {
     doc.at(72, railY, m.full_name.toUpperCase(), { size: 8, style: 'sansB' });
     railY -= 10;
-    const sub = m.district || m.role || '';
+    const office = m.role && m.role !== 'Member' ? m.role : '';
+    const sub = office && m.district ? `${office} · ${m.district}`
+      : (office || m.district || '');
     if (sub) { doc.at(72, railY, sub, { size: 7.5, style: 'sans', color: MUTED }); railY -= 10; }
     railY -= 5;
     if (railY < 140) break;
   }
 
   // --- Head matter ---
+  // Three labelled values, in a column. These were padded with spaces —
+  // `DATE:  `, `TO:    ` — which aligns nothing: the layout draws word by word
+  // at computed positions, so the padding is gone before anything reaches the
+  // page. The values landed at x=232.0, 219.4 and 227.7.
   const when = opts.date || matter.intro_date || null;
-  doc.text(`DATE:  ${when ? formatDate(when) : '________________'}`, { size: 10.5, after: 4 });
-  doc.text(`TO:    ${bodyName}`, { size: 10.5, after: 4 });
-  doc.text(`FILE:  ${matter.file_number}`, { size: 10.5, after: 12 });
+  doc.field('DATE:', when ? formatDate(when) : '________________', { size: 10.5, after: 4 });
+  doc.field('TO:', bodyName, { size: 10.5, after: 4 });
+  doc.field('FILE:', matter.file_number, { size: 10.5, after: 12 });
 
   doc.heading('SUBJECT', { size: 11 });
   doc.text(subject, { size: 11, style: 'b', after: 12 });
@@ -568,4 +688,4 @@ async function legislationDetails(matter) {
   return doc.save();
 }
 
-module.exports = { legislationDetails, boardLetter, ordinance, summaryForPublication, approvalLog, reportDoc, attachmentLabel, paragraphs };
+module.exports = { legislationDetails, boardLetter, boardLetterHtml, ordinance, summaryForPublication, approvalLog, reportDoc, attachmentLabel, paragraphs };

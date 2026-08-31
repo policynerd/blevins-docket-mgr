@@ -1,5 +1,18 @@
 'use strict';
 
+// These suites read text back out of the generated PDF by inflating pdf-lib's
+// content streams and collecting its Tj operands — which only works on a
+// document pdf-lib drew. The primary path now sets the document as HTML and
+// has the browser print it, and a browser's PDF encodes text through subset
+// fonts that this cannot read.
+//
+// So these run against the drawn fallback, deliberately: it still ships, it is
+// what a container without the browser package produces, and it therefore
+// still has to be right. The HTML path is tested as HTML in render.test.js,
+// where the content is a string and can simply be asserted on.
+process.env.DOCKET_RENDER = 'off';
+
+
 // The printed documents.
 //
 // These are the outputs that leave the building — the board letter that goes
@@ -91,4 +104,68 @@ test('a letter with nothing written still produces a document', async () => {
   });
   const bytes = await documents.boardLetter(repo.matters.get(id), {});
   assert.equal(Buffer.from(bytes.subarray(0, 5)).toString('latin1'), '%PDF-');
+});
+
+// --- Columns that actually line up --------------------------------------------
+
+// Read back the words a PDF draws, with the x each one was placed at.
+//
+// The layout draws word by word at computed positions, which is precisely why
+// padding a label with spaces aligns nothing: the run of spaces is gone before
+// anything reaches the page. Only the coordinates can show whether a column is
+// a column, so the test reads them.
+function words(bytes) {
+  const zlib = require('node:zlib');
+  const src = Buffer.from(bytes).toString('latin1');
+  const out = [];
+  const streams = /stream\r?\n([\s\S]*?)endstream/g;
+  let m;
+  while ((m = streams.exec(src))) {
+    let data = Buffer.from(m[1], 'latin1');
+    try { data = zlib.inflateSync(data); } catch (_) { continue; }
+    const ops = /1 0 0 1 ([\d.-]+) ([\d.-]+) Tm\s*<([0-9A-Fa-f]*)>\s*Tj/g;
+    let g;
+    while ((g = ops.exec(data.toString('latin1')))) {
+      out.push({ x: Number(Number(g[1]).toFixed(1)), y: Number(Number(g[2]).toFixed(1)),
+        t: Buffer.from(g[3], 'hex').toString('latin1') });
+    }
+  }
+  return out;
+}
+
+// The x of the first word after `label` on the line `label` sits on.
+function valueX(ws, label) {
+  const l = ws.find((w) => w.t === label);
+  if (!l) return null;
+  const after = ws.filter((w) => Math.abs(w.y - l.y) < 0.5 && w.x > l.x).sort((a, b) => a.x - b.x);
+  return after.length ? after[0].x : null;
+}
+
+test('the head matter is a column, not three lines of padding', async () => {
+  // DATE:/TO:/FILE: were padded with spaces to line their values up. They
+  // landed at x=232.0, 219.4 and 227.7 — a ragged column produced by code that
+  // looks like it is aligning something.
+  const { id } = repo.matters.insertNumbered({
+    type: 'Resolution', body_id: bodyId, status: 'On Agenda', title: 'A measure',
+  });
+  const ws = words(await documents.boardLetter(repo.matters.get(id), { date: '2026-07-15' }));
+  const xs = ['DATE:', 'TO:', 'FILE:'].map((l) => valueX(ws, l));
+  assert.ok(xs.every((x) => x != null), 'all three labels should carry a value');
+  assert.equal(new Set(xs).size, 1, `values start at ${xs.join(', ')} — not one column`);
+});
+
+test('the roster says what it is, and why it is in that order', async () => {
+  // Seven names alone in a margin say nothing about what they are. And the
+  // rail is ordered Chair, Vice Chair, then by name while it printed only the
+  // district — so it read "Seat 1, Seat 2, At-Large, Seat 3…", an order with
+  // no visible reason, which reads as a sorting bug.
+  const { id } = repo.matters.insertNumbered({
+    type: 'Resolution', body_id: bodyId, status: 'On Agenda', title: 'Another measure',
+  });
+  const ws = words(await documents.boardLetter(repo.matters.get(id), {}));
+  const text = ws.map((w) => w.t);
+  assert.ok(text.includes('MEMBERS'), 'the rail is labelled');
+  // Every name on the rail is drawn at the rail's own x, left of the text column.
+  const rail = ws.filter((w) => w.x === 72).map((w) => w.t);
+  assert.ok(rail.length > 1, 'the roster is on the rail');
 });

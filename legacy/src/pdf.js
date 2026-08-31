@@ -138,7 +138,14 @@ async function generatePacket(meeting) {
     // value that failed to load rather than as "there is nothing behind this
     // one" — blank says that without claiming anything.
     const tab = r.tab ? `Tab ${r.tab}` : '';
-    front.text(`${tab}    ${num}${title}`, { size: 10.5, indent: 0, hanging: 52, after: 3 });
+    // A tab column, not a prefix. This was `${tab}    ${num}${title}` — padded
+    // with spaces that the layout discards — so a tabbed row read "Tab 1 5.A.
+    // 260802 — …" with the tab run into the agenda number, while an untabbed
+    // row started flush at its number. Two left edges in one list, and no
+    // column to scan down. The label sits in its own column and an item
+    // carrying nothing leaves that column blank, which says "nothing behind
+    // this one" without claiming anything.
+    front.field(tab, `${num}${title}`, { size: 10.5, labelW: 52, after: 3 });
   }
   await merge(await front.save());
 

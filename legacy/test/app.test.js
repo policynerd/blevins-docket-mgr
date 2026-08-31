@@ -1,5 +1,18 @@
 'use strict';
 
+// These suites read text back out of the generated PDF by inflating pdf-lib's
+// content streams and collecting its Tj operands — which only works on a
+// document pdf-lib drew. The primary path now sets the document as HTML and
+// has the browser print it, and a browser's PDF encodes text through subset
+// fonts that this cannot read.
+//
+// So these run against the drawn fallback, deliberately: it still ships, it is
+// what a container without the browser package produces, and it therefore
+// still has to be right. The HTML path is tested as HTML in render.test.js,
+// where the content is a string and can simply be asserted on.
+process.env.DOCKET_RENDER = 'off';
+
+
 // Integration tests over a throwaway SQLite database. Each area exercises the
 // repo layer the way the routes do; the DB file lives in the OS temp dir and
 // is recreated per test run.

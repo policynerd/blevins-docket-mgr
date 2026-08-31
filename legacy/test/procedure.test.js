@@ -269,3 +269,51 @@ test('a meeting taken in its printed order says nothing about order', () => {
   }
   assert.doesNotMatch(minutes.generate(meetingId), /Taken out of order/);
 });
+
+// --- Done means done ----------------------------------------------------------
+
+test('clearing the board empties it, rather than uncovering the item before', () => {
+  // The board keeps showing the last item decided so the room can read the
+  // result after the gavel. That was implemented as "the most recent decided
+  // item that has not been cleared", so clearing did not empty the board — it
+  // uncovered the item decided before, and then the one before that. A clerk
+  // pressed "Done — clear the board" and the wall went on showing a vote,
+  // which is indistinguishable from the button not working, and put business
+  // already disposed of back in front of the room in reverse order.
+  const { meetingId, items } = newMeeting(2);
+  for (const id of items) {
+    repo.voteAdmin.openRoll(id);
+    carry(id, 'Yea');
+    repo.voteAdmin.closeRoll(id);
+  }
+  // The second item is the one before the body; the first is history.
+  assert.equal(live.snapshot(meetingId).active.id, items[1]);
+
+  repo.voteAdmin.clear(items[1]);
+  assert.equal(live.snapshot(meetingId).active, null,
+    'done with the last item means the board is clear, not showing the one before');
+});
+
+test('the board still holds the result until the clerk is done with it', () => {
+  // The guard above must not empty the board the instant the gavel falls —
+  // that is the behaviour it was written to prevent.
+  const { meetingId, items } = newMeeting(1);
+  repo.voteAdmin.openRoll(items[0]);
+  carry(items[0], 'Yea');
+  repo.voteAdmin.closeRoll(items[0]);
+  const active = live.snapshot(meetingId).active;
+  assert.ok(active && active.id === items[0]);
+  assert.equal(active.result, 'Pass', 'and the room can read the result');
+});
+
+test('a fresh roll after a clear puts the board back', () => {
+  const { meetingId, items } = newMeeting(2);
+  repo.voteAdmin.openRoll(items[0]);
+  carry(items[0], 'Yea');
+  repo.voteAdmin.closeRoll(items[0]);
+  repo.voteAdmin.clear(items[0]);
+  assert.equal(live.snapshot(meetingId).active, null);
+
+  repo.voteAdmin.openRoll(items[1]);
+  assert.equal(live.snapshot(meetingId).active.id, items[1]);
+});
