@@ -54,14 +54,24 @@ function snapshot(meetingId) {
   //
   // Items carried on a consent calendar are skipped: they share the calendar's
   // close to the second, and the calendar is the item that took the roll.
+  //
+  // And "done" has to mean done. This looked for the most recent decided item
+  // that had *not* been cleared, so clearing the board did not empty it — it
+  // uncovered the item decided before, and then the one before that. A clerk
+  // pressed "Done — clear the board" at the end of an item and the wall went
+  // on showing a vote, which is indistinguishable from the button not working.
+  // Business already disposed of came back up in front of the room, in reverse.
+  //
+  // The board shows the last thing that happened, until the clerk says they
+  // are finished with it. So the candidate is the most recently decided item
+  // full stop; if that one has been cleared, the board is quiet.
   const decided = items
-    .filter((i) => i.vote_status === 'closed' && i.result_computed_at && !i.cleared_at
-      && !i.consent_group_id)
+    .filter((i) => i.vote_status === 'closed' && i.result_computed_at && !i.consent_group_id)
     .sort((a, b) => String(a.vote_closed_at || a.result_computed_at || '')
       .localeCompare(String(b.vote_closed_at || b.result_computed_at || '')));
+  const latest = decided[decided.length - 1] || null;
   const open = items.find((i) => i.vote_status === 'open')
-    || decided[decided.length - 1]
-    || null;
+    || (latest && !latest.cleared_at ? latest : null);
 
   const seatCount = members.length;
   const quorumNeeded = seatCount ? Math.floor(seatCount / 2) + 1 : 0;
