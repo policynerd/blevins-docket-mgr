@@ -480,3 +480,26 @@ test('an unamended item still reads as one motion, not a sequence of one', () =>
   assert.match(html, /Motion: That it be adopted/);
   assert.doesNotMatch(html, /Main motion:/, 'no elaborate way of saying "one motion"');
 });
+
+test('a motion is punctuated once, wherever it is printed', () => {
+  // narrative() gives a motion the full stop clerks do not type, and the
+  // minutes added another: "That it be adopted.. Moved by Ada Governor."
+  const minutes = require('../src/minutes');
+  const { meetingId, itemId } = newItem('Punctuation');
+  repo.motionVersions.ensure(itemId, {
+    motionText: 'That it be adopted', moverId: people[0] });
+  repo.motionVersions.amend(itemId, { motionText: 'That it be amended', kind: 'amendment' });
+  repo.voteAdmin.openRoll(itemId);
+  cast(itemId, ['Yea', 'Yea', 'Yea']);
+  repo.voteAdmin.closeRoll(itemId);
+
+  const html = minutes.generate(meetingId);
+  assert.doesNotMatch(html, /\.\./, 'no double full stop');
+  assert.match(html, /That it be adopted\. Moved by A Governor\./);
+
+  // A motion the clerk did punctuate is not given a second one either.
+  const other = newItem('Already punctuated');
+  repo.motionVersions.ensure(other.itemId, { motionText: 'That it be adopted.' });
+  repo.motionVersions.amend(other.itemId, { motionText: 'That it be amended.' });
+  assert.equal(repo.motionVersions.narrative(other.itemId)[0].text, 'That it be adopted.');
+});

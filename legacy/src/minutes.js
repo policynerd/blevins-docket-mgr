@@ -125,8 +125,10 @@ function generate(meetingId) {
     const voted = it.vote_status === 'closed' && it.result_computed_at;
     if (sequence.length) {
       for (const m of sequence) {
+        // The text arrives punctuated — narrative() gives a motion the full
+        // stop clerks do not type — so this adds a space, not a second one.
         let line = `${escapeHtml(m.label)}: `;
-        if (m.text) line += `${escapeHtml(m.text)}. `;
+        if (m.text) line += `${escapeHtml(m.text)} `;
         if (m.moved) line += `${escapeHtml(m.moved)}. `;
         if (m.outcome) line += `<strong>${escapeHtml(m.outcome)}.</strong>`;
         out.push(`<p>${line.trim()}</p>`);
