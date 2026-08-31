@@ -366,15 +366,65 @@ test('the ledger keeps the ballots a void removed', () => {
 
 /* --------------------------------------------------- motion versions ---- */
 
-test('a motion is versioned, so a vote binds to the text on the floor', () => {
+test('writing down the motion is not the same act as amending it', () => {
+  // ensure() states the motion as it stands; amend() puts a new question.
+  //
+  // The distinction is not cosmetic. Ballots are windowed by version, so a
+  // version created as a side effect of typing — a clerk correcting the
+  // wording of the motion box — would discard every vote already cast on it.
+  // ensure() therefore edits in place and can never create a second version.
   const { itemId } = newItem();
   const v1 = repo.motionVersions.ensure(itemId, { motionText: 'Approve staff recommendation' });
   const same = repo.motionVersions.ensure(itemId, { motionText: 'Approve staff recommendation' });
   assert.equal(same.id, v1.id, 'an unchanged motion made a new version');
 
-  const v2 = repo.motionVersions.ensure(itemId, { motionText: 'Approve as amended' });
+  const edited = repo.motionVersions.ensure(itemId, { motionText: 'Approve the recommendation' });
+  assert.equal(edited.id, v1.id, 'correcting the wording is still the same motion');
+  assert.equal(edited.motion_text, 'Approve the recommendation');
+  assert.equal(repo.motionVersions.all(itemId).length, 1);
+
+  const v2 = repo.motionVersions.amend(itemId, { motionText: 'Approve as amended' });
   assert.equal(v2.seq, 2);
+  assert.equal(v2.kind, 'amendment');
   assert.equal(repo.motionVersions.all(itemId).length, 2);
+});
+
+test('a motion cannot be reworded once somebody has voted on it', () => {
+  // The ballots already cast answered the question as it stood. Rewording it
+  // under them makes the record say they answered a question they never heard.
+  //
+  // The bound is the first ballot, not the open roll: the console's motion
+  // form lives on the active card, which exists only once the roll is open, so
+  // refusing every edit under an open roll made the form unusable for the
+  // thing it is for. Before anybody votes, the clerk is still writing down
+  // what was moved.
+  const { itemId } = newItem();
+  repo.motionVersions.ensure(itemId, { motionText: 'Approve staff recommendation' });
+  repo.voteAdmin.openRoll(itemId);
+  const reworded = repo.motionVersions.ensure(itemId, { motionText: 'Approve the recommendation' });
+  assert.equal(reworded.motion_text, 'Approve the recommendation',
+    'an open roll nobody has voted in is still being written down');
+
+  repo.voteLedger.append(itemId, people[0], 'Yea', { source: 'CLERK_ENTRY' });
+  assert.throws(
+    () => repo.motionVersions.ensure(itemId, { motionText: 'Something else entirely' }),
+    /already voted/i);
+  // Naming who moved it is bookkeeping, not a new question, and stays open.
+  const v = repo.motionVersions.ensure(itemId, {
+    motionText: 'Approve the recommendation', seconderId: people[1],
+  });
+  assert.equal(v.seconder_id, people[1]);
+});
+
+test('a decided motion is amended, not edited', () => {
+  const { itemId } = newItem();
+  repo.motionVersions.ensure(itemId, { motionText: 'Approve staff recommendation' });
+  repo.voteAdmin.openRoll(itemId);
+  for (const p of people) repo.voteLedger.append(itemId, p, 'Yea', { source: 'CLERK_ENTRY' });
+  repo.voteAdmin.closeRoll(itemId);
+  assert.throws(
+    () => repo.motionVersions.ensure(itemId, { motionText: 'Approve as amended' }),
+    /Move an amendment/i);
 });
 
 test('the event records which motion version was voted on', () => {
@@ -384,12 +434,18 @@ test('the event records which motion version was voted on', () => {
 
   const [e] = ballots(itemId);
   assert.equal(JSON.parse(e.payload_json).motionVersionId, v.id);
+  assert.equal(e.motion_version_id, v.id,
+    'and the column indexes it, so windowing does not have to parse JSON');
 
   // Repoint the vote at a different, entirely legitimate motion version — the
   // realistic version of this attack, since a dangling id is refused by the
   // foreign key anyway. What must catch it is the hash: the motion voted on is
   // part of the payload, so it cannot be swapped after the fact.
-  const v2 = repo.motionVersions.ensure(itemId, { motionText: 'Approve as amended' });
+  //
+  // The substitute comes from another item, because amend() now refuses to put
+  // a new question on one whose members have already voted — the ballots would
+  // be windowed out of every tally while remaining in the ledger.
+  const v2 = repo.motionVersions.ensure(newItem().itemId, { motionText: 'Approve as amended' });
   db.prepare("UPDATE session_events SET payload_json = json_set(payload_json, '$.motionVersionId', ?) WHERE seq = ?").run(v2.id, e.seq);
   assert.equal(repo.voteLedger.verifyItem(itemId).ok, false,
     'the motion a vote was cast on could be swapped without detection');

@@ -33,12 +33,26 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  /*
+   * A refused act says why.
+   *
+   * This threw `new Error(r.status)`, so every window.alert(e.message) in this
+   * file — the ones on reopen, on void, on opening a roll the repo refuses —
+   * showed the clerk the string "409". The server has written a sentence for
+   * each of these ("This item is on the consent calendar…", "The roll on item 4
+   * is still open…") and none of them ever reached a screen.
+   */
   function post(url, data) {
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data || {})
-    }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json().catch(function () { return {}; }); });
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) throw new Error(body && body.error ? body.error : 'Request failed (' + r.status + ')');
+        return body;
+      });
+    });
   }
 
   // Everyone seated lands in exactly one column of the board, so a choice the
@@ -102,15 +116,52 @@
    * business by being refused mid-meeting. The buttons that apply are the ones
    * offered.
    */
+  /*
+   * The clerk's controls, as the sequence they actually are.
+   *
+   * Recording a vote is five acts in a fixed order — close the roll, announce
+   * the result, certify it, publish it, clear the board — and the bar showed
+   * whichever were available as buttons of equal weight. "Announce result",
+   * the one act the meeting is waiting on, looked exactly like "Done — clear
+   * the board", which abandons it. A clerk mid-meeting was being asked to
+   * remember the order rather than read it.
+   *
+   * So the steps are drawn as a trail with the item's position marked, and
+   * exactly one button is primary: the next act. Everything else is available
+   * and visibly not the thing to do next.
+   */
+  var STEPS = [
+    { key: 'closed', label: 'Roll closed' },
+    { key: 'announced', label: 'Announced' },
+    { key: 'certified', label: 'Certified' },
+    { key: 'published', label: 'Published' },
+  ];
+
+  function stepTrail(a) {
+    var reached = true;
+    return '<ol class="la-steps">' + STEPS.map(function (s) {
+      var done = !!a[s.key];
+      // The first step not yet taken is the one the item is at.
+      var cur = reached && !done;
+      if (!done) reached = false;
+      return '<li class="la-step' + (done ? ' done' : '') + (cur ? ' current' : '') + '">'
+        + '<span class="la-step-dot"></span>' + esc(s.label) + '</li>';
+    }).join('') + '</ol>';
+  }
+
   function controlBar(a) {
     var h = '<div class="la-actions">';
+    if (a.closed) h += stepTrail(a);
+    h += '<div class="la-act-row">';
     if (!a.closed) {
       h += '<button class="btn primary" data-close="' + a.id + '">Close roll &amp; record result</button>';
+    } else if (!a.announced) {
+      h += '<button class="btn primary" data-announce="' + a.id + '">Announce result</button>';
+    } else if (!a.certified) {
+      h += '<button class="btn primary" data-certify="' + a.id + '">Certify</button>';
+    } else if (!a.published) {
+      h += '<button class="btn primary" data-publish="' + a.id + '">Publish</button>';
     } else {
-      if (!a.announced) h += '<button class="btn" data-announce="' + a.id + '">Announce result</button>';
-      if (a.announced && !a.certified) h += '<button class="btn primary" data-certify="' + a.id + '">Certify</button>';
-      if (a.certified && !a.published) h += '<button class="btn" data-publish="' + a.id + '">Publish</button>';
-      if (a.published) h += '<span class="muted">Published</span>';
       // Done with it.
       //
       // Closing a roll closes the *roll*; the item stayed on the board because
@@ -118,13 +169,103 @@
       // read the result. That is right until the clerk has finished with it,
       // and there was no way to say so — the only exits were opening another
       // item or giving somebody the floor. This is that exit.
-      h += '<button class="btn" data-clear="' + a.id + '">Done \u2014 clear the board</button>';
-      h += '<button class="btn-link" data-reopen="' + a.id + '">Reopen roll</button>';
+      h += '<button class="btn primary" data-clear="' + a.id + '">Done — clear the board</button>';
     }
+    h += '</div>';
+
+    // Everything off the sequence: available, and visibly not next.
+    h += '<div class="la-act-aside">';
+    if (a.closed && !a.published) {
+      h += '<button class="btn-link" data-clear="' + a.id + '">Done — clear the board</button>';
+    }
+    if (a.closed) h += '<button class="btn-link" data-reopen="' + a.id + '">Reopen roll</button>';
+    // Laying an item on the table is not offered here.
+    //
+    // The active card only ever holds an item whose roll is open or closed,
+    // and the repo refuses to table either — an open roll would leave ballots
+    // cast on a question the record says was never taken up, and a closed one
+    // is already disposed of. A button here could only ever return a 409, so
+    // it lives on the agenda row instead, which is where an un-reached item
+    // is. Stopping a roll that is already open means voiding it first, with a
+    // reason, which is the button beside this one.
     // Voiding is destructive to a recorded outcome and always available, but
     // never the default: it sits apart and asks for a reason.
-    h += '<button class="btn-link danger" data-void="' + a.id + '">Void this vote\u2026</button>';
+    h += '<button class="btn-link danger" data-void="' + a.id + '">Void this vote…</button>';
+    h += '</div>';
     return h + '</div>';
+  }
+
+  /*
+   * How the body got to the question on the floor.
+   *
+   * An item that was moved, amended, and put again as amended holds three
+   * motions and two rolls, and the item's own fields carry only the last of
+   * them. The clerk taking the second roll needs to see the result of the
+   * first — and after the meeting, this sequence is the difference between a
+   * record of outcomes and a record of proceedings.
+   *
+   * Shown only when there is a sequence to show: one motion, never amended,
+   * is already printed above the tally.
+   */
+  var KIND_LABEL = { main: 'Main motion', amendment: 'Amendment',
+    substitute: 'Substitute motion', procedural: 'Procedural motion' };
+
+  function motionTrail(a) {
+    var ms = a.motions || [];
+    if (ms.length < 2) return '';
+    return '<div class="la-motions"><div class="la-motions-head">Motions on this item</div><ol>'
+      + ms.map(function (m) {
+        var state = m.result
+          ? '<span class="badge st-' + esc(String(m.result).toLowerCase()) + '">' + esc(m.result) + '</span>'
+          : (m.superseded ? '<span class="badge st-draft">replaced</span>'
+            : (m.current ? '<span class="badge st-on-agenda">on the floor</span>'
+              : '<span class="badge st-draft">pending</span>'));
+        var who = [];
+        if (m.mover) who.push('moved by ' + m.mover);
+        if (m.seconder) who.push('seconded by ' + m.seconder);
+        return '<li class="' + (m.current ? 'current' : '') + '">'
+          + '<span class="lm-kind">' + esc(KIND_LABEL[m.kind] || m.kind) + '</span> '
+          + state
+          + '<div class="lm-text">' + esc(m.text || '(no text recorded)') + '</div>'
+          + (who.length ? '<div class="lm-who muted">' + esc(who.join(', ')) + '</div>' : '')
+          + '</li>';
+      }).join('') + '</ol></div>';
+  }
+
+  /*
+   * Putting a new question on the same item.
+   *
+   * Deliberately separate from "Set motion / threshold". That form states what
+   * was moved and can be corrected freely; this one is an act of the body, and
+   * it starts a fresh roll whose ballots are counted apart from the last. A
+   * single form doing both is how a clerk fixing a typo would silently discard
+   * every vote already cast.
+   */
+  function amendForm(a) {
+    var rosterOpts = function () {
+      return '<option value="">—</option>' + a.roster.map(function (m) {
+        return '<option value="' + esc(m.person_id) + '">' + esc(m.name) + '</option>';
+      }).join('');
+    };
+    var kindOpts = Object.keys(KIND_LABEL).map(function (k) {
+      return '<option value="' + k + '"' + (k === 'amendment' ? ' selected' : '') + '>'
+        + esc(KIND_LABEL[k]) + '</option>';
+    }).join('');
+    var threshOpts = Object.keys(THRESHOLD_LABELS).map(function (v) {
+      return '<option value="' + v + '"' + (a.threshold === v ? ' selected' : '') + '>'
+        + esc(THRESHOLD_LABELS[v]) + '</option>';
+    }).join('');
+    return '<details class="la-motion-form"><summary>Move an amendment / put a new question</summary>'
+      + '<div class="la-motion-fields">'
+      + '<p class="muted la-amend-note">A new question takes its own roll and its own result. '
+      + 'The vote already recorded on this item stands.</p>'
+      + '<label>Kind <select data-af-kind>' + kindOpts + '</select></label>'
+      + '<label>Mover <select data-af-mover>' + rosterOpts() + '</select></label>'
+      + '<label>Seconder <select data-af-seconder>' + rosterOpts() + '</select></label>'
+      + '<label>Threshold <select data-af-threshold>' + threshOpts + '</select></label>'
+      + '<label class="la-mf-wide">Motion text <input type="text" data-af-text placeholder="I move to amend by…"></label>'
+      + '<button class="btn" data-af-save="' + esc(a.id) + '">Put the question</button>'
+      + '</div></details>';
   }
 
   function motionForm(a) {
@@ -191,9 +332,15 @@
             + esc(c.file_number ? c.file_number + ' — ' : '') + esc(c.title || '') + '</li>';
         }).join('') + '</ol></div>';
     }
+    h += motionTrail(a);
     h += tallyBoard(a.tally);
     if (a.seatCount) h += outcomeBar(a);
     if (control) h += motionForm(a);
+    // Always offered to the clerk. Whether a new question may be put depends on
+    // whether ballots have been cast on the current one, which the server
+    // decides — the console does not have to reimplement that rule, and a
+    // refusal comes back with the sentence explaining it.
+    if (control) h += amendForm(a);
 
     h += '<div class="la-roster">';
     a.roster.forEach(function (m) { h += rosterRow(a, m); });
@@ -210,6 +357,7 @@
     if (control) h += controlBar(a);
     activeEl.innerHTML = h;
     activeEl.setAttribute('data-item-id', a.id);
+    activeEl.setAttribute('data-motion-key', motionKey(a));
     activeEl.classList.remove('la-active-fade'); void activeEl.offsetWidth; activeEl.classList.add('la-active-fade');
     bindActive(a);
   }
@@ -222,7 +370,25 @@
     if (!a || activeEl.getAttribute('data-item-id') !== String(a.id)) return false;
     if (activeEl.querySelectorAll('.la-row').length !== a.roster.length) return false;
     if (!!activeEl.querySelector('[data-outcome]') !== !!a.seatCount) return false;
+    // Anything about the motions changed: the wording, who moved it, a result
+    // landing on a version, a question being put or replaced.
+    //
+    // Patching deliberately touches only the tally, the roster and the
+    // controls, because those change continuously while ballots arrive and a
+    // rebuild would close a form under whoever is typing in it. Motions do not
+    // change continuously — each change is one discrete act by the clerk — so
+    // the card is rebuilt for them, and the header line, the motion form and
+    // the trail cannot disagree with each other about which question is on the
+    // floor. Before this the clerk put the main question as amended and the
+    // line above the tally went on naming the amendment.
+    if (activeEl.getAttribute('data-motion-key') !== motionKey(a)) return false;
     return true;
+  }
+
+  function motionKey(a) {
+    return (a.motions || []).map(function (m) {
+      return m.seq + ':' + (m.result || '') + (m.superseded ? ':s' : '') + (m.current ? ':c' : '');
+    }).join('|') + '||' + (a.motion_text || '') + '|' + (a.mover || '') + '|' + (a.seconder || '');
   }
 
   // In-place update: tally numbers, roster chips, clerk button states, outcome
@@ -338,7 +504,24 @@
         seconder_id: (activeEl.querySelector('[data-mf-seconder]') || {}).value || null,
         motion_text: (activeEl.querySelector('[data-mf-text]') || {}).value || null,
         vote_threshold: (activeEl.querySelector('[data-mf-threshold]') || {}).value || 'majority',
-      });
+      }).catch(function (e) { window.alert(e.message); });
+    });
+    // Putting a new question. A refusal here is a sentence the clerk needs to
+    // read — "members have already voted on this question" is the difference
+    // between amending and voiding — so it is surfaced rather than swallowed.
+    var afSave = activeEl.querySelector('[data-af-save]');
+    if (afSave) afSave.addEventListener('click', function () {
+      var text = (activeEl.querySelector('[data-af-text]') || {}).value || '';
+      if (!text.trim()) { window.alert('A motion needs its text.'); return; }
+      afSave.disabled = true;
+      post('/admin/agenda-items/' + a.id + '/amend', {
+        kind: (activeEl.querySelector('[data-af-kind]') || {}).value || 'amendment',
+        mover_id: (activeEl.querySelector('[data-af-mover]') || {}).value || null,
+        seconder_id: (activeEl.querySelector('[data-af-seconder]') || {}).value || null,
+        motion_text: text,
+        vote_threshold: (activeEl.querySelector('[data-af-threshold]') || {}).value || 'majority',
+      }).catch(function (e) { window.alert(e.message); })
+        .then(function () { afSave.disabled = false; });
     });
   }
 
@@ -349,25 +532,59 @@
 
   function renderAgenda(items) {
     agendaEl.innerHTML = items.map(function (it) {
-      var st = it.vote_status === 'open' ? '<span class="badge st-on-agenda">VOTING OPEN</span>'
-        : (it.result ? '<span class="badge st-' + esc(String(it.result).toLowerCase()) + '">' + esc(it.result) + '</span>'
-          : '<span class="badge st-draft">' + esc(it.vote_status) + '</span>');
+      // A tabled item is neither pending nor decided, and reading 'pending'
+      // beside items genuinely still to come is how an agenda hides that the
+      // body has already dealt with it.
+      var st = it.tabled ? '<span class="badge st-tabled">TABLED</span>'
+        : (it.vote_status === 'open' ? '<span class="badge st-on-agenda">VOTING OPEN</span>'
+          : (it.result ? '<span class="badge st-' + esc(String(it.result).toLowerCase()) + '">' + esc(it.result) + '</span>'
+            : '<span class="badge st-draft">' + esc(it.vote_status) + '</span>'));
       // An item on the consent calendar is not opened on its own — the
       // calendar's roll disposes of it — so the console says where its vote
       // happens instead of offering a button the server refuses.
       var onCal = it.onConsentCalendar;
-      var openBtn = (control && it.vote_status !== 'open' && !onCal)
+      var openBtn = (control && it.vote_status !== 'open' && !onCal && !it.tabled)
         ? '<button class="btn-link" data-open="' + it.id + '">Open voting</button>' : '';
+      // Tabling, and taking back up, both belong here rather than on the
+      // active card: a tabled item is by definition not the item before the
+      // body, and an item is laid on the table before it is voted, not during.
+      var upBtn = (control && it.tabled)
+        ? '<button class="btn-link" data-untable="' + it.id + '">Take from the table</button>' : '';
+      var tblBtn = (control && !it.tabled && !onCal && it.vote_status === 'pending' && !it.result)
+        ? '<button class="btn-link" data-table="' + it.id + '">Lay on the table…</button>' : '';
       var note = onCal
         ? '<span class="muted lai-note">votes with '
           + (onCal === true ? 'the consent calendar' : esc(onCal)) + '</span>'
-        : '';
-      return '<li class="live-ag-item"><span class="ai-num">' + esc(it.agenda_number || '') + '</span>' +
-        '<span class="lai-title">' + esc(it.title) + '</span>' + st + ' ' + note + ' ' + openBtn + '</li>';
+        : (it.tabled && it.tabledReason
+          ? '<span class="muted lai-note">' + esc(it.tabledReason) + '</span>' : '');
+      return '<li class="live-ag-item' + (it.tabled ? ' tabled' : '') + '">'
+        + '<span class="ai-num">' + esc(it.agenda_number || '') + '</span>' +
+        '<span class="lai-title">' + esc(it.title) + '</span>' + st + ' ' + note
+        + ' ' + openBtn + tblBtn + upBtn + '</li>';
     }).join('');
     if (control) {
       agendaEl.querySelectorAll('[data-open]').forEach(function (b) {
         b.addEventListener('click', function () { post('/admin/agenda-items/' + b.getAttribute('data-open') + '/open', {}); });
+      });
+      agendaEl.querySelectorAll('[data-untable]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          post('/admin/agenda-items/' + b.getAttribute('data-untable') + '/table', {})
+            .catch(function (e) { window.alert(e.message); });
+        });
+      });
+      // The reason is optional — a body often tables without giving one — but
+      // it is asked for here because when there is a reason this is the only
+      // place it gets recorded, and nothing later in the meeting will ask.
+      agendaEl.querySelectorAll('[data-table]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var reason = window.prompt(
+            'Laying this item on the table stops consideration of it.\n'
+            + 'It can be taken back up at any time.\n\n'
+            + 'Why is it being tabled? (optional)');
+          if (reason === null) return;
+          post('/admin/agenda-items/' + b.getAttribute('data-table') + '/table', { reason: reason })
+            .catch(function (e) { window.alert(e.message); });
+        });
       });
     }
   }

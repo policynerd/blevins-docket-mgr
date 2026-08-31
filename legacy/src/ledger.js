@@ -54,6 +54,9 @@ const EVENT_TYPES = [
   'RESULT_PUBLISHED',
   'CORRECTION_REQUESTED',
   'CORRECTION_APPROVED',
+  // The Board striking a recorded vote. The ballots stay in the chain — that
+  // is what the chain is for — and stop counting from here.
+  'VOTE_VOIDED',
 ];
 
 /**
@@ -67,6 +70,38 @@ const SOURCES = ['MEMBER_TERMINAL', 'CLERK_ENTRY', 'IMPORT'];
 
 /** Events after which the roll is no longer open. */
 const CLOSING_EVENTS = new Set(['ROLL_CLOSED']);
+
+/**
+ * Events that strike the ballots before them.
+ *
+ * CORRECTION_APPROVED is here because void() used it before VOTE_VOIDED
+ * existed, and a record already written must void the same way it did on the
+ * day. It is the only use of that type against an agenda item.
+ */
+const VOIDING_EVENTS = new Set(['VOTE_VOIDED', 'CORRECTION_APPROVED']);
+
+/**
+ * Where the ballots on this item were last struck.
+ *
+ * Voiding cleared the mutable `votes` projection and left the ledger
+ * projection — which is what every screen and the outcome arithmetic actually
+ * read — untouched. So a clerk voided a vote, the item's result went to null,
+ * and the roster went on showing every member's Yea while the outcome bar
+ * projected "Passes". The Board had said the vote did not happen and the board
+ * on the wall disagreed.
+ *
+ * The ballots are not deleted; they are bounded below. What happened is still
+ * in the chain, and what counts no longer includes it.
+ */
+function voidedAtSeq(entries, agendaItemId) {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.agenda_item_id !== agendaItemId) continue;
+    if (e.event_type === 'ROLL_OPENED') return null;   // a fresh roll since
+    if (VOIDING_EVENTS.has(e.event_type)) return e.seq;
+  }
+  return null;
+}
 
 /**
  * Serialize a payload so the same facts always hash to the same bytes.
@@ -190,10 +225,16 @@ function verifyChain(entries, key) {
  * checkable without trusting any timestamp: the close occupies a slot, and
  * anything with a higher slot came later.
  */
-function closedAtSeq(entries, agendaItemId) {
+function closedAtSeq(entries, agendaItemId, motionVersionId) {
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
     if (e.agenda_item_id !== agendaItemId) continue;
+    // Scoped to one question where the caller names one, so that opening a
+    // roll on an amendment does not read as reopening the roll on the main
+    // motion — which would unbound the main motion's window and let the
+    // amendment's ballots into a vote that had already been settled.
+    if (motionVersionId !== undefined
+      && (e.motion_version_id ?? null) !== (motionVersionId ?? null)) continue;
     if (e.event_type === 'ROLL_OPENED') return null;   // reopened since
     if (CLOSING_EVENTS.has(e.event_type)) return e.seq;
   }
@@ -213,8 +254,29 @@ function closedAtSeq(entries, agendaItemId) {
  * vote before the close has the later one counted; a "change" that arrived
  * after it does not retroactively withdraw the vote that did count.
  */
-function currentChoices(entries, { asOf = null, throughSeq = null } = {}) {
+function currentChoices(entries,
+  { asOf = null, throughSeq = null, motionVersionId, afterSeq = null } = {}) {
   let inWindow = entries.filter((e) => e.event_type === 'VOTE_CAST' || e.event_type === 'VOTE_CHANGED');
+  // Struck by a void. See voidedAtSeq.
+  if (afterSeq != null) inWindow = inWindow.filter((e) => e.seq > afterSeq);
+  // Which question these ballots answer.
+  //
+  // A body that amends a motion votes twice on one agenda item: once on the
+  // amendment, once on the main question as amended. Both rolls are on the
+  // same item, so without this the second tally counts the first roll's
+  // ballots — the amendment's Yeas silently joining the vote on the measure.
+  //
+  // Bounding by version rather than by sequence is deliberate. A seq range
+  // would need a lower bound derived from whichever ROLL_OPENED came last,
+  // which is exactly the reasoning that has to stay right for ever; a ballot
+  // saying which question it answers cannot be got wrong later.
+  //
+  // `undefined` means "do not ask" — an item with no motion versions, which
+  // is every item recorded before this existed, windows exactly as it always
+  // did. Explicit null means the ballots cast before any version was created.
+  if (motionVersionId !== undefined) {
+    inWindow = inWindow.filter((e) => (e.motion_version_id ?? null) === (motionVersionId ?? null));
+  }
   // Position first where we have it: a sequence number cannot be backdated.
   if (throughSeq != null) inWindow = inWindow.filter((e) => e.seq <= throughSeq);
   if (asOf) inWindow = inWindow.filter((e) => String(e.received_at) <= String(asOf));
@@ -245,6 +307,6 @@ function lateEvents(entries, { asOf = null, throughSeq = null } = {}) {
 }
 
 module.exports = {
-  GENESIS, CHOICES, EVENT_TYPES, SOURCES, closedAtSeq,
+  GENESIS, CHOICES, EVENT_TYPES, SOURCES, closedAtSeq, voidedAtSeq,
   canonical, payloadHash, entryHash, sign, buildEntry, verifyChain, currentChoices, lateEvents,
 };
