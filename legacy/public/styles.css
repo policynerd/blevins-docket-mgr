@@ -993,6 +993,19 @@ table.data.sortable thead th { padding: 0; }
 .topic-notice { background: var(--gold-dim); border: 1px solid var(--gold-line); border-radius: 4px; padding: 8px 12px; margin: 0 0 12px; font-size: var(--t-body); }
 .att-list li { display: flex; gap: 10px; align-items: center; }
 
+/* The consent calendar, on the clerk's console
+   ------------------------------------------------------------------------
+   What one roll is about to dispose of, named on the card the vote is taken
+   from. It was on the wall board and not here, so the person taking the vote
+   could not see what they were carrying. */
+.la-consent { margin: var(--s4) 0; padding: var(--s4) var(--s5);
+  background: var(--stone); border-left: 3px solid var(--accent); border-radius: 4px; }
+.la-consent-head { font-size: var(--t-micro); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; margin-bottom: var(--s3); }
+.la-consent ol { margin: 0; padding-left: 1.4em; }
+.la-consent li { font-size: var(--t-body); line-height: 1.5; }
+.lai-note { font-size: var(--t-micro); font-style: italic; }
+
 /* Line-numbered comparative print
    ------------------------------------------------------------------------
    How an amendment is cited: "page 4, line 12". The number column is

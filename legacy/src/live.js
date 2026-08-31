@@ -41,8 +41,12 @@ function snapshot(meetingId) {
   // shows the outcome, which is the moment the room is actually waiting for.
   // A real chamber board holds the result up until the chair calls the next
   // item, and so does this.
+  // An open roll always wins. Otherwise the board keeps showing the last item
+  // decided, so the room can still read the result — but only until the clerk
+  // says they are done with it.
   const open = items.find((i) => i.vote_status === 'open')
-    || [...items].reverse().find((i) => i.vote_status === 'closed' && i.result_computed_at)
+    || [...items].reverse().find((i) => i.vote_status === 'closed'
+      && i.result_computed_at && !i.cleared_at)
     || null;
 
   const seatCount = members.length;
@@ -176,6 +180,14 @@ function snapshot(meetingId) {
       id: i.id, agenda_number: i.agenda_number,
       title: i.matter_id ? `${i.file_number} — ${i.matter_title}` : (i.title || '(item)'),
       vote_status: i.vote_status || 'pending', result: i.result || null,
+      // Which items vote on their own and which travel on a calendar. Without
+      // this the console offered "Open voting" on every row, including the
+      // ones the repo refuses to open because they are disposed of by the
+      // calendar's roll — a button whose only outcome is a 409.
+      isConsentGroup: !!i.is_consent_group,
+      onConsentCalendar: i.consent_group_id
+        ? (items.find((g) => g.id === i.consent_group_id) || {}).agenda_number || true
+        : null,
     })),
   };
 }

@@ -111,6 +111,14 @@
       if (a.announced && !a.certified) h += '<button class="btn primary" data-certify="' + a.id + '">Certify</button>';
       if (a.certified && !a.published) h += '<button class="btn" data-publish="' + a.id + '">Publish</button>';
       if (a.published) h += '<span class="muted">Published</span>';
+      // Done with it.
+      //
+      // Closing a roll closes the *roll*; the item stayed on the board because
+      // the snapshot falls back to the last decided item so the room can still
+      // read the result. That is right until the clerk has finished with it,
+      // and there was no way to say so — the only exits were opening another
+      // item or giving somebody the floor. This is that exit.
+      h += '<button class="btn" data-clear="' + a.id + '">Done \u2014 clear the board</button>';
       h += '<button class="btn-link" data-reopen="' + a.id + '">Reopen roll</button>';
     }
     // Voiding is destructive to a recorded outcome and always available, but
@@ -169,6 +177,19 @@
     if (a.motion_text || a.mover || a.seconder) {
       h += '<p class="la-motion">' + (a.motion_text ? '<strong>Motion:</strong> ' + esc(a.motion_text) + ' · ' : '') +
         (a.mover ? 'Moved by ' + esc(a.mover) : '') + (a.seconder ? ', seconded by ' + esc(a.seconder) : '') + '</p>';
+    }
+    // What a consent calendar disposes of, named on the card the clerk is
+    // about to act from. This was on the wall board and not on the console, so
+    // the person taking the vote saw "Consent Calendar" and no indication of
+    // what they were carrying — which is the one thing they need before
+    // opening that roll.
+    if (a.consentItems && a.consentItems.length) {
+      h += '<div class="la-consent"><div class="la-consent-head">This roll adopts '
+        + a.consentItems.length + ' item' + (a.consentItems.length === 1 ? '' : 's') + '</div><ol>'
+        + a.consentItems.map(function (c) {
+          return '<li>' + esc(c.agenda_number ? c.agenda_number + '. ' : '')
+            + esc(c.file_number ? c.file_number + ' — ' : '') + esc(c.title || '') + '</li>';
+        }).join('') + '</ol></div>';
     }
     h += tallyBoard(a.tally);
     if (a.seatCount) h += outcomeBar(a);
@@ -271,7 +292,7 @@
     // Each control maps to one act on the item, and each act is one event in
     // the session chain. No button does two things.
     [['close', 'close'], ['announce', 'announce'], ['certify', 'certify'],
-     ['publish', 'publish'], ['reopen', 'open']].forEach(function (pair) {
+     ['publish', 'publish'], ['reopen', 'open'], ['clear', 'clear']].forEach(function (pair) {
       var btn = activeEl.querySelector('[data-' + pair[0] + ']');
       if (!btn) return;
       btn.addEventListener('click', function () {
@@ -331,10 +352,18 @@
       var st = it.vote_status === 'open' ? '<span class="badge st-on-agenda">VOTING OPEN</span>'
         : (it.result ? '<span class="badge st-' + esc(String(it.result).toLowerCase()) + '">' + esc(it.result) + '</span>'
           : '<span class="badge st-draft">' + esc(it.vote_status) + '</span>');
-      var openBtn = control && it.vote_status !== 'open'
+      // An item on the consent calendar is not opened on its own — the
+      // calendar's roll disposes of it — so the console says where its vote
+      // happens instead of offering a button the server refuses.
+      var onCal = it.onConsentCalendar;
+      var openBtn = (control && it.vote_status !== 'open' && !onCal)
         ? '<button class="btn-link" data-open="' + it.id + '">Open voting</button>' : '';
+      var note = onCal
+        ? '<span class="muted lai-note">votes with '
+          + (onCal === true ? 'the consent calendar' : esc(onCal)) + '</span>'
+        : '';
       return '<li class="live-ag-item"><span class="ai-num">' + esc(it.agenda_number || '') + '</span>' +
-        '<span class="lai-title">' + esc(it.title) + '</span>' + st + ' ' + openBtn + '</li>';
+        '<span class="lai-title">' + esc(it.title) + '</span>' + st + ' ' + note + ' ' + openBtn + '</li>';
     }).join('');
     if (control) {
       agendaEl.querySelectorAll('[data-open]').forEach(function (b) {

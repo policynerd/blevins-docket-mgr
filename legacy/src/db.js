@@ -774,6 +774,15 @@ const COLUMN_MIGRATIONS = {
     // all go on working unchanged, taking one roll on one item — and the items
     // it covers point at it. Nothing about how a vote is recorded changes;
     // what changes is how many items one recorded vote disposes of.
+    // When the clerk finished with this item on the console.
+    //
+    // Closing a roll closes the roll; the item stays on the board because the
+    // live snapshot falls back to the last decided item so the room can still
+    // read the result. That is right until the clerk is done with it, and
+    // there was no way to say so — the only exits were opening another item or
+    // giving somebody the floor. This records the saying-so. It is not part of
+    // the vote record: clearing changes nothing about what was decided.
+    cleared_at: 'TEXT',
     consent_group_id: 'INTEGER REFERENCES agenda_items(id) ON DELETE SET NULL',
     // Marks the group item itself, so it can be told from an ordinary item
     // that happens to have nothing pointing at it yet.

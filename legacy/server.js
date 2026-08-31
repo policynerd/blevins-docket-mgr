@@ -2307,6 +2307,16 @@ route('POST', /^\/admin\/agenda-items\/(\d+)\/open$/, (req, res, ctx) => {
   sendJson(res, { ok: true, reopened: r.reopened });
 });
 
+// Done with an item: take it off the board. Not part of the vote lifecycle —
+// it records nothing and changes no result.
+route('POST', /^\/admin\/agenda-items\/(\d+)\/clear$/, (req, res, ctx) => {
+  const item = repo.meetings.getItem(Number(ctx.params[0]));
+  if (!item) return sendJson(res, { error: 'Not found' }, 404);
+  repo.voteAdmin.clear(item.id);
+  live.pushUpdate(item.meeting_id);
+  sendJson(res, { ok: true });
+});
+
 /**
  * Void a vote. Distinct from reopening — see repo.voteAdmin.
  */

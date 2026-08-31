@@ -813,9 +813,38 @@ const meetings = {
   },
   addItem(it) {
     const existing = db.prepare(
-      'SELECT section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
+      'SELECT id, section, agenda_number, sort_order FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order')
       .all(it.meeting_id);
     const maxOrder = existing.length ? existing[existing.length - 1].sort_order : 0;
+
+    /**
+     * Where the new item physically goes.
+     *
+     * It went at the end of the agenda, always. An item filed under a section
+     * that already exists therefore landed *below* every other section, and
+     * because the agenda prints a heading whenever the section changes, the
+     * clerk got a second copy of that heading at the bottom of the page — the
+     * item in a duplicate of a category that was already there. renumber()
+     * then gave it a number from its section's rank, so the running order and
+     * the numbers disagreed: a consent calendar numbered 3A sitting after 4A
+     * and 5A, or a packet listing Tab 12 4D after 7A Adjournment.
+     *
+     * So an item joins the block its section already occupies, after the last
+     * item in it. Where the section is new to this meeting there is nothing to
+     * join and the end of the agenda is right.
+     */
+    let insertAt = maxOrder + 1;
+    if (it.section) {
+      const inSection = existing.filter((r) => r.section === it.section);
+      if (inSection.length) {
+        const lastOfSection = inSection[inSection.length - 1].sort_order;
+        // Everything at or below that point stays; everything after it moves
+        // down one to make room.
+        db.prepare(`UPDATE agenda_items SET sort_order = sort_order + 1
+          WHERE meeting_id = ? AND sort_order > ?`).run(it.meeting_id, lastOfSection);
+        insertAt = lastOfSection + 1;
+      }
+    }
 
     // Auto-assign agenda_number when not provided: "1A", "1B" within sections,
     // or "1", "2", "3" for unsectioned items. Derived from existing agenda_number
@@ -869,7 +898,7 @@ const meetings = {
       (meeting_id, matter_id, sort_order, agenda_number, section, title, action, result, notes,
        requires_vote, item_type, is_consent_group)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      it.meeting_id, it.matter_id || null, it.sort_order || (maxOrder + 1),
+      it.meeting_id, it.matter_id || null, it.sort_order || insertAt,
       agendaNum, it.section || null, it.title || null,
       it.action || null, it.result || null, it.notes || null, requiresVote, itemType,
       it.is_consent_group ? 1 : 0).lastInsertRowid;
@@ -993,6 +1022,23 @@ const meetings = {
    * loses it here, which is the trade: one authority for the numbering, and it
    * is the order of business.
    */
+  /**
+   * Recompute the running order and the numbers, so they agree.
+   *
+   * This numbered by the canonical section order and left `sort_order` alone,
+   * which let the two drift apart: an item appended to a section it did not
+   * physically sit near got that section's number while staying where it was,
+   * so an agenda could read Consent Agenda, New Business, Consent Agenda, New
+   * Business — the same heading printed four times, with numbers that did not
+   * follow the page. Sorting is part of numbering, not a separate act.
+   *
+   * The model this settles on: sections run in the canonical order
+   * AGENDA_SECTIONS declares, and items run in their existing order within a
+   * section. Dragging reorders items inside a section; moving an item to a
+   * different section is done by editing the item, which is where its section
+   * is actually recorded. That is the only arrangement in which an item's
+   * number can be trusted to describe where it is.
+   */
   renumber(meetingId) {
     const items = db.prepare(
       'SELECT id, section FROM agenda_items WHERE meeting_id = ? ORDER BY sort_order, id').all(meetingId);
@@ -1003,18 +1049,31 @@ const meetings = {
       .sort((a, b) => (order.has(a) ? order.get(a) : 999) - (order.has(b) ? order.get(b) : 999));
     const prefixOf = new Map(used.map((name, i) => [name, i + 1]));
 
+    // Gather each section's items into one block, keeping the order they are
+    // already in, and lay the blocks out in canonical order. Unsectioned items
+    // keep their relative order and follow, having no section to sit in.
+    const ranked = [...items].sort((a, b) => {
+      const ra = a.section ? (order.has(a.section) ? order.get(a.section) : 998) : 999;
+      const rb = b.section ? (order.has(b.section) ? order.get(b.section) : 998) : 999;
+      if (ra !== rb) return ra - rb;
+      return items.indexOf(a) - items.indexOf(b);
+    });
+
     const seen = new Map();
     let plain = 0;
-    const upd = db.prepare('UPDATE agenda_items SET agenda_number = ? WHERE id = ?');
+    const upd = db.prepare(
+      'UPDATE agenda_items SET agenda_number = ?, sort_order = ? WHERE id = ?');
     db.exec('SAVEPOINT sp_renumber');
     try {
-      for (const it of items) {
-        if (!it.section) { upd.run(String(++plain), it.id); continue; }
+      let pos = 0;
+      for (const it of ranked) {
+        pos += 1;
+        if (!it.section) { upd.run(String(++plain), pos, it.id); continue; }
         const n = (seen.get(it.section) || 0) + 1;
         seen.set(it.section, n);
         // Past Z, fall back to a numeric suffix rather than emitting punctuation.
         const letter = n <= 26 ? String.fromCharCode(64 + n) : `-${n}`;
-        upd.run(`${prefixOf.get(it.section)}${letter}`, it.id);
+        upd.run(`${prefixOf.get(it.section)}${letter}`, pos, it.id);
       }
       db.exec('RELEASE sp_renumber');
     } catch (e) {
@@ -3084,6 +3143,7 @@ const voteAdmin = {
     const rule = item.vote_threshold || item.threshold_rule || 'majority';
     db.prepare(`UPDATE agenda_items
       SET vote_status = 'open', vote_opened_at = datetime('now'), vote_closed_at = NULL,
+          cleared_at = NULL,
           threshold_rule = ?, result_computed_at = NULL, result_announced_at = NULL,
           result_certified_at = NULL, result_certified_by = NULL, result_published_at = NULL,
           certification_checkpoint = NULL
@@ -3137,12 +3197,24 @@ const voteAdmin = {
     // there is exactly one roll, on the group, and each item points at it.
     if (item.is_consent_group) {
       const carried = meetings.consentMembers(itemId);
-      const stamp = db.prepare(
-        "UPDATE agenda_items SET result_computed_at = datetime('now') WHERE id = ?");
+      // Closed, not merely resulted.
+      //
+      // This stamped result_computed_at and set the result but left
+      // vote_status at 'pending', so every screen that asks "has this been
+      // voted?" — the agenda manager, the live console's item list, the
+      // minutes, the per-item report — answered no while a result hung off
+      // the row. The calendar worked and looked as though it had not.
+      //
+      // The close time is the calendar's own: these items were disposed of at
+      // the instant that roll shut, not at some later moment of bookkeeping.
+      const stamp = db.prepare(`UPDATE agenda_items
+        SET vote_status = 'closed', vote_closed_at = ?, result_computed_at = datetime('now')
+        WHERE id = ?`);
+      const closedAt = meetings.getItem(itemId).vote_closed_at;
       for (const member of carried) {
         meetings.setItemResult(member.id,
           member.action || 'Adopted on the consent calendar', outcome.result);
-        stamp.run(member.id);
+        stamp.run(closedAt, member.id);
       }
       voteLedger.appendEvent(item.meeting_id, 'RESULT_COMPUTED', {
         agendaItemId: itemId, consentCalendar: true,
@@ -3150,6 +3222,20 @@ const voteAdmin = {
       }, { agendaItemId: itemId, enteredBy: userId });
     }
     return outcome;
+  },
+
+  /**
+   * Done with this item: take it off the board.
+   *
+   * Deliberately not part of the vote lifecycle. It records nothing in the
+   * ledger and changes no result — it is the clerk saying the room has moved
+   * on, and it is undone the moment the item is opened again.
+   */
+  clear(itemId) {
+    const item = meetings.getItem(itemId);
+    if (!item) return null;
+    db.prepare("UPDATE agenda_items SET cleared_at = datetime('now') WHERE id = ?").run(itemId);
+    return meetings.getItem(itemId);
   },
 
   /** The chair states the result to the room. */
