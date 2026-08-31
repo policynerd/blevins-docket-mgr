@@ -144,6 +144,32 @@ h2.sec {
 .sign-role { font: 8.5pt/1.3 ${SANS}; color: var(--muted); margin-top: 3pt; }
 
 .muted { color: var(--muted); }
+
+/* --- The packet's front matter -------------------------------------------
+   The contents is a table because it is one: a tab column and an entry. It
+   was built by padding a tab label with spaces, so a tabbed row read
+   "Tab 1 5.A. 260802 — …" with the two run together while an untabbed row
+   started flush at its number — two left edges in one list, and no column to
+   scan down. An item carrying nothing leaves the tab column blank, which says
+   "nothing behind this one" without claiming anything. */
+.contents { border-collapse: collapse; width: 100%; margin-top: 4pt; }
+.contents td { vertical-align: top; padding: 0 0 4pt 0; }
+.contents .tab { width: 52pt; white-space: nowrap; }
+.cover-when { font-size: 12pt; margin-bottom: 4pt; }
+.cover-meta { color: var(--muted); font-size: 10pt; margin-bottom: 2pt; }
+
+/* --- Divider and separator sheets ----------------------------------------
+   A packet opened at random has to say where it is. These are the only pages
+   in the document that are centred, because they are signposts rather than
+   text. */
+.sheet { text-align: center; margin-top: 2.4in; }
+.sheet-tab { font-size: 28pt; font-weight: 700; letter-spacing: .02em; }
+.sheet-kind { font: 600 10pt/1.3 ${SANS}; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-top: 12pt; }
+.sheet-title { font-size: 13pt; margin-top: 8pt; }
+.sheet-note { font-size: 10.5pt; font-style: italic; color: var(--muted);
+  margin: 10pt auto 0; max-width: 4.6in; }
+.sheet-url { font-size: 9pt; color: var(--muted); margin-top: 6pt; word-break: break-all; }
 `;
 
 /**
@@ -185,6 +211,59 @@ function footer(identity) {
     + `<tr><td style="text-align:left;">${escapeHtml(identity)}</td>`
     + `<td style="text-align:right;">Page <span class="pageNumber"></span>`
     + ` of <span class="totalPages"></span></td></tr></table>`;
+}
+
+/**
+ * A footer carrying only the document's identity.
+ *
+ * The packet's front matter does not know how long the packet is — it is
+ * bound before the rest exists — and printing its own length there read
+ * "Page 1 of 1" on the cover of a twelve-page packet. Packet-wide numbering is
+ * stamped across every sheet after the merge, which is the number a chair
+ * means by "turn to page 40".
+ */
+function footerPlain(identity) {
+  return `<div style="width:100%;padding:0 0.75in;font-size:9px;`
+    + `font-family:${SANS};color:#6b7585;">${escapeHtml(identity)}</div>`;
+}
+
+/** The packet cover, and what is in it. */
+function packetCover(meeting, when, entries) {
+  let out = masthead('Agenda packet', meeting.body_name);
+  out += `<div class="cover-when">${escapeHtml(when)}</div>`;
+  if (meeting.location) out += `<div class="cover-meta">${escapeHtml(meeting.location)}</div>`;
+  if (meeting.status) out += `<div class="cover-meta">Status: ${escapeHtml(meeting.status)}</div>`;
+  out += `<h2 class="sec">Contents</h2>`;
+  if (!entries.length) {
+    return page('Agenda packet', out
+      + `<p class="muted"><em>No item on this agenda carries supporting material.</em></p>`);
+  }
+  out += '<table class="contents">' + entries.map((e) =>
+    `<tr><td class="tab">${escapeHtml(e.tab || '')}</td>`
+    + `<td>${escapeHtml(e.label)}</td></tr>`).join('') + '</table>';
+  return page('Agenda packet', out);
+}
+
+/** A tab divider, so a packet opened at random is navigable. */
+function divider({ tab, agendaNumber, title, section }) {
+  let out = `<div class="sheet"><div class="sheet-tab">TAB ${escapeHtml(String(tab))}</div>`;
+  if (agendaNumber) out += `<div class="sheet-kind">Agenda item ${escapeHtml(agendaNumber)}</div>`;
+  out += `<div class="sheet-title">${escapeHtml(title || '')}</div>`;
+  if (section) out += `<div class="sheet-kind">${escapeHtml(section)}</div>`;
+  return page(`Tab ${tab}`, out + '</div>');
+}
+
+/**
+ * The sheet that stands in front of a bound document, or in place of one that
+ * could not be bound. A gap the reader has to notice is worse than a page
+ * saying what is missing.
+ */
+function separator({ kind, name, note, url }) {
+  let out = `<div class="sheet"><div class="sheet-kind">${escapeHtml(kind)}</div>`
+    + `<div class="sheet-tab" style="font-size:14pt">${escapeHtml(name || '')}</div>`;
+  if (note) out += `<div class="sheet-note">${escapeHtml(note)}</div>`;
+  if (url) out += `<div class="sheet-url">${escapeHtml(url)}</div>`;
+  return page(name || 'Document', out + '</div>');
 }
 
 /** The masthead every printed document opens with. */
@@ -236,6 +315,7 @@ function section(label, html) {
 }
 
 module.exports = {
-  page, footer, masthead, rail, headMatter, section,
+  page, footer, footerPlain, masthead, rail, headMatter, section,
+  packetCover, divider, separator,
   CSS, RAIL_PAGE_CSS, SERIF, SANS,
 };
