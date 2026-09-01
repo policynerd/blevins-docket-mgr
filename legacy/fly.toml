@@ -33,16 +33,29 @@ primary_region = 'iad'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  # 512mb, not 256mb, because the documents are printed by a real browser.
+  # 1gb, because a render was measured and 512mb was not enough.
   #
-  # Chromium needs roughly 150-250mb to lay out and print a page, on top of
-  # Node and the SQLite page cache. At 256mb it does not fail loudly — it is
-  # killed by the OOM reaper, src/render.js falls back to the drawn pdf-lib
-  # documents, and the packet comes out looking exactly as it did before while
-  # nothing in the logs says why.
+  # The first estimate here said "roughly 150-250mb" and set 512mb. That was a
+  # guess, and it was wrong. Measured with smaps_rollup Pss — which apportions
+  # the memory Chromium's processes share, rather than summing their RSS and
+  # double-counting it — one render of a single Letter page costs:
   #
-  # This raises the cost of the machine. It is the price of the decision to
-  # print through a browser; dropping back to 256mb is fine, but then set
-  # DOCKET_RENDER=off so the fallback is a choice rather than a silent
-  # discovery on a meeting morning.
-  memory = '512mb'
+  #     chromium   284 MB
+  #     node        64 MB
+  #     ----------------
+  #     total     ~350 MB
+  #
+  # against a limit that also has to hold the SQLite page cache, the HTTP
+  # buffers and every other request in flight. ~160mb of headroom for all of
+  # that, on the machine that prints the packet the morning of a meeting.
+  #
+  # Flag tuning does not rescue it: --single-process measured 248 MB and
+  # --renderer-process-limit=1 measured 274 MB, so the most that is available
+  # is about 36 MB, and --single-process buys it in Chromium's least
+  # well-tested mode. Not worth it.
+  #
+  # This raises the cost of the machine, and that is the price of printing
+  # through a browser. The alternative is honest and supported: go back to
+  # 256mb and set DOCKET_RENDER=off, so the drawn documents are a choice rather
+  # than something discovered by reading a PDF's Producer string.
+  memory = '1gb'
