@@ -114,7 +114,18 @@ function visible(res, ctx, record, predicate) {
 route('GET', /^\/healthz$/, (req, res) => {
   try {
     repo.stats();
-    sendJson(res, { status: 'ok', time: new Date().toISOString() });
+    // Which renderer the documents are actually coming out of.
+    //
+    // The browser falls back to the drawn documents on its own, by design, so
+    // that a container without it still prints the meeting. The cost of that
+    // is a failure nobody can see: the packet looks exactly as it did before,
+    // and the only tell is the Producer string inside a PDF. This is where an
+    // operator can read it instead.
+    sendJson(res, {
+      status: 'ok',
+      time: new Date().toISOString(),
+      render: require('./src/render').status(),
+    });
   } catch (e) {
     sendJson(res, { status: 'error', error: String(e.message) }, 503);
   }
