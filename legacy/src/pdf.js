@@ -99,9 +99,10 @@ async function generatePacket(meeting) {
    */
   const sheet = async (html, drawn) => {
     if (render.available()) {
-      try { return await render.render(html, { footerTemplate: packetFooter }); } catch (_) {
-        // Fall through. A fault in the markup throws before this, while the
-        // string is being built, so a real bug still surfaces.
+      try { return await render.render(html, { footerTemplate: packetFooter }); } catch (e) {
+        // Fall through, but on the record. A fault in the markup throws before
+        // this, while the string is being built, so a real bug still surfaces.
+        render.noteFailure(`packet sheet: ${e.message}`);
       }
     }
     return drawn();

@@ -76,6 +76,44 @@ function findBrowser() {
 const LAUNCH_TIMEOUT_MS = 20000;
 const RENDER_TIMEOUT_MS = 30000;
 
+/**
+ * Why the browser is not being used, when it is not.
+ *
+ * The fallback was built to be silent, and that was a mistake. A container
+ * with Chromium installed can still fall back — the binary is somewhere this
+ * does not look, it is killed for memory, it will not start under the
+ * container's namespaces — and the packet then comes out looking exactly as it
+ * did before, correct and unremarkable, with nothing anywhere saying why. That
+ * is not a safe failure; it is an invisible one, and the only way to tell is
+ * to open a PDF and read its Producer string.
+ *
+ * So a fall-back says so, once per distinct reason, on stderr where the
+ * platform's log collector will pick it up. Once per reason rather than once
+ * per document: a packet is a run of renders and a line for each would bury
+ * the one that matters.
+ */
+let lastReason = null;
+const reported = new Set();
+function note(reason) {
+  lastReason = reason;
+  if (reported.has(reason)) return;
+  reported.add(reason);
+  process.stderr.write(`[render] falling back to the drawn documents: ${reason}\n`);
+}
+
+/** What the renderer would do right now, and why. For /healthz and operators. */
+function status() {
+  const binary = findBrowser();
+  return {
+    mode: available() ? 'browser' : 'fallback',
+    binary,
+    disabled: String(process.env.DOCKET_RENDER || '').toLowerCase() === 'off' || undefined,
+    reason: available() ? undefined : (lastReason
+      || (binary ? 'not attempted yet' : 'no Chromium found on any known path')),
+    searched: binary ? undefined : CANDIDATES,
+  };
+}
+
 let browser = null;          // { proc, ws, send, close, userDataDir }
 let launching = null;        // in-flight launch, so two callers share one browser
 let queue = Promise.resolve(); // renders run one at a time; see render()
@@ -246,8 +284,15 @@ async function get() {
  * how a test run that is not about rendering avoids paying for one.
  */
 function available() {
-  if (String(process.env.DOCKET_RENDER || '').toLowerCase() === 'off') return false;
-  return findBrowser() != null;
+  if (String(process.env.DOCKET_RENDER || '').toLowerCase() === 'off') {
+    note('DOCKET_RENDER=off');
+    return false;
+  }
+  if (findBrowser() == null) {
+    note(`no Chromium on any of: ${CANDIDATES.join(', ')}`);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -338,4 +383,9 @@ for (const sig of ['exit', 'SIGINT', 'SIGTERM']) {
   });
 }
 
-module.exports = { render, available, shutdown, RenderUnavailable, findBrowser };
+/** A caller reporting that it fell back after the browser failed mid-render. */
+function noteFailure(reason) { note(reason); }
+
+module.exports = {
+  render, available, shutdown, status, noteFailure, RenderUnavailable, findBrowser,
+};

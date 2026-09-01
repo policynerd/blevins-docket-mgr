@@ -171,3 +171,49 @@ test('a rendered letter is a PDF',
     assert.equal(Buffer.from(bytes.subarray(0, 5)).toString('latin1'), '%PDF-');
     render.shutdown();
   });
+
+// --- Saying so when it falls back ---------------------------------------------
+
+test('the renderer reports which path it is on, and why', () => {
+  // The fallback was built silent, and that was the mistake this fixes. A
+  // container with Chromium installed can still fall back — the binary is
+  // somewhere this does not look, it is killed for memory, it will not start
+  // under the container's namespaces — and the packet then comes out looking
+  // exactly as it did before, correct and unremarkable, with nothing anywhere
+  // saying why. The only tell was the Producer string inside a PDF.
+  const before = process.env.DOCKET_RENDER;
+  process.env.DOCKET_RENDER = 'off';
+  try {
+    const off = render.status();
+    assert.equal(off.mode, 'fallback');
+    assert.equal(off.disabled, true);
+    assert.ok(off.reason, 'a fallback always carries a reason');
+  } finally {
+    if (before === undefined) delete process.env.DOCKET_RENDER;
+    else process.env.DOCKET_RENDER = before;
+  }
+
+  const on = render.status();
+  assert.ok(['browser', 'fallback'].includes(on.mode));
+  if (on.mode === 'fallback') {
+    // Whatever the machine is, an operator can read why rather than open a PDF
+    // and inspect its metadata.
+    assert.ok(on.reason);
+    assert.ok(Array.isArray(on.searched), 'and where it looked');
+  } else {
+    assert.ok(on.binary, 'the browser path is named when one is in use');
+  }
+});
+
+test('a machine with no browser names the paths it searched', () => {
+  // "No Chromium found" is not actionable; "not at any of these four paths" is
+  // the difference between a guess and a fix.
+  const before = process.env.CHROMIUM_PATH;
+  const st = render.status();
+  if (st.mode === 'fallback' && st.searched) {
+    assert.ok(st.searched.length >= 3);
+    assert.ok(st.searched.some((p) => /chromium/.test(p)));
+  }
+  if (before === undefined) delete process.env.CHROMIUM_PATH;
+  else process.env.CHROMIUM_PATH = before;
+});

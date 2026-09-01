@@ -115,11 +115,16 @@ async function boardLetter(matter, opts = {}) {
       return await render.render(html, {
         footerTemplate: docprint.footer(`${ORG.name} \u00b7 ${matter.file_number}`),
       });
-    } catch (_) {
+    } catch (e) {
       // Any failure of the browser falls through to the drawn letter. A fault
       // in the template itself throws above this, while building the HTML, so
       // a real bug still surfaces rather than being papered over by a fallback
       // that quietly produces a different-looking document for ever.
+      //
+      // Said out loud, though. A silent fallback is how a machine with the
+      // browser installed can go on printing the drawn documents for weeks
+      // with nothing to read but the Producer string inside a PDF.
+      render.noteFailure(`board letter: ${e.message}`);
     }
   }
   return boardLetterDrawn(matter, opts);
