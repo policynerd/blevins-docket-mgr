@@ -279,6 +279,138 @@ class Doc {
     return this;
   }
 
+  /**
+   * A block of copy whose face changes inside the line.
+   *
+   * `text()` sets one string in one font, which was the whole of what these
+   * documents needed while each was written as a sequence of `text()` calls.
+   * A document that arrives as markup does not divide that way. `<p><b>Section
+   * 1.</b> The Board finds…</p>` is one paragraph in two faces, and a redline
+   * is one sentence in three — struck, inserted and unchanged, inside a single
+   * line. Setting those as separate blocks puts each on its own line, which is
+   * not the document.
+   *
+   * So this takes runs rather than a string. Words are measured and broken
+   * across whatever runs they span, because a face can change mid-word —
+   * `authoriz<s>ing</s><u>ed</u>` is an ordinary amendment — and each segment
+   * is then drawn in its own font with its own rule through or under it.
+   *
+   * runs: [{ text, style, color, underline, strike, sup }]
+   */
+  rich(runs, opts = {}) {
+    const size = opts.size || 11;
+    const lead = opts.lead || size * 1.32;
+    const indent = opts.indent || 0;
+    const hanging = opts.hanging || 0;
+    const measure = this.contentW - indent - (opts.rightIndent || 0) - hanging;
+    const fontOf = (run) => this.font(run.style || opts.style);
+    const sizeOf = (run) => (run.sup || run.sub ? size * 0.62 : size);
+    const spaceW = this.font(opts.style).widthOfTextAtSize(' ', size);
+
+    // One string, each character remembering the run it came from, so a word
+    // that spans a change of face is still measured and broken as one word.
+    let flat = '';
+    const owner = [];
+    for (const r of runs || []) {
+      const s = String(r && r.text != null ? r.text : '');
+      for (let i = 0; i < s.length; i += 1) owner.push(r);
+      flat += s;
+    }
+
+    const segsOf = (start, end) => {
+      const out = [];
+      let i = start;
+      while (i < end) {
+        const run = owner[i] || {};
+        let j = i;
+        while (j < end && owner[j] === run) j += 1;
+        out.push({ run, text: flat.slice(i, j) });
+        i = j;
+      }
+      return out;
+    };
+    const widthOf = (segs) => segs.reduce(
+      (s, g) => s + fontOf(g.run).widthOfTextAtSize(g.text, sizeOf(g.run)), 0);
+
+    const lines = [];
+    let line = [];
+    let lineW = 0;
+    const breakLine = () => { if (line.length) lines.push(line); line = []; lineW = 0; };
+
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(flat))) {
+      const segs = segsOf(m.index, m.index + m[0].length);
+      const w = widthOf(segs);
+      // A word longer than the measure — a URL, a long citation — is split
+      // rather than allowed to run off the page, as wrap() does for strings.
+      if (w > measure) {
+        breakLine();
+        let chunk = [];
+        let chunkW = 0;
+        for (let i = m.index; i < m.index + m[0].length; i += 1) {
+          const run = owner[i] || {};
+          const cw = fontOf(run).widthOfTextAtSize(flat[i], sizeOf(run));
+          if (chunkW + cw > measure && chunk.length) {
+            lines.push([{ segs: chunk, w: chunkW }]);
+            chunk = []; chunkW = 0;
+          }
+          const tail = chunk[chunk.length - 1];
+          if (tail && tail.run === run) tail.text += flat[i];
+          else chunk.push({ run, text: flat[i] });
+          chunkW += cw;
+        }
+        if (chunk.length) { line = [{ segs: chunk, w: chunkW }]; lineW = chunkW; }
+        continue;
+      }
+      const add = line.length ? spaceW + w : w;
+      if (line.length && lineW + add > measure) breakLine();
+      line.push({ segs, w });
+      lineW += line.length === 1 ? w : add;
+    }
+    breakLine();
+    if (!lines.length) return this;
+
+    lines.forEach((ln, i) => {
+      this.need(lead);
+      const startX = this.margin.left + indent + (i === 0 ? 0 : hanging);
+      const natural = ln.reduce((s, t) => s + t.w, 0) + spaceW * Math.max(0, ln.length - 1);
+      let x = startX;
+      if (opts.align === 'center') x = startX + (measure - natural) / 2;
+      else if (opts.align === 'right') x = startX + measure - natural;
+      for (const tok of ln) {
+        for (const seg of tok.segs) {
+          const { run } = seg;
+          const font = fontOf(run);
+          const sz = sizeOf(run);
+          const color = run.color || opts.color || INK;
+          // A superior figure sits on the same baseline arithmetic the
+          // footnote markers in text() use, so the two agree on the page.
+          const rise = run.sup ? size * 0.32 : (run.sub ? -size * 0.14 : 0);
+          this.page.drawText(seg.text, { x, y: this.y - size + rise, size: sz, font, color });
+          const w = font.widthOfTextAtSize(seg.text, sz);
+          if (run.underline) {
+            this.page.drawLine({
+              start: { x, y: this.y - size - 1.5 }, end: { x: x + w, y: this.y - size - 1.5 },
+              thickness: 0.6, color,
+            });
+          }
+          if (run.strike) {
+            this.page.drawLine({
+              start: { x, y: this.y - size * 0.62 }, end: { x: x + w, y: this.y - size * 0.62 },
+              thickness: 0.6, color,
+            });
+          }
+          x += w;
+        }
+        x += spaceW;
+      }
+      this.y -= lead;
+    });
+    if (opts.after) this.y -= opts.after;
+    return this;
+  }
+
   // The lines a footnote will actually draw as, at the band's own size and
   // width — used both to size the reserve before the note is queued and to
   // draw the band in save(), so the two never disagree about how tall a note
