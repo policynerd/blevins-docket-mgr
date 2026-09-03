@@ -8,7 +8,7 @@ const { MUTED: MUTED2 } = require('./pdfdoc');
 const { flow } = require('./flow');
 const documents = require('./documents');
 const render = require('./render');
-const docprint = require('./docprint');
+const packetprint = require('./packetprint');
 const upload = require('./upload');
 const fs = require('node:fs');
 
@@ -67,57 +67,45 @@ const ACCENT = rgb(0.083, 0.337, 0.62);
 
 // The meeting packet: the documents themselves, bound in agenda order.
 //
-// This used to be a listing — it printed the names of the attachments and
-// stopped. A packet whose contents are a table of names is not a packet; a
-// member sitting down with it has nothing to read. Each item's material is
-// now generated and bound behind a tab divider, in the order the tab numbers
-// were assigned by repo.meetings.packet(), so the divider, the table of
-// contents and the item itself cannot disagree about which tab is which.
-//
-// Items the clerk held back are omitted entirely, and items carrying nothing
-// keep their place in the contents without taking a tab.
+// Packet furniture is deliberately separate from the legal instruments it
+// contains. Cover, contents, tab dividers and separator sheets come from
+// packetprint.js; board letters, ordinances, reports and attachments retain
+// their own native document formatting.
 async function generatePacket(meeting) {
   const rows = repo.meetings.packet(meeting.id);
-  const out = await PDFDocument.create();
+  const body = await PDFDocument.create();
   const problems = [];
+  let documentCount = 0;
 
-  // Merge one generated or fetched PDF into the packet.
-  const merge = async (bytes) => {
+  // Merge one generated or fetched PDF into any destination document.
+  const mergeInto = async (target, bytes) => {
     if (!bytes) return 0;
     const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-    const pages = await out.copyPages(src, src.getPageIndices());
-    for (const pg of pages) out.addPage(pg);
+    const pages = await target.copyPages(src, src.getPageIndices());
+    for (const pg of pages) target.addPage(pg);
     return pages.length;
   };
+  const mergeBody = (bytes) => mergeInto(body, bytes);
 
-  /**
-   * One sheet of the packet's own furniture — a cover, a divider, a separator.
-   *
-   * Written once, as markup. The browser sets it where there is one and
-   * `flow()` draws the same markup where there is not, so a container without
-   * the browser package still assembles a complete packet.
-   *
-   * Each of these sheets used to be written twice — the markup here and a
-   * block of drawing calls beside it — and the pairs had already drifted: the
-   * drawn cover printed a status line the set one did not, and the drawn
-   * contents ran the tab label into the agenda number. There is one of each
-   * now.
-   */
+  const when = formatDateTime(meeting.meeting_date, meeting.meeting_time);
+  const packetIdentity = [ORG.name, meeting.body_name, 'Agenda packet'].filter(Boolean).join(' · ');
+  const packetFooter = packetprint.footerPlain(packetIdentity);
+  const packetFooterDrawn = (d) => {
+    d.at(d.margin.left, d.margin.bottom - 26, packetIdentity,
+      { size: 8, style: 'sans', color: MUTED2 });
+  };
+
+  /** One sheet of packet furniture, rendered by Chromium where available. */
   const sheet = async (html) => {
     if (render.available()) {
       try { return await render.render(html, { footerTemplate: packetFooter }); } catch (e) {
-        // Fall through, but on the record. A fault in the markup throws before
-        // this, while the string is being built, so a real bug still surfaces.
         render.noteFailure(`packet sheet: ${e.message}`);
       }
     }
     return flow(html, { footer: packetFooterDrawn });
   };
 
-  // Generate a document, but never let one bad item take the whole packet
-  // down. A packet that fails entirely on the morning of a meeting is worse
-  // than one that names what is missing, and the name is what lets a clerk
-  // fix it before distribution.
+  // A single bad supporting document must not take down the entire packet.
   const safely = async (label, fn) => {
     try { return await fn(); } catch (e) {
       problems.push(`${label}: ${e.message}`);
@@ -125,86 +113,82 @@ async function generatePacket(meeting) {
     }
   };
 
-  // --- Cover and contents ---
-  // No page count in this footer: the front matter does not know how long the
-  // packet is, and reporting its own length here read "1 of 1" on the cover of
-  // a twelve-page packet. Packet-wide numbering is stamped after the merge.
-  const packetFooter = docprint.footerPlain(`${ORG.name} \u00b7 Agenda packet`);
+  // Count only documents that actually make it into the bound packet. Divider
+  // and separator sheets are packet furniture and do not inflate this number.
+  const bindGenerated = async (label, fn) => {
+    const bytes = await safely(label, fn);
+    if (!bytes) return 0;
+    const n = await mergeBody(bytes);
+    if (n) documentCount += 1;
+    return n;
+  };
+
+  // Contents entries are created before binding, then filled with the packet
+  // page where each tab begins after front matter is paginated.
   const entries = rows.filter((r) => r.included).map((r) => {
     const it = r.item;
     return {
-      tab: r.tab ? `Tab ${r.tab}` : '',
-      label: (it.agenda_number ? `${it.agenda_number}. ` : '')
-        + (it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)')),
+      tab: r.tab || null,
+      agendaNumber: it.agenda_number || '',
+      fileNumber: it.matter_id ? (it.file_number || '') : '',
+      title: it.matter_id ? (it.matter_title || '') : (it.title || '(item)'),
+      section: it.section || '',
+      bodyPage: null,
+      page: null,
     };
   });
-  // The same footer, drawn. The browser puts its own band outside the page
-  // box; there is no band on a drawn page, so it is placed under the bottom
-  // margin.
-  const packetFooterDrawn = (d) => {
-    d.at(d.margin.left, d.margin.bottom - 26, `${ORG.name} \u00b7 Agenda packet`,
-      { size: 8, style: 'sans', color: MUTED2 });
-  };
-  await merge(await sheet(docprint.packetCover(
-    meeting, formatDateTime(meeting.meeting_date, meeting.meeting_time), entries)));
+  const entryByTab = new Map(entries.filter((e) => e.tab != null)
+    .map((e) => [String(e.tab), e]));
 
-  // --- Each item's material, behind its tab ---
+  // --- Each item's material, behind its tab --------------------------------
   for (const r of rows) {
-    // A tab is only assigned to an included item, so this covers both: an item
-    // the clerk held back never reaches here.
     if (!r.tab) continue;
     const it = r.item;
     const matter = it.matter_id ? repo.matters.get(it.matter_id) : null;
+    const entry = entryByTab.get(String(r.tab));
+    if (entry) entry.bodyPage = body.getPageCount() + 1;
 
-    // Divider: what this tab is, so a packet opened at random is navigable.
-    const dividerTitle = matter ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '');
-    await merge(await sheet(docprint.divider({
-      tab: r.tab, agendaNumber: it.agenda_number, title: dividerTitle, section: it.section,
+    const dividerTitle = matter ? `${it.file_number} — ${it.matter_title}` : (it.title || '');
+    await mergeBody(await sheet(packetprint.divider({
+      tab: r.tab,
+      agendaNumber: it.agenda_number,
+      title: dividerTitle,
+      section: it.section,
     })));
 
     if (matter) {
-      await merge(await safely(`${it.file_number} board letter`,
-        () => documents.boardLetter(matter, { date: meeting.meeting_date })));
+      await bindGenerated(`${it.file_number} board letter`,
+        () => documents.boardLetter(matter, { date: meeting.meeting_date }));
 
       if (matter.type === 'Ordinance') {
-        await merge(await safely(`${it.file_number} ordinance`,
-          () => documents.ordinance(matter)));
-        await merge(await safely(`${it.file_number} redline`,
-          () => documents.ordinance(matter, { redline: true })));
-        // The notice belongs in the packet only for the meeting it notices,
-        // which is this one.
-        await merge(await safely(`${it.file_number} summary`,
-          () => documents.summaryForPublication(matter, meeting)));
+        await bindGenerated(`${it.file_number} ordinance`,
+          () => documents.ordinance(matter));
+        await bindGenerated(`${it.file_number} redline`,
+          () => documents.ordinance(matter, { redline: true }));
+        await bindGenerated(`${it.file_number} summary`,
+          () => documents.summaryForPublication(matter, meeting));
       }
 
       for (const rep of r.reports) {
         const full = repo.reports.get(rep.id);
         if (full) {
-          await merge(await safely(`${it.file_number} ${rep.title}`,
-            () => documents.reportDoc(matter, full)));
+          await bindGenerated(`${it.file_number} ${rep.title}`,
+            () => documents.reportDoc(matter, full));
         }
       }
     }
 
-    // Attachments and item documents: bind the PDF where it can be fetched,
-    // and where it cannot, say so on its own page rather than leaving a gap
-    // the reader has to notice.
     const files = [
       ...r.attachments.map((a) => ({
         name: a.name, url: a.url, file_path: a.file_path, kind: 'Attachment',
       })),
       ...r.docs.map((d) => ({ name: d.name, url: d.url, kind: 'Item document' })),
     ];
+
     for (const f of files) {
-      // Uploaded first: a file held on the volume is the copy this board
-      // controls, and it needs no network to bind.
       const bytes = localPdfBytes(f) || (f.url ? await fetchPdfBytes(f.url) : null);
       let sepNote = null;
       if (!bytes) {
-        // Three different reasons, which want three different answers. A Word
-        // document is not a retrieval failure and never will be: telling a
-        // clerk to go and fix it wastes their morning, when what they need to
-        // know is that it has to be converted or handed round separately.
         const notPdf = /\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || '')
           || (f.file_path && !/\.pdf$/i.test(f.file_path));
         sepNote = notPdf
@@ -218,38 +202,104 @@ async function generatePacket(meeting) {
       }
       const sepUrl = (!bytes && f.url && !/\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || ''))
         ? f.url : null;
-      await merge(await sheet(docprint.separator({
-        kind: f.kind, name: f.name, note: sepNote, url: sepUrl,
+      await mergeBody(await sheet(packetprint.separator({
+        kind: f.kind,
+        name: f.name,
+        note: sepNote,
+        url: sepUrl,
       })));
-      if (bytes) await safely(`${f.name}`, () => merge(bytes));
+      if (bytes) {
+        const n = await safely(`${f.name}`, () => mergeBody(bytes));
+        if (n) documentCount += 1;
+      }
     }
   }
 
-  // --- What could not be bound ---
-  // Printed at the front of the reader's attention rather than buried: this
-  // is the page that tells a clerk the packet is short before it goes out.
+  // Build the quality-control page now so its page count can be included when
+  // calculating the tab start pages printed in the contents.
+  let problemBytes = null;
+  let problemPages = 0;
   if (problems.length) {
-    const bytes = await sheet(docprint.problems(problems));
-    const src = await PDFDocument.load(bytes);
-    const pages = await out.copyPages(src, src.getPageIndices());
-    // Insert after the cover so it is seen, not appended where it is not.
-    pages.reverse().forEach((pg) => out.insertPage(1, pg));
+    problemBytes = await sheet(packetprint.problems(problems));
+    const pdoc = await PDFDocument.load(problemBytes, { ignoreEncryption: true });
+    problemPages = pdoc.getPageCount();
   }
 
-  // Packet-wide page numbers, stamped bottom-centre after everything is bound.
-  // Each embedded document already carries its own "Page 1 of 3" at the edges,
-  // which is the right number for that document and the wrong one for the
-  // packet; this is the number a chair means by "turn to page 40". Centre
-  // keeps the two from colliding.
-  const stamp = await out.embedFont(StandardFonts.Helvetica);
+  // Contents pagination is a two-pass operation. The number of contents pages
+  // is independent of the page-number values themselves because that column is
+  // fixed width. Render once to know the front-matter length, calculate each
+  // tab's true packet page, then render the final contents.
+  const provisionalContents = await sheet(packetprint.contents(meeting, entries));
+  const provisionalContentsDoc = await PDFDocument.load(provisionalContents, { ignoreEncryption: true });
+  let contentsPages = provisionalContentsDoc.getPageCount();
+
+  const coverBytes = await sheet(packetprint.cover(meeting, when, {
+    itemCount: entries.length,
+    tabCount: entries.filter((e) => e.tab != null).length,
+    documentCount,
+  }));
+  const coverDoc = await PDFDocument.load(coverBytes, { ignoreEncryption: true });
+  const coverPages = coverDoc.getPageCount();
+
+  const applyPacketPages = () => {
+    for (const e of entries) {
+      e.page = e.bodyPage == null
+        ? null
+        : coverPages + contentsPages + problemPages + e.bodyPage;
+    }
+  };
+  applyPacketPages();
+  let contentsBytes = await sheet(packetprint.contents(meeting, entries));
+  let contentsDoc = await PDFDocument.load(contentsBytes, { ignoreEncryption: true });
+
+  // Extremely long agenda titles can, in theory, push the numbered contents
+  // onto one extra page. Recalculate once if that happens so page references
+  // remain true instead of being off by one for the rest of the book.
+  if (contentsDoc.getPageCount() !== contentsPages) {
+    contentsPages = contentsDoc.getPageCount();
+    applyPacketPages();
+    contentsBytes = await sheet(packetprint.contents(meeting, entries));
+    contentsDoc = await PDFDocument.load(contentsBytes, { ignoreEncryption: true });
+  }
+
+  // Final binding order: cover, contents, quality-control notice (if any), then
+  // the agenda material in tab order.
+  const out = await PDFDocument.create();
+  await mergeInto(out, coverBytes);
+  await mergeInto(out, contentsBytes);
+  if (problemBytes) await mergeInto(out, problemBytes);
+  if (body.getPageCount()) await mergeInto(out, await body.save());
+
+  // Useful metadata for Finder/Explorer, PDF readers and document-management
+  // systems. A packet should identify itself even when its filename is lost.
+  const packetTitle = `${meeting.body_name || ORG.name} Agenda Packet — ${formatDate(meeting.meeting_date)}`;
+  out.setTitle(packetTitle);
+  out.setSubject(`Agenda packet for ${when}`);
+  out.setAuthor(ORG.name);
+  out.setCreator(`${ORG.name} Legislative Information Center`);
+  out.setProducer(`${ORG.name} Legislative Information Center`);
+  out.setCreationDate(new Date());
+  out.setModificationDate(new Date());
+  if (typeof out.setKeywords === 'function') {
+    out.setKeywords(['agenda packet', 'board meeting', meeting.body_name || ORG.name]);
+  }
+
+  // Continuous packet numbering. Embedded documents may carry their own page
+  // numbers; this label is explicitly named "Packet page" so there is no
+  // ambiguity about which numbering system a chair or clerk is citing.
+  const stamp = await out.embedFont(StandardFonts.TimesRoman);
   const pages = out.getPages();
   pages.forEach((pg, i) => {
-    const label = `${i + 1} / ${pages.length}`;
-    const w = stamp.widthOfTextAtSize(label, 8);
+    const label = `Packet page ${i + 1} of ${pages.length}`;
+    const size = 7.5;
+    const w = stamp.widthOfTextAtSize(label, size);
     const { width } = pg.getSize();
     pg.drawText(label, {
-      x: (width - w) / 2, y: 26, size: 8, font: stamp,
-      color: rgb(0.42, 0.46, 0.52),
+      x: (width - w) / 2,
+      y: 18,
+      size,
+      font: stamp,
+      color: rgb(0.40, 0.44, 0.49),
     });
   });
 
