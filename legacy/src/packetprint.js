@@ -39,7 +39,6 @@ body {
   -webkit-print-color-adjust:exact;
   print-color-adjust:exact;
 }
-
 .packet-rule {
   height:3pt;
   margin:0 0 20pt;
@@ -130,8 +129,6 @@ body {
   color:var(--muted);
   font:9pt/1.45 ${SERIF};
 }
-
-/* Contents */
 .contents-heading {
   margin:18pt 0 4pt;
   color:var(--navy);
@@ -171,8 +168,6 @@ body {
 .contents .page { width:.72in; text-align:right; font:700 9pt/1.25 ${SANS}; }
 .contents .matter { color:var(--ink); font-weight:700; }
 .contents .section { display:block; margin-top:2pt; color:var(--muted); font:7.5pt/1.25 ${SANS}; }
-
-/* Tab divider */
 .sheet {
   min-height:8.2in;
   display:flex;
@@ -206,8 +201,6 @@ body {
 .sheet-rule { width:1.25in; margin-top:18pt; border-top:1.5pt solid var(--navy); }
 .sheet-note { max-width:5.5in; margin-top:12pt; color:var(--muted); font:9.5pt/1.4 ${SERIF}; }
 .sheet-url { max-width:5.5in; margin-top:6pt; color:var(--muted); font:7.5pt/1.25 ${SANS}; word-break:break-all; }
-
-/* Attachment separator */
 .separator-box {
   margin-top:1.35in;
   padding:24pt;
@@ -216,8 +209,6 @@ body {
 }
 .separator-box .sheet-kind { margin-top:0; }
 .separator-box .sheet-title { font-size:15pt; }
-
-/* Incomplete packet */
 .warn-title {
   margin:18pt 0 8pt;
   color:#7a2525;
@@ -250,7 +241,7 @@ function header(kind, bodyName) {
 }
 
 function footerPlain(identity) {
-  return `<table style="width:100%;padding:0 .55in;font-size:8px;font-family:${SANS};`
+  return '<table style="width:100%;padding:0 .55in;font-size:8px;font-family:Arial,Helvetica,sans-serif;'
     + 'color:#66717d;border-collapse:collapse;">'
     + `<tr><td style="text-align:left;">${escapeHtml(identity)}</td>`
     + '<td style="text-align:right;">Official agenda packet</td></tr></table>';
