@@ -1,0 +1,579 @@
+'use strict';
+
+const { html, raw, formatDate, isBrandSrc } = require('../util');
+const { ORG } = require('../org');
+const { getFooterHtml } = require('../footer-content');
+
+// Primary navigation, grouped into sidebar sections. Labels are resolved live
+// at render time (branding can rename the members label).
+// Primary navigation.
+//
+// This was filed by noun — Legislation, Finance, People & Bodies, Participate
+// — and none of those is a thing anyone sets out to do. Meetings, which is what
+// the application is actually for, appeared nowhere at all: the only ways in
+// were the Calendar and "Today's Docket", the latter filed under Legislation.
+//
+// Now the order is the work. Meetings first, because running one is the job;
+// then the measures that go through them; then the money; then the people and
+// the organization behind both. Reference material sits last, where you go
+// looking for it rather than past it.
+// Two levels, in the manner of the institutional web applications this is for:
+// a horizontal bar of modules across the top, and a left rail showing only the
+// active module's sections. One flat list of every destination is how you get a
+// rail long enough that nobody reads the bottom of it.
+//
+// `match` is the set of path prefixes that belong to a module, used to light
+// the right tab. `role` withholds a whole module from those who cannot use it.
+const MODULES = [
+  { id: 'home', label: 'Home', href: '/', match: [],
+    groups: [{ label: null, items: [{ href: '/', label: 'Dashboard' }] }] },
+
+  { id: 'docket', label: 'Docket', href: '/legislation',
+    match: ['/legislation', '/code', '/accountability', '/watching'],
+    groups: [{ label: 'Legislation', items: [
+      { href: '/legislation', label: 'Legislative Files' },
+      { href: '/code', label: 'Board Code' },
+      { href: '/accountability', label: 'Accountability' },
+    ] }] },
+
+  // "Today's Docket" is the agenda of the meeting happening now, so it belongs
+  // to the meeting rather than to the file cabinet.
+  { id: 'meetings', label: 'Meetings', href: '/meetings',
+    match: ['/meetings', '/docket', '/calendar', '/live', '/display'],
+    groups: [{ label: 'Meetings', items: [
+      { href: '/meetings', label: 'Meetings' },
+      { href: '/docket', label: "Today's Docket" },
+      { href: '/calendar', label: 'Meeting Calendar' },
+    ] }] },
+
+  { id: 'money', label: 'Money', href: '/budget',
+    match: ['/budget', '/procurement', '/vendors'],
+    groups: [{ label: 'Money', items: [
+      { href: '/budget', label: 'Budget' },
+      { href: '/procurement', label: 'Procurement' },
+    ] }] },
+
+  { id: 'governance', label: 'Governance', href: '/people',
+    match: ['/people', '/bodies', '/org', '/govern'],
+    groups: [{ label: 'People & Bodies', items: [
+      { href: '/people', label: ORG.membersLabel },
+      { href: '/bodies', label: 'Bodies & Committees' },
+      { href: '/org', label: 'Organization' },
+    ] }] },
+
+  { id: 'records', label: 'Records', href: '/policies',
+    match: ['/policies'],
+    groups: [{ label: 'Records', items: [
+      { href: '/policies', label: 'Policy Manual' },
+    ] }] },
+
+  // The workspace group inside is assembled per role by navFor().
+  { id: 'admin', label: 'Administration', href: '/admin/queue', role: 'member',
+    match: ['/admin', '/approvals', '/member'], groups: [] },
+];
+
+// Flat list kept for any consumer that iterates the whole nav.
+const NAV = MODULES.flatMap((m) => m.groups.flatMap((g) => g.items));
+
+// Which module owns a path. Home is an exact match, or every path would be
+// under it.
+function moduleFor(active) {
+  const at = String(active || '/');
+  if (at === '/') return MODULES[0];
+  return MODULES.find((m) => m.match.some((p) => at === p || at.startsWith(p + '/') || at === p))
+    || MODULES.find((m) => m.match.some((p) => at.startsWith(p)))
+    || MODULES[0];
+}
+
+// Request-scoped current user. Handlers render synchronously after this is set
+// (no awaits between setUser and rendering), so a module field is safe here.
+let _user = null;
+function setUser(u) { _user = u; }
+
+// Role checks defer to auth.hasRole — the single source of truth for the
+// hierarchy. This view once kept its own rank table, which omitted `admin`;
+// an unlisted role scored 0, so the most privileged account was navigated as
+// though it were an anonymous visitor and the Workspace group vanished
+// entirely. A second copy of a hierarchy will always drift from the first.
+// Lazily required, like repo below, to avoid any load-order coupling.
+function can(user, role) {
+  try { return require('../auth').hasRole(user, role); } catch (_) { return false; }
+}
+
+// Returns nav as groups [{ label, items:[{ href, label, badge? }] }], with the
+// members label re-resolved live and role-gated sections appended.
+function navFor(user, moduleId) {
+  const source = moduleId ? MODULES.filter((m) => m.id === moduleId) : MODULES;
+  const groups = source.flatMap((m) => m.groups.map((g) => ({
+    label: g.label,
+    items: g.items.map((n) => (n.href === '/people' ? { ...n, label: ORG.membersLabel } : { ...n })),
+  })));
+  // The workspace belongs to Administration; when a single module is asked for,
+  // it appears only there.
+  if (moduleId && moduleId !== 'admin') return groups;
+  const workspace = [];
+  if (can(user, 'member')) {
+    workspace.push({ href: '/admin/queue', label: 'My Work Queue' });
+    workspace.push({ href: '/member', label: 'Member Portal' });
+    // Approvals routed to this user (lazy require avoids a load-order cycle).
+    let count = 0;
+    try { count = require('../repo').workflow.inboxCount(user.id, can(user, 'clerk')); } catch (_) { /* ignore */ }
+    workspace.push({ href: '/approvals', label: 'Approvals', badge: count || null });
+  }
+  if (can(user, 'staff')) workspace.push({ href: '/govern/members', label: 'Membership' });
+  if (can(user, 'clerk')) {
+    workspace.push({ href: '/admin/consents', label: 'Written Consents' });
+    workspace.push({ href: '/admin/announcement', label: 'Announcement' });
+    workspace.push({ href: '/admin', label: 'Clerk Workspace' });
+  }
+  if (can(user, 'admin')) {
+    workspace.push({ href: '/admin/integrations', label: 'Integrations' });
+    workspace.push({ href: '/admin/branding', label: 'Branding' });
+    workspace.push({ href: '/admin/users', label: 'Users & Roles' });
+  }
+  if (workspace.length) groups.push({ label: 'Workspace', items: workspace });
+  return groups;
+}
+
+// Brand color override (validated hex only) applied live via CSS variables.
+function brandHead() {
+  const c = String(ORG.primaryColor || '');
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(c)) return '';
+  return `<style>:root{--accent:${c};--accent-dark:color-mix(in srgb, ${c}, #000 28%);}</style>`;
+}
+
+// isBrandSrc now lives in ../util so the chamber display, which is built to
+// stay independent of this module, can apply the same test.
+
+// Favicon: an explicit favicon URL, else the logo URL, else an auto-generated
+// inline SVG (rounded square in the brand color with the seal glyph) so the tab
+// icon always reflects the current branding without uploading a file.
+function faviconLink() {
+  const fav = String(ORG.faviconUrl || '');
+  const logo = String(ORG.logoUrl || '');
+  let href;
+  if (isBrandSrc(fav)) href = fav;
+  else if (isBrandSrc(logo)) href = logo;
+  else {
+    // The cipher in its roundel. A seal's legend is unreadable at tab size, so
+    // the favicon carries the monogram, which is the mark that survives there.
+    const seal = require('../seal');
+    href = seal.dataUri(seal.monogramSvg({ size: 64, ground: 'dark' }));
+  }
+  return `<link rel="icon" href="${href}">`;
+}
+
+// Banner mark: a logo image when an https logo URL is configured, else the seal glyph.
+// The board's mark. `variant: 'light'` is for dark grounds (the navy rail),
+// where the reversed artwork is used when one has been supplied.
+function brandMark({ variant = 'light', cls = 'brand-logo', size } = {}) {
+  const light = String(ORG.logoLightUrl || '');
+  const dark = String(ORG.logoUrl || '');
+  // On a dark ground prefer the reversed mark, else fall back to the standard one.
+  const src = variant === 'light'
+    ? (isBrandSrc(light) ? light : (isBrandSrc(dark) ? dark : ''))
+    : (isBrandSrc(dark) ? dark : (isBrandSrc(light) ? light : ''));
+  if (src) {
+    return `<img class="${escapeText(cls)}" src="${escapeText(src)}" alt="${escapeText(ORG.name)} seal">`;
+  }
+  // No artwork supplied: draw the board's own seal rather than standing a bare
+  // glyph in for it. Below 64px sealSvg() gives way to the cipher on its own,
+  // so the rail gets a legible roundel and a masthead gets the full device.
+  const seal = require('../seal');
+  return `<span class="brand-seal-mark">${seal.sealSvg({ size: size || 46, ground: variant === 'light' ? 'dark' : 'light' })}</span>`;
+}
+
+// The sidebar masthead. A horizontal lockup already contains the organization
+// name, so it stands alone; otherwise the seal is set beside the name in type.
+function brandBlock() {
+  const lockup = String(ORG.logoLockupUrl || '');
+  if (isBrandSrc(lockup)) {
+    return `<a class="brand brand-lockup-wrap" href="/">`
+      + `<img class="brand-lockup" src="${escapeText(lockup)}" alt="${escapeText(ORG.name)}">`
+      + '</a>';
+  }
+  return `<a class="brand" href="/">
+        ${brandMark()}
+        <span class="brand-text">
+          <strong>${escapeText(ORG.name)}</strong>
+          <small>${escapeText(ORG.tagline)}</small>
+        </span>
+      </a>`;
+}
+
+// The mark for the sign-in page, which sits on a light ground.
+//
+// Prefer the light-ground seal. Failing that, a lockup is usually reversed
+// artwork meant for the navy rail — invisible on white — so it is set on a
+// navy plate rather than dropped onto the page, which is what made the
+// sign-in page fall back to the placeholder glyph while the rail showed the
+// real mark.
+// True when the sign-in mark is a lockup that already sets the name in type,
+// so the adjacent wordmark would repeat it. Kept for screen readers.
+function authMarkCarriesName() {
+  return !isBrandSrc(String(ORG.logoUrl || '')) && isBrandSrc(String(ORG.logoLockupUrl || ''));
+}
+
+function authMark() {
+  // The artwork is decorative in every branch: the adjacent .auth-brand-text
+  // supplies the name and tagline, visibly or to assistive tech, so alt text
+  // here would announce the organization twice.
+  const seal = String(ORG.logoUrl || '');
+  if (isBrandSrc(seal)) {
+    return `<img class="brand-logo" src="${escapeText(seal)}" alt="">`;
+  }
+  // Validate each candidate in turn. Branding values are stored unvalidated,
+  // so a malformed lockup must not shadow a usable reversed seal.
+  for (const cand of [String(ORG.logoLockupUrl || ''), String(ORG.logoLightUrl || '')]) {
+    if (isBrandSrc(cand)) {
+      return `<span class="auth-plate"><img class="auth-plate-img" src="${escapeText(cand)}" alt=""></span>`;
+    }
+  }
+  // The sign-in page sits on paper and has room for the whole device — the
+  // one place in the interface where the legend can actually be read.
+  const device = require('../seal');
+  return `<span class="brand-seal-mark" aria-hidden="true">${device.sealSvg({ size: 112, ground: 'light' })}</span>`;
+}
+
+function statusBadge(status) {
+  const cls = 'st-' + String(status || '').toLowerCase().replace(/[^a-z]+/g, '-');
+  return raw(`<span class="badge ${cls}">${escapeText(status)}</span>`);
+}
+
+function typeBadge(type) {
+  const cls = 'ty-' + String(type || '').toLowerCase().replace(/[^a-z]+/g, '-');
+  return raw(`<span class="badge type ${cls}">${escapeText(type)}</span>`);
+}
+
+// Escapes for both text content AND double/single-quoted attribute values
+// (escaping quotes is harmless in text context but required in attributes).
+function escapeText(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Grouped left-rail navigation. Groups render as labelled sections of links.
+// The horizontal module bar. Modules a user cannot enter are not drawn — a tab
+// that always 403s is worse than no tab.
+function moduleTabs(user, active) {
+  const here = moduleFor(active);
+  return MODULES
+    .filter((m) => !m.role || can(user, m.role))
+    .map((m) => `<a class="mod-tab${m.id === here.id ? ' active' : ''}" href="${escapeText(m.href)}"`
+      + `${m.id === here.id ? ' aria-current="page"' : ''}>${escapeText(m.label)}</a>`)
+    .join('');
+}
+
+function sideNav(user, active) {
+  return navFor(user, moduleFor(active).id).map((g) => {
+    const links = g.items.map((n) => {
+      const badge = n.badge ? `<span class="nav-badge">${escapeText(n.badge)}</span>` : '';
+      return `<a class="${n.href === active ? 'active' : ''}" href="${escapeText(n.href)}">${escapeText(n.label)}${badge}</a>`;
+    }).join('');
+    const label = g.label ? `<div class="nav-group-label">${escapeText(g.label)}</div>` : '';
+    return `<div class="nav-group">${label}${links}</div>`;
+  }).join('');
+}
+
+// The official-system banner.
+//
+// Modelled on the strip every US federal site carries — "An official website
+// of the United States government · Here's how you know" — because it does a
+// job no other element does: it states, before anything else, what this system
+// is and why what it shows can be relied on. For a board's record of its own
+// proceedings that claim is the whole point of the application.
+//
+// A <details> rather than a script: it works with JavaScript off, it is
+// keyboard-operable for free, and the closed state is one slim line so it
+// costs almost nothing at the top of every page.
+function officialBanner() {
+  return `<details class="gov-banner">
+    <summary class="gb-bar">
+      <span class="gb-seal" aria-hidden="true">${brandMark({ size: 20, variant: 'dark', cls: 'gb-logo' })}</span>
+      <span class="gb-text">An official system of the ${escapeText(ORG.name)}</span>
+      <span class="gb-toggle">Here&rsquo;s how you know</span>
+    </summary>
+    <div class="gb-body">
+      <div class="gb-cols">
+        <div class="gb-col">
+          <strong>This is the Board&rsquo;s own record</strong>
+          <p>Agendas, votes and minutes shown here are produced by the
+            ${escapeText(ORG.clerkOffice)} from the proceedings themselves — not copied
+            from another system. What you see is the record, not a report about it.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Votes are sealed as they are cast</strong>
+          <p>Every ballot is written to an append-only, hash-chained ledger the moment it
+            is recorded. A vote is never overwritten: a change is a new entry naming the
+            one it supersedes, so altering the history would break the chain visibly.</p>
+        </div>
+        <div class="gb-col">
+          <strong>Internal use</strong>
+          <p>Access is limited to authenticated members and staff of
+            ${escapeText(ORG.name)}. Actions that change the record are attributed and
+            written to the audit log.</p>
+        </div>
+      </div>
+    </div>
+  </details>`;
+}
+
+function announcementBanner() {
+  let a;
+  try { a = require('../announcement').get(); } catch (_) { return ''; }
+  if (!a.active || !a.text) return '';
+  return `<div class="announce announce-${escapeText(a.level)}" role="alert">`
+    + `<span class="announce-ic" aria-hidden="true">📢</span>`
+    + `<span class="announce-text">${escapeText(a.text)}</span></div>`;
+}
+
+// The one page header.
+//
+// There used to be three. `layout` rendered a `.page-head` — but only when a
+// subtitle was passed, which two of ninety-one pages did. Detail pages built
+// their own `.crumbs` + `.detail-head` + `.head-actions`. Everything else
+// dropped a bare `<h1>` at the top of the body, or nothing at all, so a good
+// number of pages opened with no heading whatsoever and no way back.
+//
+// Three conventions means every page starts differently, and that is most of
+// what "choppy" turns out to be: nothing tells you where you are, what you can
+// do here, or how you got in. So the header is assembled here for every page,
+// from the same four parts, and views supply the parts rather than the markup.
+//
+//   crumbs   [{ href, label }] — the trail in. The last item is the current
+//            page and renders unlinked, so callers pass the whole path.
+//   title    the <h1>. Always rendered.
+//   subtitle one line on what this page is for.
+//   actions  page-level buttons, right-aligned on the title row.
+function pageHead({ title, subtitle, crumbs, actions }) {
+  const trail = Array.isArray(crumbs) && crumbs.length
+    ? `<nav class="crumbs" aria-label="Breadcrumb">${crumbs.map((c, i) => {
+      const last = i === crumbs.length - 1;
+      const label = escapeText(c.label);
+      // The current page is not a link to itself.
+      const node = (c.href && !last) ? `<a href="${escapeText(c.href)}">${label}</a>` : label;
+      return i === 0 ? node : ` <span class="crumb-sep" aria-hidden="true">/</span> ${node}`;
+    }).join('')}</nav>`
+    : '';
+  return `<div class="page-head">
+    ${trail}
+    <div class="page-head-row">
+      <div class="page-head-text">
+        <h1>${escapeText(title || '')}</h1>
+        ${subtitle ? `<p class="muted page-sub">${escapeText(subtitle)}</p>` : ''}
+      </div>
+      ${actions ? `<div class="page-actions">${actions}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+// `h1` overrides the on-page heading where the browser title wants something
+// different — a tab reads better as "Drafting — BOS-2026-014", the page itself
+// as the measure's actual title.
+function layout({ title, active, body, subtitle, head, crumbs, actions, h1, heading = true }) {
+  const user = _user;
+  const authArea = user
+    ? `<span class="util-user">${escapeText(user.name)} · <span class="util-role">${escapeText(user.role)}</span></span>
+       <form method="post" action="/logout" class="util-logout"><button type="submit">Sign out</button></form>`
+    : '<a href="/login">Staff &amp; Member Sign-In</a>';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeText(title ? title + ' · ' : '')}${escapeText(ORG.tagline)}</title>
+  <link rel="stylesheet" href="/styles.css">
+  ${faviconLink()}
+  <link rel="alternate" type="application/rss+xml" title="Recently Introduced Legislation" href="/legislation.rss">
+  <link rel="alternate" type="text/calendar" title="Legislative Meetings" href="/calendar.ics">
+  ${brandHead()}
+  ${head || ''}
+</head>
+<body>
+  ${officialBanner()}
+  <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
+  <div class="app">
+    <aside class="sidebar" aria-label="Primary navigation">
+      ${brandBlock()}
+      <nav class="sidenav">${sideNav(user, active)}</nav>
+    </aside>
+    <div class="content">
+      <div class="topbar">
+        <label for="nav-toggle-cb" class="nav-toggle" aria-label="Toggle navigation">☰</label>
+        <form class="banner-search" action="/legislation" method="get" role="search">
+          <input type="search" name="q" placeholder="Search legislation, file #, or sponsor" aria-label="Search legislation">
+          <button type="submit">Search</button>
+        </form>
+        <span class="util-right">
+          <a href="/api/v1">Developers / API</a>
+          <a href="/legislation.rss">RSS</a>
+          ${authArea}
+        </span>
+      </div>
+      <nav class="mod-bar" aria-label="Modules">${moduleTabs(user, active)}</nav>
+      ${announcementBanner()}
+      <main class="main-area">
+        ${heading ? pageHead({ title: h1 || title, subtitle, crumbs, actions }) : ''}
+        ${body}
+      </main>
+      <footer class="site-footer">
+        <div class="footer-inner">
+          <div>
+            <strong>${escapeText(ORG.name)} — ${escapeText(ORG.tagline)}</strong>
+            ${getFooterHtml() || '<p>Public records of ordinances, resolutions, meetings, and votes.</p>'}
+          </div>
+          <div class="footer-links">
+            <a href="/legislation">Legislation</a>
+            <a href="/calendar">Calendar</a>
+            <a href="/policies">Policies</a>
+            <a href="/org">Organization</a>
+            <a href="/api/v1">Web API</a>
+            <a href="/terms">Terms</a>
+            <a href="/privacy">Privacy</a>
+          </div>
+        </div>
+        <div class="footer-legal">
+          © ${new Date().getFullYear()} ${escapeText(ORG.name)}. All rights reserved.
+          · <a href="/terms">Terms &amp; Conditions</a> · <a href="/privacy">Privacy Notice</a>
+        </div>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function card(title, inner, opts = {}) {
+  const actions = opts.actions ? `<div class="card-actions">${opts.actions}</div>` : '';
+  return `<section class="card">
+    <div class="card-head"><h2>${escapeText(title)}</h2>${actions}</div>
+    <div class="card-body">${inner}</div>
+  </section>`;
+}
+
+// Tabbed panel container (progressive enhancement). `items` is
+// [{ id, label, count?, html }]. Without JS every panel renders; assets/tabs.js
+// marks the container `.js` and hides inactive panels.
+function tabs(items) {
+  const nav = items.map((t, i) => {
+    const label = escapeText(t.label) + (t.count != null ? ` <span class="tab-count">${escapeText(t.count)}</span>` : '');
+    return `<button type="button" class="tab-btn${i === 0 ? ' active' : ''}" data-tab="${escapeText(t.id)}">${label}</button>`;
+  }).join('');
+  const panels = items.map((t, i) => `
+    <div class="tab-panel${i === 0 ? ' active' : ''}" id="tab-${escapeText(t.id)}" role="tabpanel">${t.html}</div>`).join('');
+  return `<div class="tabs"><nav class="tab-nav" role="tablist">${nav}</nav>${panels}</div>`;
+}
+
+function emptyState(msg) {
+  return `<p class="empty">${escapeText(msg)}</p>`;
+}
+
+// Vertical routing/approval tracker. `steps` come from repo.workflow.forMatter.
+// A horizontal "where am I in this job" strip. Steps are {id, label, href,
+// done}; `current` is the id of the page being rendered. Shared by the meeting
+// workflow and the drafting workbench so the two read the same way.
+function stepStrip(steps, current, ariaLabel) {
+  const at = steps.findIndex((s) => s.id === current);
+  return `<nav class="steps" aria-label="${escapeText(ariaLabel || 'Workflow')}">${steps.map((s, i) => {
+    const state = s.id === current ? 'here' : (s.done ? 'done' : 'todo');
+    const mark = s.done && s.id !== current ? '✓' : String(i + 1);
+    return `<a class="step step-${state}" href="${escapeText(s.href)}"`
+      + `${s.id === current ? ' aria-current="step"' : ''}>`
+      + `<span class="step-n">${mark}</span><span class="step-l">${escapeText(s.label)}</span></a>`;
+  }).join('')}${at >= 0 && at < steps.length - 1
+    ? `<a class="step-next" href="${escapeText(steps[at + 1].href)}">Next: ${escapeText(steps[at + 1].label)} →</a>`
+    : ''}</nav>`;
+}
+
+function workflowStepper(steps) {
+  if (!steps || !steps.length) return emptyState('This file has not been routed yet.');
+  const badge = (st) => `<span class="wf-badge wf-b-${escapeText(String(st).toLowerCase())}">${escapeText(st)}</span>`;
+  const routedTo = (s) => ((s.status === 'Pending' || s.status === 'Returned')
+    ? (s.assignee_name ? ' · routed to ' + escapeText(s.assignee_name) : ' · unassigned (any clerk)')
+    : '');
+  return `<ol class="wf">${steps.map((s) => `
+    <li class="wf-step wf-${escapeText(String(s.status).toLowerCase())}">
+      <span class="wf-dot"></span>
+      <div class="wf-body">
+        <div class="wf-name">${s.seq}. ${escapeText(s.name)} ${badge(s.status)}</div>
+        <div class="sub">${escapeText(s.role || '')}${routedTo(s)}${s.acted_by_name ? ' · ' + escapeText(s.acted_by_name) : ''}${s.acted_at ? ' · ' + escapeText(formatDate(s.acted_at)) : ''}</div>
+        ${s.notes ? `<div class="sub wf-notes">${escapeText(s.notes)}</div>` : ''}
+      </div>
+    </li>`).join('')}</ol>`;
+}
+
+// Standalone centered layout for auth pages — no nav, just brand + content + slim footer.
+function authLayout(title, body) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeText(title ? title + ' · ' : '')}${escapeText(ORG.tagline)}</title>
+  <link rel="stylesheet" href="/styles.css">
+  ${faviconLink()}
+  ${brandHead()}
+</head>
+<body class="auth-page">
+  <div class="auth-shell">
+    <a class="auth-brand" href="/">
+      ${authMark()}
+      <span class="auth-brand-text${authMarkCarriesName() ? ' visually-hidden' : ''}">
+        <strong>${escapeText(ORG.name)}</strong>
+        <small>${escapeText(ORG.tagline)}</small>
+      </span>
+    </a>
+    ${body}
+    <footer class="auth-foot">
+      © ${new Date().getFullYear()} ${escapeText(ORG.name)} ·
+      <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> ·
+      <a href="/">Public portal</a>
+    </footer>
+  </div>
+</body>
+</html>`;
+}
+
+function forbidden() {
+  return layout({
+    title: 'Access denied', active: '',
+    body: '<div class="hero"><h1>403 — Access denied</h1><p>You don\'t have permission to view this page. <a style="color:#fff;text-decoration:underline" href="/login">Sign in</a> with an authorized account.</p></div>',
+  });
+}
+
+/**
+ * The publish control, and the sentence that goes with it.
+ *
+ * One component for board letters, agendas and files, because the decision is
+ * the same decision in all three places and it should not read as three
+ * different features. The sentence matters as much as the button: nowhere in
+ * this application did it previously say, in words, that a thing was readable
+ * by anyone on the internet — which is exactly how a hundred and forty-one
+ * draft letters came to be public without anybody choosing it.
+ *
+ * `at` is the timestamp column (or null). `noun` names the thing in the
+ * confirmation, so it reads "Take this board letter off the public site?".
+ */
+function publishControl({ action, at, noun, hint = '' }) {
+  const published = !!at;
+  const confirm = published
+    ? `Take this ${noun} off the public site? It will no longer be readable without signing in.`
+    : `Publish this ${noun}? Anyone on the internet will be able to read it, with no sign-in.`;
+  const state = published
+    ? `<span class="badge st-passed">Public</span> <span class="muted">since ${escapeText(String(at).slice(0, 10))}</span>`
+    : '<span class="badge st-draft">Not public</span> <span class="muted">visible only after signing in</span>';
+  return `<div class="publish-control">
+    <div class="publish-state">${state}</div>
+    ${hint ? `<p class="muted publish-hint">${escapeText(hint)}</p>` : ''}
+    <form method="post" action="${escapeText(action)}" class="inline-form"
+      onsubmit="return confirm('${escapeText(confirm).replace(/'/g, "\\'")}')">
+      <input type="hidden" name="state" value="${published ? 'off' : 'on'}">
+      <button type="submit" class="btn${published ? '' : ' primary'}">
+        ${published ? 'Unpublish' : 'Publish to the public site'}</button>
+    </form>
+  </div>`;
+}
+
+module.exports = { layout, authLayout, card, tabs, workflowStepper, stepStrip, statusBadge, typeBadge, emptyState, escapeText, brandMark, NAV, navFor, setUser, forbidden, isBrandSrc, publishControl };
