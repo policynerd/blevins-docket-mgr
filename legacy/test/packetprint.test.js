@@ -18,7 +18,7 @@ test('packet cover is a dedicated board-book cover, not a contents list', () => 
     tabCount: 7,
     documentCount: 19,
   });
-  assert.match(html, /Agenda Packet/);
+  assert.match(html, /AGENDA PACKET/);
   assert.match(html, /Agenda items/);
   assert.match(html, /Material tabs/);
   assert.match(html, /Packet documents/);
@@ -50,10 +50,10 @@ test('packet dividers and separator sheets preserve navigational identity', () =
     section: 'New Business',
   });
   assert.match(divider, /TAB 4/);
-  assert.match(divider, /Agenda item 6\.B\./);
+  assert.match(divider, /AGENDA ITEM 6\.B\./);
   assert.match(divider, /Supporting material for this agenda item follows/);
 
   const separator = packet.separator({ kind: 'Attachment', name: 'Staff report.pdf' });
-  assert.match(separator, /Attachment/);
+  assert.match(separator, /ATTACHMENT/);
   assert.match(separator, /Staff report\.pdf/);
 });
