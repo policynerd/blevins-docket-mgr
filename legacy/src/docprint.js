@@ -170,6 +170,14 @@ h2.sec {
 .sheet-note { font-size: 10.5pt; font-style: italic; color: var(--muted);
   margin: 10pt auto 0; max-width: 4.6in; }
 .sheet-url { font-size: 9pt; color: var(--muted); margin-top: 6pt; word-break: break-all; }
+
+/* --- The page that says the packet is short ------------------------------
+   Set larger than a section heading because it is not a section: it is the
+   page that tells a clerk the packet is incomplete before it goes out. */
+.warn-title { font-size: 14pt; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; margin: 0 0 8pt; }
+.warn-list { margin: 0 0 10pt; padding-left: 16pt; }
+.warn-list li { margin-bottom: 4pt; }
 `;
 
 /**
@@ -266,6 +274,22 @@ function separator({ kind, name, note, url }) {
   return page(name || 'Document', out + '</div>');
 }
 
+/**
+ * The page that says what could not be bound.
+ *
+ * Inserted after the cover rather than appended, because a page at the back of
+ * a forty-page packet is a page nobody reads until the meeting. This is the
+ * one that has to be seen before distribution.
+ */
+function problems(list) {
+  const n = list.length;
+  return page('Incomplete packet',
+    `<div class="warn-title">Incomplete packet</div>`
+    + `<p>${n} document${n === 1 ? '' : 's'} could not be included:</p>`
+    + `<ul class="warn-list">${list.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`
+    + `<p><em>Resolve these before distributing the packet.</em></p>`);
+}
+
 /** The masthead every printed document opens with. */
 function masthead(kind, bodyName) {
   let out = `<div class="mast-org">${escapeHtml(String(ORG.name || '').toUpperCase())}</div>`;
@@ -316,6 +340,6 @@ function section(label, html) {
 
 module.exports = {
   page, footer, footerPlain, masthead, rail, headMatter, section,
-  packetCover, divider, separator,
+  packetCover, divider, separator, problems,
   CSS, RAIL_PAGE_CSS, SERIF, SANS,
 };

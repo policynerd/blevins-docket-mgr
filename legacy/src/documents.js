@@ -13,6 +13,7 @@
 // printing an empty heading to imitate the shape.
 
 const { Doc, INK, MUTED } = require('./pdfdoc');
+const { flow } = require('./flow');
 const { ORG } = require('./org');
 const repo = require('./repo');
 const legisdoc = require('./legisdoc');
@@ -21,7 +22,6 @@ const { formatDate, escapeHtml } = require('./util');
 const render = require('./render');
 const docprint = require('./docprint');
 
-const RAIL_W = 128;   // left rail carrying the member roster on page 1
 
 // The governing body and the organisation are often configured to the same
 // name ("Board of Governors" of "Board of Governors"), which reads as a
@@ -109,8 +109,8 @@ function attachmentLabel(i) {
  * browser package.
  */
 async function boardLetter(matter, opts = {}) {
+  const html = boardLetterHtml(matter, opts);
   if (render.available()) {
-    const html = boardLetterHtml(matter, opts);
     try {
       return await render.render(html, {
         footerTemplate: docprint.footer(`${ORG.name} \u00b7 ${matter.file_number}`),
@@ -127,7 +127,21 @@ async function boardLetter(matter, opts = {}) {
       render.noteFailure(`board letter: ${e.message}`);
     }
   }
-  return boardLetterDrawn(matter, opts);
+  // The same markup, drawn. The running header and footer stay here because
+  // they are what the browser expresses in its own header/footer band, which
+  // has no equivalent on the drawn page.
+  const subject = upper(matter.title);
+  return flow(html, {
+    runningHeader: (d) => {
+      // Repeat the subject on every continuation page, hanging under the
+      // label, so a page found on its own is identifiable.
+      d.text('SUBJECT:', { size: 10, style: 'b' });
+      d.y += 10 * 1.32;
+      d.text(subject, { size: 10, style: 'b', indent: 62, hanging: 0 });
+      d.gap(14);
+    },
+    footer: officialFooter(`${ORG.name} \u00b7 ${matter.file_number}`),
+  });
 }
 
 /** The letter's markup. Pure: it reads the record and returns a string. */
@@ -201,161 +215,6 @@ function fiscalHtml(matter) {
   if (matter.fiscal_note) out.push(...paragraphs(matter.fiscal_note));
   if (!out.length) out.push('There is no fiscal impact associated with this action.');
   return out.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
-}
-
-async function boardLetterDrawn(matter, opts = {}) {
-  const body = matter.body_id ? repo.bodies.get(matter.body_id) : null;
-  const bodyName = (body && body.name) || ORG.primaryBody || ORG.name;
-  const members = body ? repo.bodies.members(body.id) : [];
-  const reports = repo.reports.forMatter(matter.id);
-  const report = opts.report || reports[0] || null;
-  const subject = upper(matter.title);
-
-  const doc = await Doc.create({
-    margin: { top: 60, right: 72, bottom: 72, left: 72 + RAIL_W },
-    runningHeader: (d) => {
-      // Repeat the subject on every continuation page, hanging under the label.
-      //
-      // The margin used to drop back to 72 here, so the text column jumped
-      // 128pt left and grew a third wider between page 1 and page 2 — one
-      // document set in two measures, which is the first thing the eye catches
-      // and reads as a fault rather than a design. The rail stays for the
-      // whole letter; below the roster it is letterhead, which is what a rail
-      // is for.
-      d.text('SUBJECT:', { size: 10, style: 'b' });
-      d.y += 10 * 1.32;
-      d.text(subject, { size: 10, style: 'b', indent: 62, hanging: 0 });
-      d.gap(14);
-    },
-    footer: officialFooter(`${ORG.name} · ${matter.file_number}`),
-  });
-
-  // --- Masthead (page 1 only) ---
-  doc.text(upper(ORG.name), { size: 13, style: 'b', after: 2 });
-  doc.text('AGENDA ITEM', { size: 11, style: 'sans', color: MUTED, after: 2 });
-  if (upper(bodyName) !== upper(ORG.name)) {
-    doc.text(upper(bodyName), { size: 11, style: 'b', after: 8 });
-  } else doc.gap(6);
-  doc.rule({ after: 14 });
-
-  // --- Member roster down the left rail ---
-  //
-  // Labelled, because seven names alone in a margin say nothing about what
-  // they are — a reader has no way to tell a membership roster from a
-  // distribution list or a list of sponsors.
-  //
-  // And labelled with the office where there is one. members() orders by
-  // Chair, then Vice Chair, then name; the sub-label showed the district, so
-  // the rail read "Seat 1, Seat 2, At-Large, Seat 3, Seat 5, Seat 6, Seat 4"
-  // — an order with no visible reason, which reads as a sorting bug. Printing
-  // the office that put those two at the top explains the order on the page.
-  let railY = doc.size.h - 60;
-  doc.at(72, railY, 'MEMBERS', { size: 7, style: 'sansB', color: MUTED });
-  railY -= 14;
-  for (const m of members) {
-    doc.at(72, railY, m.full_name.toUpperCase(), { size: 8, style: 'sansB' });
-    railY -= 10;
-    const office = m.role && m.role !== 'Member' ? m.role : '';
-    const sub = office && m.district ? `${office} · ${m.district}`
-      : (office || m.district || '');
-    if (sub) { doc.at(72, railY, sub, { size: 7.5, style: 'sans', color: MUTED }); railY -= 10; }
-    railY -= 5;
-    if (railY < 140) break;
-  }
-
-  // --- Head matter ---
-  // Three labelled values, in a column. These were padded with spaces —
-  // `DATE:  `, `TO:    ` — which aligns nothing: the layout draws word by word
-  // at computed positions, so the padding is gone before anything reaches the
-  // page. The values landed at x=232.0, 219.4 and 227.7.
-  const when = opts.date || matter.intro_date || null;
-  doc.field('DATE:', when ? formatDate(when) : '________________', { size: 10.5, after: 4 });
-  doc.field('TO:', bodyName, { size: 10.5, after: 4 });
-  doc.field('FILE:', matter.file_number, { size: 10.5, after: 12 });
-
-  doc.heading('SUBJECT', { size: 11 });
-  doc.text(subject, { size: 11, style: 'b', after: 12 });
-
-  // The standard sections, in the configured order, each carrying what was
-  // written for it. A section with nothing written is omitted rather than
-  // printed as an empty heading — the form is a set of questions, and a
-  // heading with no answer under it asserts one was given.
-  // Two sections have structured data behind them and can be answered from the
-  // file when nobody has written them: the summary stands in for OVERVIEW, and
-  // the fiscal fields for FISCAL IMPACT. Both are resolved inside the loop so
-  // they print in their configured position — appending a fallback after the
-  // loop puts it out of order, which for a form document is a defect.
-  const fiscalFromFile = () => {
-    const out = [];
-    if (matter.fiscal_impact != null && matter.fiscal_impact !== '') {
-      const amt = Number(matter.fiscal_impact);
-      out.push(`Estimated impact: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        + (matter.fiscal_recurring ? ' (ongoing annual cost)' : ' (one-time)'));
-    }
-    if (matter.fiscal_note) out.push(...paragraphs(matter.fiscal_note));
-    // Silence on cost reads as "not considered", and a board acts on the number.
-    if (!out.length) out.push('There is no fiscal impact associated with this action.');
-    return out;
-  };
-
-  const composed = repo.letters.compose(matter.id);
-  for (const sec of composed) {
-    let paras;
-    if (sec.filled) paras = paragraphs(sec.body_html);
-    else if (sec.key === 'overview') paras = matter.summary ? paragraphs(matter.summary) : [];
-    else if (sec.key === 'fiscal') paras = fiscalFromFile();
-    else paras = [];
-    if (!paras.length) continue;
-    doc.heading(sec.label, { size: 11 });
-    // Not justified. The rail leaves this column about 340pt wide — roughly 55
-    // characters at 10.5pt, below what justification needs — so every line came
-    // out with its word spacing stretched ("Approve  and  Adopt  the  revised
-    // Enterprise  Governance  Code") and rivers running down the page. The
-    // wider documents below still justify; this one is a memo on a narrow
-    // measure and reads better ragged right.
-    for (const para of paras) {
-      // A bullet hangs: its runover lines align under the text, not under the
-      // mark. Without it the second line of a bullet starts at the same left
-      // edge as the bullet itself, and a three-line item stops looking like
-      // one item.
-      const bullet = /^[•\u2013\u2014-]\s/.test(para);
-      doc.text(para, bullet
-        ? { size: 10.5, after: 6, indent: 12, hanging: 12 }
-        : { size: 10.5, after: 6 });
-    }
-    doc.gap(4);
-  }
-
-  // Nothing written at all: say so rather than issuing a letter that looks
-  // complete because its headings are missing.
-  if (!composed.some((sec) => sec.filled) && !matter.summary) {
-    doc.text('[No board letter has been written for this file.]',
-      { size: 10.5, style: 'i', color: MUTED, after: 8 });
-  }
-
-  const sponsors = repo.matters.sponsors(matter.id);
-  if (sponsors.length) {
-    doc.heading('SPONSOR(S)', { size: 11 });
-    doc.text(sponsors.map((sp) => sp.full_name).join(', '), { size: 10.5, after: 10 });
-  }
-
-  doc.gap(14);
-  doc.text('Respectfully submitted,', { size: 10.5 });
-  doc.signature(opts.submitterTitle || ORG.clerkTitle || 'Clerk of the Board');
-
-  // Attachments are lettered here and cited that way in debate ("Attachment
-  // B"), so the letter is where the lettering is fixed.
-  const atts = repo.matters.attachments(matter.id);
-  if (atts.length) {
-    doc.gap(10);
-    doc.heading('ATTACHMENT(S)', { size: 11 });
-    atts.forEach((a, i) => {
-      doc.text(`Attachment ${attachmentLabel(i)}: ${a.name}`,
-        { size: 10.5, hanging: 18, after: 4 });
-    });
-  }
-
-  return doc.save();
 }
 
 // --- 2 & 3. Ordinance, clean and redline -------------------------------------

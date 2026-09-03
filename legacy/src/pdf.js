@@ -4,7 +4,8 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const { ORG } = require('./org');
 const repo = require('./repo');
 const { formatDate, formatDateTime } = require('./util');
-const { Doc, MUTED: MUTED2 } = require('./pdfdoc');
+const { MUTED: MUTED2 } = require('./pdfdoc');
+const { flow } = require('./flow');
 const documents = require('./documents');
 const render = require('./render');
 const docprint = require('./docprint');
@@ -92,12 +93,17 @@ async function generatePacket(meeting) {
   /**
    * One sheet of the packet's own furniture — a cover, a divider, a separator.
    *
-   * HTML through the browser where there is one, and the drawn version where
-   * there is not. Every caller gets bytes either way, so a container without
-   * the browser package still assembles a complete packet; it just assembles
-   * the one that was drawn.
+   * Written once, as markup. The browser sets it where there is one and
+   * `flow()` draws the same markup where there is not, so a container without
+   * the browser package still assembles a complete packet.
+   *
+   * Each of these sheets used to be written twice — the markup here and a
+   * block of drawing calls beside it — and the pairs had already drifted: the
+   * drawn cover printed a status line the set one did not, and the drawn
+   * contents ran the tab label into the agenda number. There is one of each
+   * now.
    */
-  const sheet = async (html, drawn) => {
+  const sheet = async (html) => {
     if (render.available()) {
       try { return await render.render(html, { footerTemplate: packetFooter }); } catch (e) {
         // Fall through, but on the record. A fault in the markup throws before
@@ -105,7 +111,7 @@ async function generatePacket(meeting) {
         render.noteFailure(`packet sheet: ${e.message}`);
       }
     }
-    return drawn();
+    return flow(html, { footer: packetFooterDrawn });
   };
 
   // Generate a document, but never let one bad item take the whole packet
@@ -132,54 +138,15 @@ async function generatePacket(meeting) {
         + (it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)')),
     };
   });
-  const front = await Doc.create({
-    footer: (d) => {
-      d.at(d.margin.left, d.margin.bottom - 26, `${ORG.name} \u00b7 Agenda packet`,
-        { size: 8, style: 'sans', color: MUTED2 });
-    },
-  });
-  // The organisation and the body are usually configured to the same name, and
-  // the cover printed both — "BOARD OF GOVERNORS" over "Board of Governors",
-  // which reads as a stutter rather than as two facts. Say it once when they
-  // agree, as the board letter already does.
-  front.text(upper(ORG.name), { size: 16, style: 'b', after: 6 });
-  if (meeting.body_name && upper(meeting.body_name) !== upper(ORG.name)) {
-    front.text(meeting.body_name, { size: 13, style: 'b', after: 4 });
-  }
-  front.text('AGENDA PACKET', { size: 11, style: 'sans', color: MUTED2, after: 10 });
-  front.rule({ after: 14 });
-  front.text(formatDateTime(meeting.meeting_date, meeting.meeting_time), { size: 12, after: 4 });
-  if (meeting.location) front.text(meeting.location, { size: 11, color: MUTED2, after: 4 });
-  front.text(`Status: ${meeting.status || ''}`, { size: 10, color: MUTED2, after: 18 });
-
-  const withTabs = rows.filter((r) => r.tab);
-  front.heading('CONTENTS', { size: 12 });
-  if (!withTabs.length) {
-    front.text('No item on this agenda carries supporting material.',
-      { size: 10.5, style: 'i', color: MUTED2, after: 8 });
-  }
-  for (const r of rows) {
-    if (!r.included) continue;
-    const it = r.item;
-    const num = it.agenda_number ? `${it.agenda_number}. ` : '';
-    const title = it.matter_id ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '(item)');
-    // An item carrying nothing keeps its place in the contents and takes no
-    // tab. It used to print an em-dash in the tab column, which reads as a
-    // value that failed to load rather than as "there is nothing behind this
-    // one" — blank says that without claiming anything.
-    const tab = r.tab ? `Tab ${r.tab}` : '';
-    // A tab column, not a prefix. This was `${tab}    ${num}${title}` — padded
-    // with spaces that the layout discards — so a tabbed row read "Tab 1 5.A.
-    // 260802 — …" with the tab run into the agenda number, while an untabbed
-    // row started flush at its number. Two left edges in one list, and no
-    // column to scan down. The label sits in its own column and an item
-    // carrying nothing leaves that column blank, which says "nothing behind
-    // this one" without claiming anything.
-    front.field(tab, `${num}${title}`, { size: 10.5, labelW: 52, after: 3 });
-  }
-  await merge(await sheet(
-    docprint.packetCover(meeting, formatDateTime(meeting.meeting_date, meeting.meeting_time), entries),
-    () => front.save()));
+  // The same footer, drawn. The browser puts its own band outside the page
+  // box; there is no band on a drawn page, so it is placed under the bottom
+  // margin.
+  const packetFooterDrawn = (d) => {
+    d.at(d.margin.left, d.margin.bottom - 26, `${ORG.name} \u00b7 Agenda packet`,
+      { size: 8, style: 'sans', color: MUTED2 });
+  };
+  await merge(await sheet(docprint.packetCover(
+    meeting, formatDateTime(meeting.meeting_date, meeting.meeting_time), entries)));
 
   // --- Each item's material, behind its tab ---
   for (const r of rows) {
@@ -191,20 +158,9 @@ async function generatePacket(meeting) {
 
     // Divider: what this tab is, so a packet opened at random is navigable.
     const dividerTitle = matter ? `${it.file_number} \u2014 ${it.matter_title}` : (it.title || '');
-    await merge(await sheet(
-      docprint.divider({ tab: r.tab, agendaNumber: it.agenda_number,
-        title: dividerTitle, section: it.section }),
-      async () => {
-        const div = await Doc.create({});
-        div.gap(150);
-        div.text(`TAB ${r.tab}`, { size: 28, style: 'b', align: 'center', after: 14 });
-        if (it.agenda_number) {
-          div.text(`Agenda item ${it.agenda_number}`, { size: 12, style: 'sans', color: MUTED2, align: 'center', after: 8 });
-        }
-        div.text(dividerTitle, { size: 13, align: 'center', after: 6 });
-        if (it.section) div.text(it.section, { size: 10, style: 'sans', color: MUTED2, align: 'center' });
-        return div.save();
-      }));
+    await merge(await sheet(docprint.divider({
+      tab: r.tab, agendaNumber: it.agenda_number, title: dividerTitle, section: it.section,
+    })));
 
     if (matter) {
       await merge(await safely(`${it.file_number} board letter`,
@@ -262,17 +218,9 @@ async function generatePacket(meeting) {
       }
       const sepUrl = (!bytes && f.url && !/\.(docx?|xlsx?|pptx?|txt|rtf|csv|png|jpe?g)$/i.test(f.name || ''))
         ? f.url : null;
-      await merge(await sheet(
-        docprint.separator({ kind: f.kind, name: f.name, note: sepNote, url: sepUrl }),
-        async () => {
-          const sep = await Doc.create({});
-          sep.gap(120);
-          sep.text(f.kind.toUpperCase(), { size: 10, style: 'sans', color: MUTED2, align: 'center', after: 8 });
-          sep.text(f.name, { size: 14, style: 'b', align: 'center', after: 8 });
-          if (sepNote) sep.text(sepNote, { size: 10.5, style: 'i', color: MUTED2, align: 'center' });
-          if (sepUrl) sep.text(sepUrl, { size: 9, color: MUTED2, align: 'center' });
-          return sep.save();
-        }));
+      await merge(await sheet(docprint.separator({
+        kind: f.kind, name: f.name, note: sepNote, url: sepUrl,
+      })));
       if (bytes) await safely(`${f.name}`, () => merge(bytes));
     }
   }
@@ -281,14 +229,7 @@ async function generatePacket(meeting) {
   // Printed at the front of the reader's attention rather than buried: this
   // is the page that tells a clerk the packet is short before it goes out.
   if (problems.length) {
-    const warn = await Doc.create({});
-    warn.text('INCOMPLETE PACKET', { size: 14, style: 'b', after: 8 });
-    warn.text(`${problems.length} document${problems.length === 1 ? '' : 's'} could not be included:`,
-      { size: 11, after: 10 });
-    for (const p of problems) warn.text(`\u2022 ${p}`, { size: 10.5, indent: 12, hanging: 12, after: 4 });
-    warn.gap(10);
-    warn.text('Resolve these before distributing the packet.', { size: 10.5, style: 'i' });
-    const bytes = await warn.save();
+    const bytes = await sheet(docprint.problems(problems));
     const src = await PDFDocument.load(bytes);
     const pages = await out.copyPages(src, src.getPageIndices());
     // Insert after the cover so it is seen, not appended where it is not.
