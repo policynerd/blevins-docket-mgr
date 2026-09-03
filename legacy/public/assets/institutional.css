@@ -312,9 +312,13 @@ a:hover { color:var(--ip-link-hover); }
 }
 .util-right a:hover { color:var(--ip-link); }
 
-/* Module tabs read like Office menu tabs, not web-site navigation. */
+/* Module tabs read like Office menu tabs, not web-site navigation. The small
+   strip above them is intentional: InfoPath/Office toolbars did not glue the
+   tab row directly to the command bar. */
 .mod-bar {
-  min-height:34px;
+  min-height:40px;
+  padding:6px 14px 0!important;
+  align-items:flex-end;
   background:var(--ip-face)!important;
   border-top:1px solid #fff!important;
   border-bottom:1px solid var(--ip-border-dark)!important;
