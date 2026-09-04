@@ -38,16 +38,18 @@ function livePage(meeting, { role, personId, control }) {
     ${raw(tools)}
 
     <div class="live" data-meeting="${meeting.id}" data-role="${role}" data-control="${control ? '1' : '0'}"${raw(personAttr)}>
-      <section class="card live-active-card">
-        <div class="card-head"><h2>Now before the body</h2><span class="muted" data-live-watchers></span></div>
+      <section class="card live-active-card" aria-labelledby="live-active-heading">
+        <div class="card-head"><h2 id="live-active-heading">Now before the body</h2><span class="muted" data-live-watchers></span></div>
         <div class="card-body" data-live-active><p class="empty">Waiting for the clerk to open an item…</p></div>
       </section>
-      <section class="card">
-        <div class="card-head"><h2>Agenda</h2></div>
-        <div class="card-body"><ol class="live-agenda" data-live-agenda></ol></div>
+      <section class="card" aria-labelledby="live-agenda-heading">
+        <div class="card-head"><h2 id="live-agenda-heading">Agenda</h2></div>
+        <div class="card-body"><ol class="live-agenda" data-live-agenda aria-labelledby="live-agenda-heading"></ol></div>
       </section>
+      <div class="visually-hidden" data-live-announcer role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-    <script src="/assets/live.js" defer></script>`;
+    <script src="/assets/live.js" defer></script>
+    <script src="/assets/live-a11y.js" defer></script>`;
   return layout({
     title: 'Live — ' + meeting.body_name,
     h1: 'Live — ' + meeting.body_name,
@@ -57,7 +59,7 @@ function livePage(meeting, { role, personId, control }) {
       { label: 'Meeting', href: `/meetings/${meeting.id}` },
       { label: 'Live' },
     ],
-    actions: '<span class="live-pill" data-live-pill>● LIVE</span>',
+    actions: '<span class="live-pill" data-live-pill role="status" aria-live="off">● LIVE</span>',
     subtitle: `${formatDateTime(meeting.meeting_date, meeting.meeting_time)}`
       + `${meeting.location ? ' · ' + meeting.location : ''}`,
     body,
