@@ -1,28 +1,22 @@
 # Awareness (Legistar-style desk)
 
-The chamber display is not part of this.
+The chamber display is not part of this because you said not to touch it.
 
 Legistar works because InSite and the Files module answer three questions
 without opening a second window: what is waiting, what moved, what is next.
 Those queries already existed. They were never asked together.
 
-## Shipped in code (`legacy/src/awareness.js`)
+## Shipped
 
-- Recent actions across published files
-- Watch list with “moved since you watched”
-- Desk snapshot for a signed-in user (inbox + watches + recent)
+- `legacy/src/awareness.js` — desk snapshot, recent actions, moved-since-watch
+- tests in `legacy/test/awareness.test.js`
+- Watching marked when a file moved after you starred it
+- Desk strip, file glance, recent-actions card wired in layout/pages/CSS
 
-## Wire into the chrome (do not touch display.js / live.js)
+Item-level video timestamps already exist (`video_url` + `video_ts`).
+Routing mail already exists (`notify.matterActivity`, daily digest).
 
-1. `layout-base.js` — add Watching under Docket. After `announcementBanner()`,
-   render a `.desk-strip` for signed-in users: Queue (clerks only),
-   Watches + moved count, latest action file.
-2. `pages.js` dashboard — card “Recent actions” from `awareness.recentActions`.
-3. `pages.js` matterDetail — `.file-glance` above the Record card:
-   last action, next hearing, in control, status.
-4. `member.js` watchingPage — mark rows `movedSinceWatch`.
-5. `institutional.css` — `.desk-strip`, `.desk-moved`, `.file-glance`.
-   Hide `.desk-strip` in print.
+## Actually not worth building
 
-Still not Granicus: no video timestamps, no MediaManager sync, no ATS
-email storm. Those are products. This is the desk.
+A Granicus MediaManager client. That is their encoder/cloud and their
+contract. Link the video you already host.
