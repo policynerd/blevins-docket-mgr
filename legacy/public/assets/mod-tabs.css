@@ -1,0 +1,29 @@
+/* Kill the raised white Office chip. Selected module is ink + an underline. */
+.mod-bar {
+  min-height: 28px !important;
+  padding: 0 10px !important;
+  align-items: stretch !important;
+}
+.mod-tab {
+  min-height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 14px !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.mod-tab:hover {
+  background: transparent !important;
+  text-decoration: underline;
+}
+.mod-tab.active {
+  background: #fff0 !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: inset 0 -2px 0 #1b3a4b !important;
+  font-weight: 700;
+}
+.mod-tab.active::after {
+  content: none !important;
+}
