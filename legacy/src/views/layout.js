@@ -54,14 +54,15 @@ function withInstitutionalCss(markup) {
   const legacy = '<link rel="stylesheet" href="/styles.css">';
   const extra = '\n  <link rel="stylesheet" href="/assets/institutional.css">'
     + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">'
-    + '\n  <link rel="stylesheet" href="/assets/chamber.css">';
+    + '\n  <link rel="stylesheet" href="/assets/chamber.css">'
+    + '\n  <link rel="stylesheet" href="/assets/actions-mast.css">';
   if (!html.includes('/assets/institutional.css')) {
     html = html.replace(legacy, legacy + extra);
   }
-  if (!html.includes('/assets/chamber.css')) {
+  if (!html.includes('/assets/actions-mast.css')) {
     html = html.replace(
-      '<link rel="stylesheet" href="/assets/mod-tabs.css">',
-      '<link rel="stylesheet" href="/assets/mod-tabs.css">\n  <link rel="stylesheet" href="/assets/chamber.css">',
+      '<link rel="stylesheet" href="/assets/chamber.css">',
+      '<link rel="stylesheet" href="/assets/chamber.css">\n  <link rel="stylesheet" href="/assets/actions-mast.css">',
     );
   }
   html = html.replace(
