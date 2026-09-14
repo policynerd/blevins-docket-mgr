@@ -11,10 +11,24 @@
 const base = require('./layout-base');
 
 function withInstitutionalCss(markup) {
-  const html = String(markup || '');
+  let html = String(markup || '');
   const legacy = '<link rel="stylesheet" href="/styles.css">';
-  const institutional = legacy + '\n  <link rel="stylesheet" href="/assets/institutional.css">';
-  return html.includes('/assets/institutional.css') ? html : html.replace(legacy, institutional);
+  const institutional = legacy
+    + '\n  <link rel="stylesheet" href="/assets/institutional.css">'
+    + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">';
+  if (!html.includes('/assets/institutional.css')) {
+    html = html.replace(legacy, institutional);
+  } else if (!html.includes('/assets/mod-tabs.css')) {
+    html = html.replace(
+      '<link rel="stylesheet" href="/assets/institutional.css">',
+      '<link rel="stylesheet" href="/assets/institutional.css">\n  <link rel="stylesheet" href="/assets/mod-tabs.css">',
+    );
+  }
+  html = html.replace(
+    /(<a class="mod-tab(?: active)?" href="\/legislation"[^>]*>)Docket(<\/a>)/g,
+    '$1Legislation$2',
+  );
+  return html;
 }
 
 function layout(opts) {

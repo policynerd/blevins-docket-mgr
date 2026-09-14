@@ -1,0 +1,39 @@
+/* Selected module: three-sided outline. Top was the missing stroke. */
+.mod-bar {
+  min-height: 28px !important;
+  padding: 0 10px !important;
+  align-items: stretch !important;
+}
+.mod-tab {
+  position: relative;
+  min-height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 14px !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+.mod-tab:hover {
+  background: transparent !important;
+  text-decoration: underline;
+}
+.mod-tab.active {
+  background: #fff !important;
+  background-color: #fff !important;
+  border-top: 1px solid #a9a69a !important;
+  border-left: 1px solid #a9a69a !important;
+  border-right: 1px solid #a9a69a !important;
+  border-bottom: 1px solid #fff !important;
+  font-weight: 700;
+  margin-bottom: -1px;
+}
+.mod-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: #fff;
+}
