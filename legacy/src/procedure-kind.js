@@ -73,6 +73,33 @@ function receive(itemId, { disposition } = {}) {
   return repo.meetings.getItem(itemId);
 }
 
+function voice(itemId, { result } = {}) {
+  const item = repo.meetings.getItem(itemId);
+  if (!item) throw new Error('No such item.');
+  assertCanOpenRoll(item);
+  if (result !== 'Unanimous Yea' && result !== 'Unanimous Nay') {
+    const e = new Error('A voice vote is Unanimous Yea or Unanimous Nay. Anything else is a roll.');
+    e.code = 'NOT_VOICE';
+    throw e;
+  }
+  db.prepare(`UPDATE agenda_items
+    SET result=?, vote_status='closed',
+        reached_at=COALESCE(reached_at, datetime('now')),
+        vote_closed_at=datetime('now')
+    WHERE id=?`).run(result, itemId);
+  if (item.matter_id) {
+    repo.matters.addHistory({
+      matter_id: item.matter_id,
+      action_date: require('./util').todayISO(),
+      body_id: item.body_id,
+      action: 'Voice vote',
+      result,
+      agenda_item_id: itemId,
+    });
+  }
+  return repo.meetings.getItem(itemId);
+}
+
 function install() {
   if (repo.__kindInstalled) return;
   repo.__kindInstalled = true;
@@ -96,4 +123,4 @@ function install() {
   };
 }
 
-module.exports = { kindOf, assertCanOpenRoll, assertCanMove, receive, install };
+module.exports = { kindOf, assertCanOpenRoll, assertCanMove, receive, voice, install };
