@@ -1,5 +1,18 @@
 'use strict';
 
+const util = require('../util');
+if (!util.__rawPatched) {
+  util.__rawPatched = true;
+  const origRaw = util.raw;
+  util.raw = function raw(value) {
+    const s = value == null ? '' : String(value);
+    const box = origRaw(s);
+    box.toString = function () { return s; };
+    box.valueOf = function () { return s; };
+    return box;
+  };
+}
+
 const base = require('./layout-base');
 
 let currentUser = null;
@@ -8,6 +21,13 @@ function setUser(u) {
   currentUser = u;
   return origSetUser(u);
 }
+
+function labelOf(status) {
+  if (status == null || status === '' || status === 'none') return '—';
+  return status;
+}
+function statusBadge(status) { return base.statusBadge(labelOf(status)); }
+function typeBadge(type) { return base.typeBadge(labelOf(type)); }
 
 function deskStrip() {
   const user = currentUser;
@@ -29,6 +49,8 @@ function deskStrip() {
 
 function withInstitutionalCss(markup) {
   let html = String(markup || '');
+  html = html.replace(/\[object Object\]/g, '');
+  html = html.replace(/(<span class="muted">)\s*none\s*(<\/span>)/gi, '$1—$2');
   const legacy = '<link rel="stylesheet" href="/styles.css">';
   const extra = '\n  <link rel="stylesheet" href="/assets/institutional.css">'
     + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">'
@@ -58,8 +80,15 @@ function withInstitutionalCss(markup) {
   return html;
 }
 
-function layout(opts) { return withInstitutionalCss(base.layout(opts)); }
+function layout(opts) {
+  if (opts && opts.actions && typeof opts.actions === 'object') {
+    opts = Object.assign({}, opts, {
+      actions: opts.actions.__raw ? opts.actions.value : String(opts.actions),
+    });
+  }
+  return withInstitutionalCss(base.layout(opts));
+}
 function authLayout(title, body) { return withInstitutionalCss(base.authLayout(title, body)); }
 function forbidden() { return withInstitutionalCss(base.forbidden()); }
 
-module.exports = { ...base, setUser, layout, authLayout, forbidden };
+module.exports = { ...base, setUser, layout, authLayout, forbidden, statusBadge, typeBadge };
