@@ -15,7 +15,7 @@ function deskStrip() {
   let desk;
   try { desk = require('../awareness').desk(user); }
   catch (_) { return ''; }
-  const bits = [];
+  const bits = ['<a href="/desk">Desk</a>'];
   if (desk.inbox) bits.push(`<a href="/approvals">${desk.inbox} awaiting approval</a>`);
   if (desk.moved && desk.moved.length) {
     bits.push(`${desk.moved.length} watched file${desk.moved.length === 1 ? '' : 's'} moved`);
@@ -24,22 +24,22 @@ function deskStrip() {
     if (require('../auth').hasRole(user, 'staff')) bits.push('<a href="/spend">Spend</a>');
   } catch (_) { /* */ }
   bits.push(`<a href="/watching">Watching (${(desk.watches || []).length})</a>`);
-  if (!bits.length) return '';
   return `<p class="desk-strip">${bits.join(' · ')}</p>`;
 }
 
 function withInstitutionalCss(markup) {
   let html = String(markup || '');
   const legacy = '<link rel="stylesheet" href="/styles.css">';
-  const institutional = legacy
-    + '\n  <link rel="stylesheet" href="/assets/institutional.css">'
-    + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">';
+  const extra = '\n  <link rel="stylesheet" href="/assets/institutional.css">'
+    + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">'
+    + '\n  <link rel="stylesheet" href="/assets/chamber.css">';
   if (!html.includes('/assets/institutional.css')) {
-    html = html.replace(legacy, institutional);
-  } else if (!html.includes('/assets/mod-tabs.css')) {
+    html = html.replace(legacy, legacy + extra);
+  }
+  if (!html.includes('/assets/chamber.css')) {
     html = html.replace(
-      '<link rel="stylesheet" href="/assets/institutional.css">',
-      '<link rel="stylesheet" href="/assets/institutional.css">\n  <link rel="stylesheet" href="/assets/mod-tabs.css">',
+      '<link rel="stylesheet" href="/assets/mod-tabs.css">',
+      '<link rel="stylesheet" href="/assets/mod-tabs.css">\n  <link rel="stylesheet" href="/assets/chamber.css">',
     );
   }
   html = html.replace(
