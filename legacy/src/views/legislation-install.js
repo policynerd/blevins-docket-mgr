@@ -3,6 +3,10 @@
 const pages = require('./pages');
 const { escapeHtml: escapeText, formatDate } = require('../util');
 
+const MAST = `<div class="actions-mast">
+  <img src="/brand/actions-as-introduced.png" alt="Actions as Introduced inside the Board Chamber">
+</div>`;
+
 function glanceHtml(matter) {
   let last = '';
   let next = '';
@@ -23,12 +27,26 @@ function glanceHtml(matter) {
   return `<p class="file-glance">${bits.join('')}</p>`;
 }
 
+function paintMast(html) {
+  if (!html || html.includes('actions-mast')) return html;
+  html = html.replace('<body>', '<body class="actions-intro">');
+  html = html.replace('<main class="main-area">', '<main class="main-area">\n        ' + MAST);
+  return html;
+}
+
 function install() {
   if (pages.__legislationInstalled) return;
   pages.__legislationInstalled = true;
+  const origList = pages.legislationList;
+  if (typeof origList === 'function') {
+    pages.legislationList = function legislationListWired(query, user) {
+      return paintMast(origList(query, user));
+    };
+  }
   const origDetail = pages.matterDetail;
   pages.matterDetail = function matterDetailWired(matter, query, user) {
     let html = origDetail(matter, query, user);
+    html = paintMast(html);
     const g = glanceHtml(matter);
     if (g) html = html.replace('<ol class="track"', g + '<ol class="track"');
     const fn = encodeURIComponent(matter.file_number);
