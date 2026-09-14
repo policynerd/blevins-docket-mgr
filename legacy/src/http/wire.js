@@ -17,6 +17,9 @@ function mount(routes) {
   require('../spend');
   require('../custody');
   require('../instrument');
+  require('../views/legislation-install').install();
+  const kind = require('../procedure-kind');
+  kind.install();
 
   const spend = require('../spend');
   const spendView = require('../views/spend');
@@ -109,6 +112,18 @@ function mount(routes) {
     redirect(res, `/legislation/${encodeURIComponent(m.file_number)}`);
   });
 
+  route('POST', /^\/admin\/agenda-items\/(\d+)\/receive$/, (req, res, ctx) => {
+    const item = repo.meetings.getItem(Number(ctx.params[0]));
+    if (!item) return sendJson(res, { error: 'Not found' }, 404);
+    try {
+      kind.receive(item.id, { disposition: ctx.body && ctx.body.disposition });
+    } catch (e) {
+      return sendJson(res, { error: e.message }, e.code === 'IS_A_QUESTION' ? 409 : 400);
+    }
+    live.pushUpdate(item.meeting_id);
+    sendJson(res, { ok: true });
+  });
+
   route('POST', /^\/member\/agenda-items\/(\d+)\/move$/, (req, res, ctx) => {
     floor(req, res, ctx, 'move');
   });
@@ -124,6 +139,7 @@ function mount(routes) {
       return sendJson(res, { error: 'Not on this body' }, 403);
     }
     try {
+      kind.assertCanMove(item);
       if (act === 'move') {
         if ((item.vote_status || 'pending') === 'open') {
           return sendJson(res, { error: 'The question is already before the body.' }, 409);
