@@ -1,12 +1,44 @@
-/* Actions as Introduced — legislation catalog masthead. Display board not touched. */
+/* Chamber catalog masthead — lives in the site UI. */
 .actions-mast {
   margin: 0 0 1.35rem;
   max-width: 72rem;
+  border-bottom: 2px solid #3d5a80;
+  padding: 0 0 0.35rem;
 }
-.actions-mast img {
-  display: block;
-  width: 100%;
+.actions-mast-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-height: 6.5rem;
+}
+.actions-mast-copy {
+  padding: 0.85rem 0 0.4rem 0.15rem;
+}
+.actions-mast-kicker {
+  margin: 0;
+  font-family: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-size: clamp(1.55rem, 3.2vw, 2.15rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #3d5a80;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.actions-mast-sub {
+  margin: 0.15rem 0 0;
+  font-family: "Palatino Linotype", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: clamp(1.15rem, 2.4vw, 1.65rem);
+  font-weight: 400;
+  color: #8a8f96;
+  letter-spacing: 0.01em;
+}
+.actions-mast-building {
+  flex: 0 0 auto;
+  width: min(42%, 22rem);
   height: auto;
+  display: block;
 }
 body.actions-intro .page-head-text h1,
 body.actions-intro .page-head-text .page-sub {
@@ -15,4 +47,8 @@ body.actions-intro .page-head-text .page-sub {
   height: 1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+}
+@media (max-width: 640px) {
+  .actions-mast-art { flex-direction: column; align-items: flex-start; }
+  .actions-mast-building { width: 70%; }
 }
