@@ -1,0 +1,18 @@
+/* Actions as Introduced — legislation catalog masthead. Display board not touched. */
+.actions-mast {
+  margin: 0 0 1.35rem;
+  max-width: 72rem;
+}
+.actions-mast img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+body.actions-intro .page-head-text h1,
+body.actions-intro .page-head-text .page-sub {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
