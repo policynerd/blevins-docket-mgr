@@ -1,0 +1,8 @@
+Drop the chamber heading art here as:
+
+  legacy/public/brand/actions-as-introduced.png
+
+The Legislation catalog and each file page load it as the masthead:
+  /brand/actions-as-introduced.png
+
+The display board does not use this file.
