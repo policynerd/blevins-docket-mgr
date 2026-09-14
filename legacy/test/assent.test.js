@@ -10,6 +10,7 @@ process.env.DOCKET_DB = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'assent-
 const { init } = require('../src/db');
 init();
 const repo = require('../src/repo');
+require('../src/assent');
 
 const { id } = repo.matters.insertNumbered({
   type: 'Resolution', title: 'A quiet assent', status: 'Introduced',
