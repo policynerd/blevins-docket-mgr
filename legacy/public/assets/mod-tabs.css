@@ -1,3 +1,12 @@
+.file-glance {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  background: #f7f5ea;
+  border: 1px solid #c4c0b2;
+}
 .desk-strip {
   margin: 0;
   padding: 6px 14px;
