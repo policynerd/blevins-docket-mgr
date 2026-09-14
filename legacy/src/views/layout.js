@@ -1,5 +1,18 @@
 'use strict';
 
+const util = require('../util');
+if (!util.__rawPatched) {
+  util.__rawPatched = true;
+  const origRaw = util.raw;
+  util.raw = function raw(value) {
+    const s = value == null ? '' : String(value);
+    const box = origRaw(s);
+    box.toString = function () { return s; };
+    box.valueOf = function () { return s; };
+    return box;
+  };
+}
+
 const base = require('./layout-base');
 
 let currentUser = null;
@@ -68,8 +81,11 @@ function withInstitutionalCss(markup) {
 }
 
 function layout(opts) {
-  if (opts && opts.actions && opts.actions.__raw) opts = Object.assign({}, opts, { actions: opts.actions.value || String(opts.actions) });
-  if (opts && opts.actions && typeof opts.actions === 'object') opts = Object.assign({}, opts, { actions: String(opts.actions) });
+  if (opts && opts.actions && typeof opts.actions === 'object') {
+    opts = Object.assign({}, opts, {
+      actions: opts.actions.__raw ? opts.actions.value : String(opts.actions),
+    });
+  }
   return withInstitutionalCss(base.layout(opts));
 }
 function authLayout(title, body) { return withInstitutionalCss(base.authLayout(title, body)); }
