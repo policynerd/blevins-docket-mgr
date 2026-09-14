@@ -1,0 +1,41 @@
+body.chamber-member .sidebar,
+body.chamber-member .mod-bar,
+body.chamber-member .desk-strip,
+body.chamber-member .topbar .banner-search,
+body.chamber-public .sidebar,
+body.chamber-public .mod-bar,
+body.chamber-public .desk-strip {
+  display: none !important;
+}
+body.chamber-member .app,
+body.chamber-public .app { display: block; }
+body.chamber-member .content,
+body.chamber-public .content {
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 24px 20px 48px;
+}
+.vc-top h1 { font-size: 1.4rem; margin: 0 0 4px; }
+.vc-kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; margin: 0; color: #5c584c; }
+.vc-meta, .vc-foot { color: #5c584c; font-size: 13px; }
+.vc-clock { font-variant-numeric: tabular-nums; font-weight: 700; }
+.vc-card {
+  background: #fff;
+  border: 1px solid #a9a69a;
+  padding: 20px 22px;
+  margin: 16px 0;
+  min-height: 12rem;
+}
+.vc-card h2 { font-size: 1.35rem; margin: 0 0 8px; line-height: 1.25; }
+.vc-type { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+.vc-rec { background: #fff6c8; border: 1px solid #c4b56a; padding: 8px 10px; }
+.vc-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.vc-acts .yea { background: #1b5e20; color: #fff; }
+.vc-acts .nay { background: #7f1d1d; color: #fff; }
+.run-strip {
+  background: #f7f5ea;
+  border: 1px solid #c4c0b2;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+body.chamber-clerk .live-tools { display: none; }
