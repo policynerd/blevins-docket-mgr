@@ -20,6 +20,7 @@ function mount(routes) {
   require('../views/legislation-install').install();
   const kind = require('../procedure-kind');
   kind.install();
+  require('../live-decorate').install();
 
   const liveViews = require('../views/live');
   const skins = require('../views/chamber-skins');
