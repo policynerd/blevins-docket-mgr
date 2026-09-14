@@ -17,6 +17,7 @@ function mount(routes) {
   require('../spend');
   require('../custody');
   require('../instrument');
+  require('../views/legislation-install').install();
 
   const spend = require('../spend');
   const spendView = require('../views/spend');
