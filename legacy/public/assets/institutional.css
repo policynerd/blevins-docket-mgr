@@ -18,7 +18,10 @@
 
 :root {
   /* Blevins shell */
-  --bh-navy:#071b2f;
+  /* Exact ground used by the dark portal lockup. Keeping the rail on this
+     same solid ink preserves the framed masthead without leaving a second
+     navy rectangle visible around it. */
+  --bh-navy:#081d32;
   --bh-navy-deep:#051625;
   --bh-navy-mid:#0a2139;
   --bh-gold:#b8952f;
@@ -212,7 +215,7 @@ a:hover { color:var(--ip-link-hover); }
 .app { grid-template-columns:230px minmax(0,1fr); }
 .sidebar {
   color:#fff;
-  background:linear-gradient(to bottom,var(--bh-navy-mid),var(--bh-navy));
+  background:var(--bh-navy);
   border-right:1px solid var(--bh-navy-deep);
   box-shadow:inset -1px 0 0 rgba(255,255,255,.07)!important;
 }

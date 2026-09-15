@@ -9,6 +9,10 @@ const css = fs.readFileSync(
   path.join(__dirname, '..', 'public', 'assets', 'institutional.css'),
   'utf8',
 );
+const darkHeader = fs.readFileSync(
+  path.join(__dirname, '..', 'public', 'brand', 'header-2.svg'),
+  'utf8',
+);
 
 test('institutional UI typography is Arial with Times New Roman for records', () => {
   assert.match(css, /--font-ui:Arial,Helvetica,sans-serif;/);
@@ -39,4 +43,18 @@ test('dashboard metrics are a dense contiguous strip rather than floating cards'
   assert.match(css, /\.stat-grid \{[\s\S]*?gap:0!important;/);
   assert.match(css, /\.stat \{[\s\S]*?border:0!important;/);
   assert.match(css, /\.stat \{[\s\S]*?box-shadow:none!important;/);
+});
+
+test('sidebar and dark portal lockup share one navy ground', () => {
+  const lockupGrounds = [...darkHeader.matchAll(
+    /<path fill="(#[0-9a-fA-F]{6})" d="M 2\.804688 0 L 171\.195312 0/g,
+  )];
+  const lockupGround = lockupGrounds.at(-1);
+  const sidebarGround = css.match(/--bh-navy:(#[0-9a-fA-F]{6});/);
+
+  assert.ok(lockupGround, 'dark portal lockup must declare its ground');
+  assert.ok(sidebarGround, 'institutional skin must declare its sidebar navy');
+  assert.equal(sidebarGround[1].toLowerCase(), lockupGround[1].toLowerCase());
+  assert.match(css, /\.sidebar \{[\s\S]*?background:var\(--bh-navy\);/);
+  assert.doesNotMatch(css, /\.sidebar \{[^}]*background:linear-gradient/);
 });
