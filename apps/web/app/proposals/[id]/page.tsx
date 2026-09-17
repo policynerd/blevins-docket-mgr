@@ -55,8 +55,8 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
             {proposal.ref} · {proposal.templateId}
           </div>
         </div>
-        <button onClick={takeMilestone} disabled={busy}>
-          Take milestone
+        <button onClick={takeMilestone} disabled={busy} className={busy ? '' : 'primary'}>
+          {busy ? 'Taking…' : 'Take milestone'}
         </button>
         <a
           className="btn"
@@ -110,7 +110,7 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
       ) : null}
 
       {tab === 'details' ? (
-        <div className="card" style={{ padding: 'var(--space-6)' }}>
+        <div className="card" style={{ padding: 'var(--space-5)' }}>
           <div className="field">
             <span>File number</span>
             {proposal.ref}
