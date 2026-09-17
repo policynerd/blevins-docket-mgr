@@ -10,18 +10,10 @@ const BASE = '/api';
 
 const headers = (): HeadersInit => ({ 'content-type': 'application/json' });
 
-/** Send the cookie, and never a stale cached answer for a signed-in view. */
 const withSession: RequestInit = { credentials: 'same-origin', cache: 'no-store' };
 
-/** Thrown when the API says we are not signed in. */
 export class NotSignedIn extends Error {}
 
-/**
- * Send the browser to sign in, coming back to where it stands now.
- *
- * A full navigation rather than a fetch: the OIDC redirect chain has to happen
- * in the address bar, and an XHR cannot follow it.
- */
 export function signIn(returnTo = window.location.pathname + window.location.search): void {
   window.location.href = `${BASE}/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
 }
@@ -30,9 +22,6 @@ async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     const message = body.error ?? `${res.status} ${res.statusText}`;
-    // 401 is not an error the page can do anything about; it means the session
-    // ran out. 403 is different — the caller is signed in and simply may not
-    // do this — so it must not be turned into a sign-in loop.
     if (res.status === 401) throw new NotSignedIn(message);
     throw new Error(message);
   }
@@ -70,6 +59,8 @@ export interface Template {
   documents: { docType: string; title: string }[];
 }
 
+export type Align = 'start' | 'end' | 'center' | 'justify';
+
 export const api = {
   me: () => fetch(`${BASE}/auth/me`, withSession).then(json<User>),
   signOut: async () => {
@@ -77,9 +68,6 @@ export const api = {
       method: 'POST',
       ...withSession,
     }).then(json<{ entraLogoutUrl?: string }>);
-    // Ending our session leaves the browser signed in to Microsoft, so the
-    // next visit signs straight back in with no prompt. On a shared machine
-    // that is not a sign-out.
     window.location.href = entraLogoutUrl ?? '/';
   },
   templates: () => fetch(`${BASE}/templates`, withSession).then(json<Template[]>),
@@ -101,11 +89,14 @@ export const api = {
         html: string;
       }>,
     ),
-  editElement: (documentId: string, elementId: string, value: string) =>
+  editElement: (documentId: string, elementId: string, value?: string, align?: Align) =>
     fetch(`${BASE}/documents/${documentId}/elements/${elementId}`, {
       method: 'PATCH',
       headers: headers(),
-      body: JSON.stringify({ value }),
+      body: JSON.stringify({
+        ...(value !== undefined ? { value } : {}),
+        ...(align !== undefined ? { align } : {}),
+      }),
       ...withSession,
     }).then(json<{ label: string; contentHash: string }>),
   versions: (id: string) =>

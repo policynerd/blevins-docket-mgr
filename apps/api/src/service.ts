@@ -9,7 +9,15 @@ import {
   proposals,
   type Db,
 } from '@blevins/db';
-import { parse, serialize, setElementText, toHtml, type DocType } from '@blevins/akn';
+import {
+  parse,
+  serialize,
+  setElementAlign,
+  setElementText,
+  toHtml,
+  type Align,
+  type DocType,
+} from '@blevins/akn';
 import { mergePdfs, renderPdf } from '@blevins/pdf';
 
 import { findTemplate } from './templates.ts';
@@ -20,14 +28,6 @@ export const contentHash = (xml: string) => createHash('sha256').update(xml).dig
 export class NotFound extends Error {}
 export class Conflict extends Error {}
 
-/**
- * Create a proposal and every document the template calls for, in one
- * transaction.
- *
- * All-or-nothing on purpose: a proposal holding three of its four parts is
- * worse than no proposal, because the missing part is invisible — nothing on
- * screen says a fiscal statement was supposed to exist.
- */
 export async function createProposal(
   db: Db,
   input: { templateId: string; title: string; ref?: string; userId: string },
@@ -35,11 +35,6 @@ export async function createProposal(
   const template = findTemplate(input.templateId);
   if (!template) throw new NotFound(`No template ${input.templateId}`);
 
-  // The reference is derived from how many instruments of this kind already
-  // exist, which races with a concurrent create. The unique index is what
-  // actually decides; this retries when it loses rather than papering over the
-  // collision with a random suffix, because a file number people read aloud in
-  // a meeting should be sequential.
   for (let attempt = 0; attempt < 4; attempt++) {
     const ref = input.ref ?? (await nextRef(db, template.id));
     try {
@@ -98,7 +93,6 @@ async function nextRef(db: Db, templateId: string): Promise<string> {
   return prefix + String((row?.n ?? 0) + 1).padStart(4, '0');
 }
 
-/** The latest version of one document. */
 export async function latestVersion(db: Db, documentId: string) {
   const [row] = await db
     .select()
@@ -140,16 +134,6 @@ export async function getProposal(db: Db, id: string) {
 export const versionLabel = (v: { major: number; minor: number; patch: number }) =>
   `v${v.major}.${v.minor}.${v.patch}`;
 
-/**
- * Save a document by writing a new version.
- *
- * Never an update. The previous bytes stay exactly where they were, which is
- * what lets a milestone taken last week still resolve to what it froze.
- *
- * The new content is parsed before it is stored: a document that cannot be
- * read back is not a document, and discovering that at export time — when
- * somebody is trying to publish — is discovering it too late.
- */
 export async function saveDocument(
   db: Db,
   input: { documentId: string; xml: string; note?: string; userId: string },
@@ -183,17 +167,6 @@ export async function saveDocument(
   return saved!;
 }
 
-/**
- * Freeze the current state of every document as a milestone.
- *
- * Pins version ids rather than copying bytes, so taking a milestone is cheap
- * and still exact.
- *
- * It does not bump the major version. LEOS does, and the columns are there for
- * it, but nothing here raises `major` and the next save only increments
- * `minor` — so versions stay v0.x.0 across milestones. Said plainly because
- * the alternative is a comment describing behaviour the code does not have.
- */
 export async function createMilestone(
   db: Db,
   input: { proposalId: string; label: string; userId: string },
@@ -224,28 +197,17 @@ export async function createMilestone(
   });
 }
 
-/**
- * Render the whole proposal as one PDF.
- *
- * Each part is laid out on its own and the results concatenated, rather than
- * poured into one continuous flow. That is what gives every part its own page
- * one, its own folio sequence and its own first-page rules — a board letter
- * running onto the last page of the cover sheet would be a formatting error in
- * a document people file.
- */
 export async function exportProposal(
   db: Db,
   proposalId: string,
   opts: { guidance?: boolean; meeting?: MeetingContext } = {},
 ): Promise<Uint8Array> {
   const proposal = await getProposal(db, proposalId);
-  // Letterhead belongs on the parts that are read as correspondence from the
-  // Board. The ordinance is the instrument itself and carries its own title
-  // block, not a masthead.
   const LETTERHEAD: readonly string[] = ['COVER_PAGE', 'EXPL_MEMORANDUM'];
   const sheetsFor = (docType: string) => [
     'tokens.css',
     'act.css',
+    'align.css',
     ...(LETTERHEAD.includes(docType) ? ['masthead.css'] : []),
     ...(opts.guidance ? ['guidance.css'] : []),
   ];
@@ -259,8 +221,7 @@ export async function exportProposal(
         body: toHtml(parse(version.xml, doc.docType as DocType)),
         title: `${proposal.ref} — ${doc.title}`,
         stylesheets: sheetsFor(doc.docType),
-        // Only the parts that carry letterhead carry its continuation form.
-        ...(LETTERHEAD.includes(doc.docType) ? { runningHead: runningHead(opts.meeting) } : {}),
+        ...(LETTERHEAD.includes(docType) ? { runningHead: runningHead(opts.meeting) } : {}),
       }),
     );
   }
@@ -269,7 +230,6 @@ export async function exportProposal(
   return mergePdfs(parts);
 }
 
-/** Documents frozen by a milestone, as they were then. */
 export async function milestoneContents(db: Db, milestoneId: string) {
   return db
     .select({
@@ -315,17 +275,15 @@ export async function documentHistory(db: Db, documentId: string) {
     .orderBy(desc(documentVersions.createdAt));
 }
 
-/**
- * Edit one element and save the result as a new version.
- *
- * The browser sends the provision's identifier and its new text, never a
- * document. Round-tripping XML through the client would make every save a
- * chance to lose a provision to a parser disagreement, and would let a bug in
- * the editor rewrite parts of an instrument nobody was editing.
- */
 export async function editElement(
   db: Db,
-  input: { documentId: string; elementId: string; value: string; userId: string },
+  input: {
+    documentId: string;
+    elementId: string;
+    value?: string;
+    align?: Align;
+    userId: string;
+  },
 ) {
   const [doc] = await db.select().from(documents).where(eq(documents.id, input.documentId));
   if (!doc) throw new NotFound(`No document ${input.documentId}`);
@@ -334,8 +292,10 @@ export async function editElement(
 
   let updated: string;
   try {
-    const tree = parse(current.xml, doc.docType as DocType);
-    updated = serialize(setElementText(tree, input.elementId, input.value));
+    let tree = parse(current.xml, doc.docType as DocType);
+    if (input.value !== undefined) tree = setElementText(tree, input.elementId, input.value);
+    if (input.align !== undefined) tree = setElementAlign(tree, input.elementId, input.align);
+    updated = serialize(tree);
   } catch (err) {
     throw new Conflict((err as Error).message);
   }
@@ -348,7 +308,6 @@ export async function editElement(
   });
 }
 
-/** A document's current content, rendered for the editor. */
 export async function documentHtml(db: Db, documentId: string) {
   const [doc] = await db.select().from(documents).where(eq(documents.id, documentId));
   if (!doc) throw new NotFound(`No document ${documentId}`);

@@ -1,10 +1,5 @@
 /*
  * The document, on screen.
- *
- * A screen counterpart to the export stylesheet: the same vocabulary-in-CSS
- * approach, sized for a display rather than a page. What the drafter edits
- * should look like what will print, so the measure, the hanging indents and
- * the centred article headings are all kept.
  */
 
 .paper {
@@ -23,7 +18,11 @@
   line-height: 1.5;
   color: #000;
   text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
   hyphens: none;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
 }
 
 .akn bill,
@@ -47,13 +46,28 @@
   display: block;
 }
 
+.akn aknP,
+.akn p,
+.akn paragraph,
+.akn recital,
+.akn content,
+.akn tblock,
+.akn [data-editable] {
+  text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
+}
+
 .akn aknP {
   display: block;
   margin: 0 0 0.6em;
 }
 
-.akn longTitle {
+.akn longTitle,
+.akn longTitle aknP,
+.akn longTitle p {
   text-align: center;
+  text-align-last: center;
   margin-bottom: 1em;
 }
 .akn docStage {
@@ -92,6 +106,7 @@
 .akn article > heading {
   display: block;
   text-align: center;
+  text-align-last: center;
   font-weight: 700;
 }
 
@@ -106,7 +121,6 @@
   width: 2.2em;
 }
 
-/* The board letter's numbered sections. */
 .akn tblock {
   margin-top: 1.1em;
 }
@@ -123,13 +137,27 @@
   font-family: var(--font-ui);
 }
 
-/* The masthead is letterhead; it belongs to the printed page, not the editor.
-   Showing it here would invite someone to try to edit it. */
 .akn container[name='masthead'] {
   display: none;
 }
 
-/* ------------------------------------------------------------- editing ---- */
+.akn .align-start {
+  text-align: start;
+  text-align-last: start;
+}
+.akn .align-end {
+  text-align: end;
+  text-align-last: end;
+}
+.akn .align-center {
+  text-align: center;
+  text-align-last: center;
+}
+.akn .align-justify {
+  text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
+}
 
 .akn [data-editable] {
   outline: none;
@@ -146,8 +174,6 @@
     0 0 0 4px var(--color-cobalt);
 }
 
-/* Drafting guidance, shown only when asked for — the same rule the export
-   stylesheet applies, inverted by a class rather than a separate sheet. */
 .akn guidance {
   display: none;
 }
@@ -157,6 +183,7 @@
   font-size: 0.82em;
   font-family: var(--font-ui);
   text-align: left;
+  text-align-last: start;
   margin: 0.3em 0 0.9em;
 }
 .paper.show-guidance .akn guidance::before {

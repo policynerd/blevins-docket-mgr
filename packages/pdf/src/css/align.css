@@ -1,0 +1,18 @@
+/* Drafter-chosen alignment. Stored as class on the AKN element. */
+.align-start {
+  text-align: start;
+  text-align-last: start;
+}
+.align-end {
+  text-align: end;
+  text-align-last: end;
+}
+.align-center {
+  text-align: center;
+  text-align-last: center;
+}
+.align-justify {
+  text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
+}

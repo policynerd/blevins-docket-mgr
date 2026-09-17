@@ -2,21 +2,25 @@
 
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 
-import { api } from '../../../lib/api';
+import { api, type Align } from '../../../lib/api';
 
 type Status = { kind: 'idle' | 'saving' | 'saved' | 'error'; text: string };
 
-/**
- * The drafting view.
- *
- * The document is rendered from the server's own AKN-to-HTML, the same
- * function the exporter uses, so what the drafter edits is what will print.
- * Leaf elements carrying text are made editable in place; everything
- * structural is not, because restructuring an instrument is a different act
- * from wording it and should not be one stray keystroke away.
- *
- * A save sends the element's identifier and its new text, never a document.
- */
+const ALIGNS: { id: Align; label: string }[] = [
+  { id: 'start', label: 'Left' },
+  { id: 'center', label: 'Center' },
+  { id: 'end', label: 'Right' },
+  { id: 'justify', label: 'Justify' },
+];
+
+function alignOf(el: HTMLElement): Align {
+  const c = el.className;
+  if (/\balign-start\b/.test(c)) return 'start';
+  if (/\balign-end\b/.test(c)) return 'end';
+  if (/\balign-center\b/.test(c)) return 'center';
+  return 'justify';
+}
+
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [html, setHtml] = useState<string>();
@@ -25,7 +29,15 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const [guidance, setGuidance] = useState(true);
   const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
   const [error, setError] = useState<string>();
+  const [proposalId, setProposalId] = useState<string>();
+  const [align, setAlign] = useState<Align>('justify');
+  const active = useRef<HTMLElement | null>(null);
   const paper = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('proposal');
+    if (q) setProposalId(q);
+  }, []);
 
   const load = useCallback(() => {
     api
@@ -40,9 +52,6 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
 
   useEffect(load, [load]);
 
-  // Editable leaves are marked after each render of the document HTML. Only
-  // elements whose children are pure text qualify: an element containing other
-  // elements would have its structure flattened by an edit.
   useEffect(() => {
     const root = paper.current?.querySelector('.akn');
     if (!root) return;
@@ -56,17 +65,41 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
     }
   }, [html]);
 
+  function remember(el: HTMLElement) {
+    active.current = el;
+    setAlign(alignOf(el));
+  }
+
   async function commit(event: React.FocusEvent<HTMLDivElement>) {
     const el = event.target as HTMLElement;
     if (!el.hasAttribute('data-editable')) return;
-    const elementId = el.id;
+    remember(el);
     const value = el.textContent ?? '';
     if (value === el.dataset['committed']) return;
 
     setStatus({ kind: 'saving', text: 'Saving…' });
     try {
-      const saved = await api.editElement(id, elementId, value);
+      const saved = await api.editElement(id, el.id, value);
       el.dataset['committed'] = value;
+      setLabel(saved.label);
+      setStatus({ kind: 'saved', text: `Saved ${saved.label}` });
+    } catch (e) {
+      setStatus({ kind: 'error', text: (e as Error).message });
+    }
+  }
+
+  async function applyAlign(next: Align) {
+    const el = active.current;
+    if (!el?.id) {
+      setStatus({ kind: 'error', text: 'Click a line first.' });
+      return;
+    }
+    el.classList.remove('align-start', 'align-end', 'align-center', 'align-justify');
+    el.classList.add(`align-${next}`);
+    setAlign(next);
+    setStatus({ kind: 'saving', text: 'Saving…' });
+    try {
+      const saved = await api.editElement(id, el.id, undefined, next);
       setLabel(saved.label);
       setStatus({ kind: 'saved', text: `Saved ${saved.label}` });
     } catch (e) {
@@ -77,12 +110,39 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   if (error) return <div className="error">{error}</div>;
   if (html === undefined) return <div className="empty">Loading…</div>;
 
+  const backHref = proposalId ? `/proposals/${proposalId}` : '/';
+
   return (
     <>
+      <nav className="trail">
+        <a href="/">Proposals</a>
+        <span aria-hidden>›</span>
+        {proposalId ? (
+          <>
+            <a href={backHref}>File</a>
+            <span aria-hidden>›</span>
+          </>
+        ) : null}
+        <span className="here">{title}</span>
+      </nav>
+
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 'var(--text-2xl)' }}>{title}</h1>
           <div className="ref">{label}</div>
+        </div>
+        <div className="align-group" role="group" aria-label="Alignment">
+          {ALIGNS.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className={align === a.id ? 'active' : ''}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyAlign(a.id)}
+            >
+              {a.label}
+            </button>
+          ))}
         </div>
         <label className="toggle">
           <input
@@ -92,10 +152,23 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
           />
           Drafting guidance
         </label>
-        <span className={`status ${status.kind}`}>{status.text}</span>
+        <span className={`status ${status.kind}`}>
+          {status.text || 'Click a line, then set its alignment.'}
+        </span>
+        <a className="btn" href={backHref}>
+          Back to file
+        </a>
       </div>
 
-      <div ref={paper} className={`paper${guidance ? ' show-guidance' : ''}`} onBlur={commit}>
+      <div
+        ref={paper}
+        className={`paper${guidance ? ' show-guidance' : ''}`}
+        onBlur={commit}
+        onFocus={(e) => {
+          const el = e.target as HTMLElement;
+          if (el.hasAttribute('data-editable')) remember(el);
+        }}
+      >
         <div className="akn" dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     </>

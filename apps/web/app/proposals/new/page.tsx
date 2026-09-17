@@ -29,7 +29,10 @@ export default function NewProposalPage() {
     setError(undefined);
     try {
       const p = await api.createProposal({ templateId, title });
-      window.location.href = `/proposals/${p.id}`;
+      const first = p.documents[0];
+      window.location.href = first
+        ? `/documents/${first.id}?proposal=${p.id}`
+        : `/proposals/${p.id}`;
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -38,15 +41,21 @@ export default function NewProposalPage() {
 
   return (
     <>
+      <nav className="trail">
+        <a href="/">Proposals</a>
+        <span aria-hidden>›</span>
+        <span className="here">New</span>
+      </nav>
+
       <h1>New proposal</h1>
-      <div className="ref">Choose an instrument</div>
+      <div className="ref">Choose an instrument, then start drafting</div>
 
       {error ? <div className="error">{error}</div> : null}
 
       <form
         onSubmit={submit}
         className="card"
-        style={{ padding: 'var(--space-6)', marginTop: 'var(--space-6)' }}
+        style={{ padding: 'var(--space-5)', marginTop: 'var(--space-5)' }}
       >
         <label className="field">
           <span>Template</span>
@@ -61,7 +70,7 @@ export default function NewProposalPage() {
 
         {chosen ? (
           <div className="field">
-            <span>This creates {chosen.documents.length} documents</span>
+            <span>This opens {chosen.documents.length} draft{chosen.documents.length === 1 ? '' : 's'}</span>
             <div
               className="meta"
               style={{ fontSize: 'var(--text-sm)', color: 'var(--color-ink-3)' }}
@@ -83,7 +92,7 @@ export default function NewProposalPage() {
         </label>
 
         <button className="primary" disabled={busy || !templateId || !title}>
-          {busy ? 'Creating…' : 'Create proposal'}
+          {busy ? 'Opening draft…' : 'Create and start drafting'}
         </button>
       </form>
     </>
