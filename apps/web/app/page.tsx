@@ -33,7 +33,10 @@ export default function ProposalsPage() {
       <div className="card">
         {rows === undefined && !error ? <div className="empty">Loading…</div> : null}
         {rows?.length === 0 ? (
-          <div className="empty">No proposals yet. Create one to begin drafting.</div>
+          <div className="empty">
+            No proposals yet.{' '}
+            <a href="/proposals/new">Create one</a> to begin drafting.
+          </div>
         ) : null}
         {rows?.map((p) => (
           <a key={p.id} className="row" href={`/proposals/${p.id}`}>
@@ -41,6 +44,7 @@ export default function ProposalsPage() {
             <div className="meta">
               {p.ref} · updated {new Date(p.updatedAt).toLocaleString()}
             </div>
+            <div className="hint">Open file</div>
           </a>
         ))}
       </div>

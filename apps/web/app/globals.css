@@ -24,8 +24,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* ------------------------------------------------------------- chrome ---- */
-
 .masthead {
   background: var(--color-navy);
   color: #fff;
@@ -53,8 +51,6 @@ a:hover {
   flex: 1;
 }
 
-/* Who is signed in. Reserves its height while the answer is in flight so the
-   masthead does not jump once it arrives. */
 .session {
   display: inline-flex;
   align-items: center;
@@ -105,6 +101,74 @@ h2 {
   text-transform: uppercase;
 }
 
+.trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-ink-3);
+  margin: 0 0 var(--space-4);
+}
+.trail a {
+  color: var(--color-cobalt);
+}
+.trail .here {
+  color: var(--color-ink-2);
+}
+
+.process {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+}
+.process .step {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink-3);
+  font-size: var(--text-sm);
+}
+.process .step .n {
+  font-weight: 700;
+  color: var(--color-ink-4);
+}
+.process .step.done {
+  color: var(--color-forest);
+  border-color: var(--color-forest);
+  background: var(--color-forest-dim);
+}
+.process .step.next {
+  color: var(--color-ink);
+  border-color: var(--color-navy);
+  background: var(--color-surface);
+  font-weight: 600;
+}
+.process .step.next .n {
+  color: var(--color-navy);
+}
+
+.next-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  background: var(--color-gold-dim);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+.next-action strong {
+  font-weight: 700;
+}
+
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -132,6 +196,11 @@ h2 {
   font-size: var(--text-sm);
   color: var(--color-ink-3);
 }
+.row .hint {
+  font-size: var(--text-sm);
+  color: var(--color-cobalt);
+  margin-top: 2px;
+}
 
 button,
 .btn {
@@ -143,11 +212,6 @@ button,
   background: var(--color-surface);
   color: var(--color-ink);
   cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
 }
 button:hover,
 .btn:hover {
@@ -160,28 +224,16 @@ button.primary,
   border-color: var(--color-navy);
   color: #fff;
   font-weight: 600;
-  box-shadow: var(--shadow-sm);
 }
 button.primary:hover {
   background: var(--color-navy-mid);
-  border-color: var(--color-navy-mid);
 }
 button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-/* Keyboard focus — visible ring for buttons, links, and form controls. */
 :focus-visible {
-  outline: 2px solid var(--color-cobalt);
-  outline-offset: 2px;
-}
-button:focus-visible,
-.btn:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-.session-action:focus-visible {
   outline: 2px solid var(--color-cobalt);
   outline-offset: 2px;
 }
@@ -200,7 +252,6 @@ select:focus-visible,
   color: var(--color-ink-3);
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  font-weight: 500;
 }
 .tabs .active {
   color: var(--color-ink);
@@ -246,9 +297,6 @@ select {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   width: 100%;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
 }
 input[type='text']:focus,
 select:focus {
@@ -266,6 +314,19 @@ select:focus {
   font-weight: 600;
   color: var(--color-ink-2);
   margin-bottom: var(--space-1);
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+}
+.inline-form input[type='text'] {
+  width: auto;
+  min-width: 16rem;
+  flex: 1;
 }
 
 .error {

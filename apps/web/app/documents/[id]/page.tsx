@@ -25,7 +25,13 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const [guidance, setGuidance] = useState(true);
   const [status, setStatus] = useState<Status>({ kind: 'idle', text: '' });
   const [error, setError] = useState<string>();
+  const [proposalId, setProposalId] = useState<string>();
   const paper = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('proposal');
+    if (q) setProposalId(q);
+  }, []);
 
   const load = useCallback(() => {
     api
@@ -40,9 +46,6 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
 
   useEffect(load, [load]);
 
-  // Editable leaves are marked after each render of the document HTML. Only
-  // elements whose children are pure text qualify: an element containing other
-  // elements would have its structure flattened by an edit.
   useEffect(() => {
     const root = paper.current?.querySelector('.akn');
     if (!root) return;
@@ -77,8 +80,22 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   if (error) return <div className="error">{error}</div>;
   if (html === undefined) return <div className="empty">Loading…</div>;
 
+  const backHref = proposalId ? `/proposals/${proposalId}` : '/';
+
   return (
     <>
+      <nav className="trail">
+        <a href="/">Proposals</a>
+        <span aria-hidden>›</span>
+        {proposalId ? (
+          <>
+            <a href={backHref}>File</a>
+            <span aria-hidden>›</span>
+          </>
+        ) : null}
+        <span className="here">{title}</span>
+      </nav>
+
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 'var(--text-2xl)' }}>{title}</h1>
@@ -92,7 +109,10 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
           />
           Drafting guidance
         </label>
-        <span className={`status ${status.kind}`}>{status.text}</span>
+        <span className={`status ${status.kind}`}>{status.text || 'Edits save when you leave a line.'}</span>
+        <a className="btn" href={backHref}>
+          Back to file
+        </a>
       </div>
 
       <div ref={paper} className={`paper${guidance ? ' show-guidance' : ''}`} onBlur={commit}>

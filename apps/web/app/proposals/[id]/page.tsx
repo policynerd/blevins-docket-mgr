@@ -15,6 +15,8 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
   const [tab, setTab] = useState<Tab>('drafts');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [taking, setTaking] = useState(false);
+  const [milestoneLabel, setMilestoneLabel] = useState('Sent to the Board');
 
   const load = useCallback(() => {
     api
@@ -29,15 +31,18 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
 
   useEffect(load, [load]);
 
-  async function takeMilestone() {
-    const label = window.prompt('Label for this milestone', 'Sent to the Board');
+  async function takeMilestone(e?: React.FormEvent) {
+    e?.preventDefault();
+    const label = milestoneLabel.trim();
     if (!label) return;
     setBusy(true);
     try {
       await api.createMilestone(id, label);
+      setTaking(false);
       load();
-    } catch (e) {
-      setError((e as Error).message);
+      setTab('milestones');
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -46,8 +51,18 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
   if (error) return <div className="error">{error}</div>;
   if (!proposal) return <div className="empty">Loading…</div>;
 
+  const drafted = proposal.documents.some((d) => d.version);
+  const frozen = milestones.length > 0;
+  const firstDoc = proposal.documents[0];
+
   return (
     <>
+      <nav className="trail">
+        <a href="/">Proposals</a>
+        <span aria-hidden>›</span>
+        <span className="here">{proposal.ref}</span>
+      </nav>
+
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <h1>{proposal.title}</h1>
@@ -55,9 +70,6 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
             {proposal.ref} · {proposal.templateId}
           </div>
         </div>
-        <button onClick={takeMilestone} disabled={busy} className={busy ? '' : 'primary'}>
-          {busy ? 'Taking…' : 'Take milestone'}
-        </button>
         <a
           className="btn"
           href={`/api/proposals/${id}/export.pdf`}
@@ -67,6 +79,60 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
           Export PDF
         </a>
       </div>
+
+      <ol className="process">
+        <li className={`step ${drafted ? 'done' : 'next'}`}>
+          <span className="n">1</span> Draft
+        </li>
+        <li className={`step ${frozen ? 'done' : drafted ? 'next' : ''}`}>
+          <span className="n">2</span> Freeze a copy
+        </li>
+        <li className={`step ${frozen ? 'next' : ''}`}>
+          <span className="n">3</span> Circulate
+        </li>
+      </ol>
+
+      {!drafted && firstDoc ? (
+        <div className="next-action">
+          <strong>Next:</strong> open the first draft and write.
+          <a className="btn primary" href={`/documents/${firstDoc.id}?proposal=${id}`}>
+            Open {firstDoc.title}
+          </a>
+        </div>
+      ) : null}
+      {drafted && !frozen ? (
+        <div className="next-action">
+          <strong>Next:</strong> freeze a circulated copy so drafting can continue.
+          {taking ? (
+            <form className="inline-form" onSubmit={takeMilestone}>
+              <input
+                type="text"
+                value={milestoneLabel}
+                onChange={(e) => setMilestoneLabel(e.target.value)}
+                aria-label="Milestone label"
+              />
+              <button className="primary" disabled={busy}>
+                {busy ? 'Freezing…' : 'Freeze'}
+              </button>
+              <button type="button" onClick={() => setTaking(false)}>
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button className="primary" onClick={() => setTaking(true)}>
+              Take milestone
+            </button>
+          )}
+        </div>
+      ) : null}
+      {frozen ? (
+        <div className="next-action">
+          <strong>Next:</strong> export the packet that leaves the office.
+          <a className="btn primary" href={`/api/proposals/${id}/export.pdf`} target="_blank" rel="noreferrer">
+            Export PDF
+          </a>
+        </div>
+      ) : null}
 
       <nav className="tabs">
         {(['drafts', 'milestones', 'details'] as Tab[]).map((t) => (
@@ -79,13 +145,14 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
       {tab === 'drafts' ? (
         <div className="card">
           {proposal.documents.map((d) => (
-            <a key={d.id} className="row" href={`/documents/${d.id}`}>
+            <a key={d.id} className="row" href={`/documents/${d.id}?proposal=${id}`}>
               <div className="title">{d.title}</div>
               <div className="meta">
                 {d.version
                   ? `${d.version.label} · updated ${new Date(d.version.updatedAt).toLocaleString()}`
                   : 'empty'}
               </div>
+              <div className="hint">Continue drafting</div>
             </a>
           ))}
         </div>
@@ -97,14 +164,55 @@ export default function ProposalPage({ params }: { params: Promise<{ id: string 
             <div className="empty">
               No milestones yet. A milestone freezes every document as it stands, so a circulated
               copy stays fixed while drafting continues.
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                {taking ? (
+                  <form className="inline-form" onSubmit={takeMilestone} style={{ justifyContent: 'center' }}>
+                    <input
+                      type="text"
+                      value={milestoneLabel}
+                      onChange={(e) => setMilestoneLabel(e.target.value)}
+                      aria-label="Milestone label"
+                    />
+                    <button className="primary" disabled={busy}>
+                      {busy ? 'Freezing…' : 'Freeze'}
+                    </button>
+                  </form>
+                ) : (
+                  <button className="primary" onClick={() => setTaking(true)}>
+                    Take first milestone
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
-            milestones.map((m) => (
-              <div key={m.id} className="row">
-                <div className="title">{m.label}</div>
-                <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
+            <>
+              {milestones.map((m) => (
+                <div key={m.id} className="row">
+                  <div className="title">{m.label}</div>
+                  <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
+                </div>
+              ))}
+              <div className="row">
+                {taking ? (
+                  <form className="inline-form" onSubmit={takeMilestone}>
+                    <input
+                      type="text"
+                      value={milestoneLabel}
+                      onChange={(e) => setMilestoneLabel(e.target.value)}
+                      aria-label="Milestone label"
+                    />
+                    <button className="primary" disabled={busy}>
+                      {busy ? 'Freezing…' : 'Freeze another'}
+                    </button>
+                    <button type="button" onClick={() => setTaking(false)}>
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <button onClick={() => setTaking(true)}>Take another milestone</button>
+                )}
               </div>
-            ))
+            </>
           )}
         </div>
       ) : null}
