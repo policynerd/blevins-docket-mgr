@@ -28,14 +28,6 @@ export const contentHash = (xml: string) => createHash('sha256').update(xml).dig
 export class NotFound extends Error {}
 export class Conflict extends Error {}
 
-/**
- * Create a proposal and every document the template calls for, in one
- * transaction.
- *
- * All-or-nothing on purpose: a proposal holding three of its four parts is
- * worse than no proposal, because the missing part is invisible — nothing on
- * screen says a fiscal statement was supposed to exist.
- */
 export async function createProposal(
   db: Db,
   input: { templateId: string; title: string; ref?: string; userId: string },
@@ -215,6 +207,7 @@ export async function exportProposal(
   const sheetsFor = (docType: string) => [
     'tokens.css',
     'act.css',
+    'align.css',
     ...(LETTERHEAD.includes(docType) ? ['masthead.css'] : []),
     ...(opts.guidance ? ['guidance.css'] : []),
   ];
@@ -282,12 +275,6 @@ export async function documentHistory(db: Db, documentId: string) {
     .orderBy(desc(documentVersions.createdAt));
 }
 
-/**
- * Edit one element and save the result as a new version.
- *
- * The browser sends the provision's identifier and its new text (and, when the
- * drafter chose one, its alignment), never a document.
- */
 export async function editElement(
   db: Db,
   input: {
