@@ -23,7 +23,11 @@
   line-height: 1.5;
   color: #000;
   text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
   hyphens: none;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
 }
 
 .akn bill,
@@ -47,13 +51,30 @@
   display: block;
 }
 
+/* Body copy must justify on the block that holds the words, not only the
+   wrapper. contenteditable can drop inherited alignment; set it here. */
+.akn aknP,
+.akn p,
+.akn paragraph,
+.akn recital,
+.akn content,
+.akn tblock,
+.akn [data-editable] {
+  text-align: justify;
+  text-justify: inter-word;
+  text-align-last: start;
+}
+
 .akn aknP {
   display: block;
   margin: 0 0 0.6em;
 }
 
-.akn longTitle {
+.akn longTitle,
+.akn longTitle aknP,
+.akn longTitle p {
   text-align: center;
+  text-align-last: center;
   margin-bottom: 1em;
 }
 .akn docStage {
@@ -92,6 +113,7 @@
 .akn article > heading {
   display: block;
   text-align: center;
+  text-align-last: center;
   font-weight: 700;
 }
 
@@ -157,6 +179,7 @@
   font-size: 0.82em;
   font-family: var(--font-ui);
   text-align: left;
+  text-align-last: start;
   margin: 0.3em 0 0.9em;
 }
 .paper.show-guidance .akn guidance::before {
