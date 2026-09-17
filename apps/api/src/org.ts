@@ -1,27 +1,29 @@
 // Who the Board is.
 //
-// Taken from the Board's own posted meeting notice, which is the authoritative
-// statement of composition — the same document the masthead appears on. Seats
-// are numbered rather than named districts, and the order here is the order
-// they are printed in; both matter, because the masthead is read as a roster
-// and a governor appearing out of seat order reads as an error.
+// Taken from the Board's current membership roster (sitting members only).
+// Dan Blevins resigned; term concluded 2026-08-14. He stays in the chamber
+// people table as history. He does not belong on the face of an instrument.
 //
 // This lives in code for now. It belongs in the database once there is a
 // screen to administer it, and the shape below is what that table will hold.
 
 export interface Officer {
   readonly name: string;
-  /** "Seat One" for a governor, "Clerk of the Board" for staff. */
+  /** "Chair" / "Member" / "Ex-Officio" for a governor, office title for staff. */
   readonly title: string;
   readonly email?: string;
 }
 
 export const GOVERNORS: readonly Officer[] = [
-  { name: 'Benjamin Blevins', title: 'Seat One', email: 'benjamin.blevins@blevinsholdings.com' },
-  { name: 'Matthew Blevins', title: 'Seat Three' },
-  { name: 'Janet Stanton-Blevins', title: 'Seat Four' },
-  { name: 'Lynn Neault', title: 'Seat Five' },
-  { name: 'Julianna Barnes', title: 'Seat Six' },
+  { name: 'Benjamin Blevins', title: 'Chair', email: 'benjamin.blevins@blevinsholdings.com' },
+  { name: 'Ashley Dominguez', title: 'Member' },
+  { name: 'Dr. Jessica Robinson', title: 'Member' },
+  { name: 'Jan Blevins', title: 'Member' },
+  { name: 'Julianna A. Barnes', title: 'Member' },
+  { name: 'Lynn Neault', title: 'Member' },
+  { name: 'Mason Nakamura', title: 'Ex-Officio' },
+  { name: 'Matthew Blevins', title: 'Member' },
+  { name: 'Patricia Kay Coleman', title: 'Member' },
 ];
 
 export const STAFF: readonly Officer[] = [
