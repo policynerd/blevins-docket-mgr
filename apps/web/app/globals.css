@@ -143,6 +143,11 @@ button,
   background: var(--color-surface);
   color: var(--color-ink);
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
 }
 button:hover,
 .btn:hover {
@@ -161,6 +166,21 @@ button.primary:hover {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Keyboard focus — visible ring for buttons, links, and form controls. */
+:focus-visible {
+  outline: 2px solid var(--color-cobalt);
+  outline-offset: 2px;
+}
+button:focus-visible,
+.btn:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.session-action:focus-visible {
+  outline: 2px solid var(--color-cobalt);
+  outline-offset: 2px;
 }
 
 .tabs {
@@ -222,6 +242,15 @@ select {
   border-radius: var(--radius-md);
   background: var(--color-surface);
   width: 100%;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+input[type='text']:focus,
+select:focus {
+  border-color: var(--color-cobalt);
+  box-shadow: 0 0 0 3px var(--color-cobalt-dim);
+  outline: none;
 }
 
 .field {
