@@ -18,7 +18,6 @@ export interface Officer {
 
 export const GOVERNORS: readonly Officer[] = [
   { name: 'Benjamin Blevins', title: 'Seat One', email: 'benjamin.blevins@blevinsholdings.com' },
-  { name: 'Daniel Blevins', title: 'Seat Two' },
   { name: 'Matthew Blevins', title: 'Seat Three' },
   { name: 'Janet Stanton-Blevins', title: 'Seat Four' },
   { name: 'Lynn Neault', title: 'Seat Five' },
