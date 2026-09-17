@@ -55,23 +55,15 @@ const SaveDocument = z.object({
 
 const CreateMilestone = z.object({ label: z.string().min(1) });
 
-/**
- * Per-IP request ceilings.
- *
- * Three tiers, because the routes cost wildly different amounts:
- *
- *   - Sign-in is the credential surface. Guessing a session cookie or a state
- *     value is hopeless at 20 tries a minute and merely tedious at 20,000, and
- *     each callback also spends a request against Microsoft — so an open
- *     callback is a way to have us hammer our own identity provider.
- *   - Export starts a browser and lays out a document. A handful of concurrent
- *     requests is real work; a hundred is the machine falling over. This is the
- *     expensive one and the reason a global ceiling alone is not enough.
- *   - Everything else is a database read.
- *
- * Deliberately generous rather than clever: the Board sits behind one office
- * address, so a tight per-IP limit throttles the whole room at once.
- */
+const EditElement = z
+  .object({
+    value: z.string().optional(),
+    align: z.enum(['start', 'end', 'center', 'justify']).optional(),
+  })
+  .refine((b) => b.value !== undefined || b.align !== undefined, {
+    message: 'value or align is required',
+  });
+
 export function rateLimits(env: NodeJS.ProcessEnv) {
   const read = (name: string, fallback: number) => {
     const parsed = Number(env[name]);
@@ -91,12 +83,9 @@ export async function buildServer(
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: env['API_LOG'] === '1' ? { level: 'info' } : false,
-    // A legislative instrument can legitimately be large.
     bodyLimit: 20 * 1024 * 1024,
   });
 
-  // Read before anything is served, so a deployment missing its signing key
-  // fails at startup rather than on the first sign-in attempt.
   const secret = sessionSecret(env);
   const auth = { ...authOptions(env, entraConfig(env)), secret };
   devLoginGuard(auth, env);
@@ -105,21 +94,10 @@ export async function buildServer(
   const limits = rateLimits(env);
 
   await app.register(cookie);
-  // Awaited, and before any route is declared. The plugin attaches an onRoute
-  // hook to read each route's own ceiling, and a hook only sees routes
-  // registered after it — register this later and the per-route limits below
-  // are silently ignored while still looking present in the source.
   await app.register(rateLimit, {
     max: limits.global,
     timeWindow: '1 minute',
-    // The platform's own health probe must not be able to exhaust the budget
-    // that real callers share.
     allowList: (req) => req.url === '/health',
-    // `statusCode` is not decoration. The rejection travels through the error
-    // handler below, which reads that property to decide the response — leave
-    // it off and a throttled request is reported as an internal server error,
-    // which reads as "we are broken" rather than "you are going too fast" and
-    // sends the caller's retry logic down entirely the wrong path.
     errorResponseBuilder: () => ({
       statusCode: 429,
       error: 'Too many requests. Try again shortly.',
@@ -127,10 +105,6 @@ export async function buildServer(
   });
 
   app.setErrorHandler((err: unknown, _req, reply) => {
-    // A malformed uuid or an empty title is the caller's mistake. Left to fall
-    // through, Zod's error carries no statusCode and is reported as an
-    // internal failure — which tells the caller nothing and makes a bad
-    // request look like a broken server.
     if (err instanceof z.ZodError) {
       return reply.code(400).send({
         error: 'Invalid request',
@@ -141,9 +115,6 @@ export async function buildServer(
     if (err instanceof Conflict) return reply.code(409).send({ error: err.message });
 
     const status = (err as { statusCode?: number })?.statusCode ?? 500;
-    // An unexpected failure says nothing about itself to the caller. Internal
-    // messages leak schema and file paths, and this endpoint serves a public
-    // record; the detail belongs in the log, not the response body.
     const message =
       status === 500 ? 'Internal error' : ((err as { message?: string })?.message ?? 'Error');
     if (status === 500) app.log.error(err);
@@ -154,7 +125,6 @@ export async function buildServer(
 
   registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
 
-  /** The template picker's tree. */
   app.get('/templates', async () =>
     TEMPLATES.map((t) => ({
       id: t.id,
@@ -183,19 +153,11 @@ export async function buildServer(
     { config: { rateLimit: { max: limits.export, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-      // Not z.coerce.boolean(): it follows JavaScript truthiness, so the string
-      // "false" coerces to true and the opt-out silently opts in.
       const { guidance } = z
         .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
         .parse(req.query);
       const wantsGuidance = guidance === 'true' || guidance === '1';
-
-      // The export itself is public — it is the record. The guidance proof is
-      // not: it carries instructions written to whoever holds the pen, which the
-      // ordinary export deliberately hides. Handing that to an anonymous caller
-      // would publish exactly what the stylesheet exists to withhold.
       if (wantsGuidance) await requireUser(req);
-
       const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
       return reply
         .header('content-type', 'application/pdf')
@@ -240,8 +202,14 @@ export async function buildServer(
     const { id, elementId } = z
       .object({ id: z.string().uuid(), elementId: z.string().min(1).max(64) })
       .parse(req.params);
-    const { value } = z.object({ value: z.string() }).parse(req.body);
-    const saved = await editElement(db, { documentId: id, elementId, value, userId: user.id });
+    const body = EditElement.parse(req.body);
+    const saved = await editElement(db, {
+      documentId: id,
+      elementId,
+      value: body.value,
+      align: body.align,
+      userId: user.id,
+    });
     return { id: saved.id, label: versionLabel(saved), contentHash: saved.contentHash };
   });
 
