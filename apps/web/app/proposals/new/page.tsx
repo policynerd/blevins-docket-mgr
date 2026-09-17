@@ -46,7 +46,7 @@ export default function NewProposalPage() {
       <form
         onSubmit={submit}
         className="card"
-        style={{ padding: 'var(--space-6)', marginTop: 'var(--space-6)' }}
+        style={{ padding: 'var(--space-5)', marginTop: 'var(--space-5)' }}
       >
         <label className="field">
           <span>Template</span>
@@ -82,7 +82,7 @@ export default function NewProposalPage() {
           />
         </label>
 
-        <button className="primary" disabled={busy || !templateId || !title}>
+        <button className="primary" disabled={busy || !templateId || !title} style={{ marginTop: 'var(--space-2)' }}>
           {busy ? 'Creating…' : 'Create proposal'}
         </button>
       </form>
