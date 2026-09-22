@@ -32,7 +32,7 @@ export default function TemplatesPage() {
 
       <div className="card">
         {rows?.map((t) => (
-          <a key={t.id} className="row" href={`/proposals/new?template=${t.id}`}>
+          <a key={t.id} className="row" href={`/templates/${t.id}`}>
             <div className="title">{t.name}</div>
             <div className="meta">{t.path.join(' / ')} · {t.id}</div>
             <div className="hint">{t.documents.map((d) => d.title).join(' · ')}</div>

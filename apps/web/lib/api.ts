@@ -59,6 +59,19 @@ export interface Template {
   documents: { docType: string; title: string }[];
 }
 
+export interface TemplatePreview extends Template {
+  forms: { name: string; text: string }[];
+  boardLetter: { num: string; title: string; help: string }[] | null;
+  fiscal: { num: string; title: string; help: string }[] | null;
+}
+
+export interface Meta {
+  signInConfigured: boolean;
+  appBaseUrl: string | null;
+  chromium: boolean;
+  product: string;
+}
+
 export type Align = 'start' | 'end' | 'center' | 'justify';
 
 export const api = {
@@ -70,7 +83,10 @@ export const api = {
     }).then(json<{ entraLogoutUrl?: string }>);
     window.location.href = entraLogoutUrl ?? '/';
   },
+  meta: () => fetch(`${BASE}/meta`, withSession).then(json<Meta>),
   templates: () => fetch(`${BASE}/templates`, withSession).then(json<Template[]>),
+  template: (id: string) =>
+    fetch(`${BASE}/templates/${encodeURIComponent(id)}`, withSession).then(json<TemplatePreview>),
   proposals: () =>
     fetch(`${BASE}/proposals`, withSession).then(json<Omit<Proposal, 'documents'>[]>),
   proposal: (id: string) => fetch(`${BASE}/proposals/${id}`, withSession).then(json<Proposal>),
@@ -101,12 +117,10 @@ export const api = {
     }).then(json<{ label: string; contentHash: string }>),
   versions: (id: string) =>
     fetch(`${BASE}/documents/${id}/versions`, withSession).then(
-      json<{ id: string; label: string; note: string | null; createdAt: string }[]>,
-    ),
+      json<{ id: string; label: string; note: string | null; createdAt: string }[]>),
   milestones: (id: string) =>
     fetch(`${BASE}/proposals/${id}/milestones`, withSession).then(
-      json<{ id: string; label: string; createdAt: string }[]>,
-    ),
+      json<{ id: string; label: string; createdAt: string }[]>),
   createMilestone: (id: string, label: string) =>
     fetch(`${BASE}/proposals/${id}/milestones`, {
       method: 'POST',
