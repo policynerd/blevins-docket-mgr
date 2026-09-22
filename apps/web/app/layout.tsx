@@ -1,9 +1,23 @@
 import type { ReactNode } from 'react';
+import { Libre_Baskerville, Source_Sans_3 } from 'next/font/google';
 
 import { SessionBadge } from './session';
 
 import './globals.css';
 import './document.css';
+
+const legal = Libre_Baskerville({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  style: ['normal', 'italic'],
+  variable: '--font-text-face',
+});
+
+const ui = Source_Sans_3({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-ui-face',
+});
 
 export const metadata = {
   title: 'Blevins Holdings — Board of Governors',
@@ -12,7 +26,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${legal.variable} ${ui.variable}`}>
       <body>
         <header className="masthead">
           <a href="/">
