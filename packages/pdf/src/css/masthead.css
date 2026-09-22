@@ -11,7 +11,6 @@
 
 container[name='masthead'] {
   display: grid;
-  /* 2046 / 5339 / 1975 twips, straight off the Board's agenda template. */
   grid-template-columns: 21.9% 57% 21.1%;
   align-items: start;
   column-gap: 12pt;
@@ -59,8 +58,6 @@ container[name='mark'] {
   background-position: center top;
   background-size: contain;
 }
-
-/* ------------------------------------------------- continuation header ---- */
 
 .running-head {
   position: running(runhead);
