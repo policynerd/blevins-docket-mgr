@@ -1,27 +1,22 @@
 /*
  * Design tokens, taken from the Board's own design system.
  *
- * Reproduced here rather than invented so the documents, the editor and
- * anything else built later resolve the same names to the same values. The
- * navy is the same #353D4F the previous application already used as its
- * accent, which is the strongest evidence these are the house colours and not
- * a passing draft.
+ * Legal text is Libre Baskerville (Official Journal / Times texture) with
+ * Times New Roman and Liberation Serif behind it. The chrome is Source Sans 3
+ * with Arial behind it. The PDF renderer still uses Liberation on the image.
  */
 
 :root {
-  /* Ink — the text scale, darkest to lightest. */
   --color-ink: #1a1e28;
   --color-ink-2: #353d4f;
   --color-ink-3: #6b7585;
   --color-ink-4: #9aa3b0;
 
-  /* Navy — the institutional colour. */
   --color-navy: #353d4f;
   --color-navy-deep: #1a1e28;
   --color-navy-mid: #4a5568;
   --color-navy-light: #7282a0;
 
-  /* Surfaces, warm rather than clinical white. */
   --color-surface: #ffffff;
   --color-surface-warm: #f8f6f2;
   --color-surface-marble: #f5f2ee;
@@ -30,7 +25,6 @@
   --color-border: #ddd9d2;
   --color-border-subtle: #eee9e2;
 
-  /* Accents. Each carries a dim tint for backgrounds and a light for hover. */
   --color-cobalt: #1e3a5f;
   --color-cobalt-dim: #e1ebf5;
   --color-crimson: #8b2030;
@@ -42,21 +36,9 @@
   --color-amber: #c9743a;
   --color-amber-dim: #faf0e8;
 
-  /* Type.
-   *
-   * System faces, deliberately. The Board's own filed documents are set in
-   * them — the board letter in Times New Roman with Arial and Calibri, the
-   * ordinance entirely in Arial, the meeting notice in Georgia — and a
-   * document that will be filed, quoted and photocopied is better served by a
-   * face every reader and every printer already has than by a distinctive
-   * one. It also drops about 640KB of embedded fonts from every PDF and
-   * removes a licensing question from the critical path.
-   *
-   * The brand still shows where brand belongs: the seal and the lockup on the
-   * letterhead, which are artwork and unaffected by this. */
-  --font-display: 'Times New Roman', Times, 'Liberation Serif', serif;
-  --font-text: 'Times New Roman', Times, 'Liberation Serif', serif;
-  --font-ui: Arial, Helvetica, 'Liberation Sans', sans-serif;
+  --font-display: var(--font-text-face), 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-text: var(--font-text-face), 'Times New Roman', Times, 'Liberation Serif', serif;
+  --font-ui: var(--font-ui-face), Arial, Helvetica, 'Liberation Sans', sans-serif;
 
   --text-xs: 11px;
   --text-sm: 13px;
