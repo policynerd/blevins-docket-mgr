@@ -33,6 +33,8 @@ primary_region = 'iad'
   # Next serves the public port; the API listens on loopback behind its rewrite.
   PORT = '3100'
   API_PORT = '3200'
+  # Surface export / Chromium failures in `fly logs`.
+  API_LOG = '1'
 
 # ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET and APP_BASE_URL are
 # already set as secrets on this app by the application being replaced, and are

@@ -98,6 +98,8 @@ async function launchBrowser(): Promise<Browser> {
       // our own database — never a third-party page.
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
       '--font-render-hinting=none',
     ],
   });
@@ -111,6 +113,23 @@ export async function shutdown(): Promise<void> {
 
 function readCss(name: string): string {
   return readFileSync(join(here, 'css', name), 'utf8');
+}
+
+/**
+ * Official Board seal as a data URI. Linked files would not resolve because
+ * setContent() has no document base URL.
+ */
+function boardMarkCss(): string {
+  const candidates = [
+    join(here, 'assets', 'board-seal.svg'),
+    join(here, 'assets', 'board-lockup-alpha.png'),
+    join(here, 'assets', 'board-lockup.png'),
+  ];
+  const path = candidates.find((p) => existsSync(p));
+  if (!path) return '';
+  const mime = path.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
+  const data = readFileSync(path).toString('base64');
+  return `:root { --board-mark: url('data:${mime};base64,${data}'); }`;
 }
 
 export interface RenderOptions {
@@ -141,9 +160,11 @@ export interface RenderOptions {
  * function knows what an article or a recital is.
  */
 export async function renderPdf(options: RenderOptions): Promise<Uint8Array> {
-  const css = [...(options.stylesheets ?? ['act.css']).map(readCss), options.extraCss ?? ''].join(
-    '\n',
-  );
+  const css = [
+    boardMarkCss(),
+    ...(options.stylesheets ?? ['act.css']).map(readCss),
+    options.extraCss ?? '',
+  ].join('\n');
 
   const html = `<!doctype html>
 <html lang="en">

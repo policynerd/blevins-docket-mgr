@@ -1,13 +1,13 @@
 # Brand assets
 
-`board-lockup.png` — the Board of Governors lockup (seal, rule, wordmark),
-extracted from the Board's own posted meeting notice, which is the
-authoritative source for how the mark actually appears on an instrument the
-Board issues.
+See `BRAND.md` for the full inventory.
 
-Raster, 619×183 with transparency. That is enough for screen and adequate for
-a masthead at roughly two inches on a 300dpi print. It is **not** enough to
-scale further, and a seal that goes soft on a document people file is the kind
-of detail that reads as amateur. A vector original (SVG, EPS or AI) should
-replace this when one is available; nothing else has to change, because the
-masthead sizes the mark by CSS rather than by its intrinsic pixels.
+`board-seal.svg` — official circular seal, print-safe navy on transparent.
+Injected into the letterhead at render time as `--board-mark`.
+
+`board-seal-knockout.svg` — white knockout for dark grounds only.
+
+`board-lockup.png` / `board-lockup-alpha.png` — raster fallbacks.
+
+Committee lockups and the BLEVINS HOLDINGS wordmark belong in
+`apps/web/public/brand/`, not on the filed instrument.

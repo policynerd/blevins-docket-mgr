@@ -221,7 +221,7 @@ export async function exportProposal(
         body: toHtml(parse(version.xml, doc.docType as DocType)),
         title: `${proposal.ref} — ${doc.title}`,
         stylesheets: sheetsFor(doc.docType),
-        ...(LETTERHEAD.includes(docType) ? { runningHead: runningHead(opts.meeting) } : {}),
+        ...(LETTERHEAD.includes(doc.docType) ? { runningHead: runningHead(opts.meeting) } : {}),
       }),
     );
   }
