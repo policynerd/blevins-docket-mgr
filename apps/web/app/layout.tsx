@@ -21,6 +21,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </a>
           <span className="spacer" />
           <a href="/">Proposals</a>
+          <a href="/templates">Templates</a>
+          <a href="/help">How to draft</a>
+          <a href="/settings">Settings</a>
           <SessionBadge />
         </header>
         <main>{children}</main>
