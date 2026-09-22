@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from 'react';
 
-import { api, type TemplatePreview } from '../../lib/api';
+import { api, type Template } from '../../lib/api';
 
 export default function TemplatesPage() {
-  const [rows, setRows] = useState<TemplatePreview[]>();
+  const [rows, setRows] = useState<Template[]>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     api
-      .templatePreviews()
+      .templates()
       .then(setRows)
       .catch((e: Error) => setError(e.message));
   }, []);
@@ -20,7 +20,7 @@ export default function TemplatesPage() {
       <div className="toolbar">
         <div style={{ flex: 1 }}>
           <h1>Templates</h1>
-          <div className="ref">The twelve instruments this office issues. Read the form before you open the editor.</div>
+          <div className="ref">The twelve instruments this office issues. Open one to read the form, then start a proposal.</div>
         </div>
         <a className="btn primary" href="/proposals/new">
           New proposal
@@ -30,13 +30,12 @@ export default function TemplatesPage() {
       {error ? <div className="error">{error}</div> : null}
       {rows === undefined && !error ? <div className="empty">Loading…</div> : null}
 
-      <div className="template-grid">
+      <div className="card">
         {rows?.map((t) => (
-          <a key={t.id} className="template-card" href={`/templates/${t.id}`}>
-            <div className="meta">{t.path.join(' / ')}</div>
+          <a key={t.id} className="row" href={`/proposals/new?template=${t.id}`}>
             <div className="title">{t.name}</div>
+            <div className="meta">{t.path.join(' / ')} · {t.id}</div>
             <div className="hint">{t.documents.map((d) => d.title).join(' · ')}</div>
-            <code>{t.id}</code>
           </a>
         ))}
       </div>
