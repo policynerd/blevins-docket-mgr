@@ -29,9 +29,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={`${legal.variable} ${ui.variable}`}>
       <body>
         <header className="masthead">
-          <a href="/">
-            <span className="org">Blevins Holdings</span>
-            <span className="wordmark">Board of Governors</span>
+          <a href="/" className="brand">
+            <img src="/brand/seal.svg" alt="" width={40} height={40} className="brand-seal" />
+            <span className="brand-text">
+              <span className="org">Blevins Holdings</span>
+              <span className="wordmark">Board of Governors</span>
+            </span>
           </a>
           <span className="spacer" />
           <a href="/">Proposals</a>
