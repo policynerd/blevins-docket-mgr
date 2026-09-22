@@ -55,7 +55,8 @@ function withInstitutionalCss(markup) {
   const extra = '\n  <link rel="stylesheet" href="/assets/institutional.css">'
     + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">'
     + '\n  <link rel="stylesheet" href="/assets/chamber.css">'
-    + '\n  <link rel="stylesheet" href="/assets/actions-mast.css">';
+    + '\n  <link rel="stylesheet" href="/assets/actions-mast.css">'
+    + '\n  <link rel="stylesheet" href="/assets/a11y.css">';
   if (!html.includes('/assets/institutional.css')) {
     html = html.replace(legacy, legacy + extra);
   }
@@ -77,6 +78,9 @@ function withInstitutionalCss(markup) {
   }
   if (!html.includes('/assets/live-floor.js')) {
     html = html.replace('</body>', '  <script src="/assets/live-floor.js" defer></script>\n</body>');
+  }
+  if (!html.includes('/assets/a11y-prefs.js')) {
+    html = html.replace('</body>', '  <script src="/assets/a11y-prefs.js" defer></script>\n</body>');
   }
   return html;
 }
