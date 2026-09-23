@@ -10,7 +10,8 @@ export function registerFiles(
   db: Db,
   requireUser: (req: FastifyRequest) => Promise<unknown>,
 ) {
-  app.get('/files', async () => {
+  app.get('/files', async (req) => {
+    await requireUser(req);
     const rows = await db.select().from(proposals).orderBy(desc(proposals.updatedAt));
     return rows.map((p) => ({
       id: p.id,
@@ -26,6 +27,7 @@ export function registerFiles(
   });
 
   app.get('/files/:id', async (req) => {
+    await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return getProposal(db, id);
   });
@@ -56,17 +58,23 @@ export function registerFiles(
     return row;
   });
 
-  app.get('/meetings', async () => []);
+  app.get('/meetings', async (req) => {
+    await requireUser(req);
+    return [];
+  });
 
-  app.get('/legistar/catalog', async () => ({
-    bodies: [
-      'Office of the General Counsel',
-      'Board of Governors',
-      'Finance Committee',
-      'Audit Committee',
-    ],
-    statuses: ['Draft', 'In Committee', 'Passed', 'Adopted', 'Enacted'],
-    actions: ['Referred', 'Recommended for Approval', 'Passed', 'Adopted'],
-    voteChoices: ['Aye', 'No', 'Abstain', 'Absent'],
-  }));
+  app.get('/legistar/catalog', async (req) => {
+    await requireUser(req);
+    return {
+      bodies: [
+        'Office of the General Counsel',
+        'Board of Governors',
+        'Finance Committee',
+        'Audit Committee',
+      ],
+      statuses: ['Draft', 'In Committee', 'Passed', 'Adopted', 'Enacted'],
+      actions: ['Referred', 'Recommended for Approval', 'Passed', 'Adopted'],
+      voteChoices: ['Aye', 'No', 'Abstain', 'Absent'],
+    };
+  });
 }
