@@ -28,7 +28,9 @@ COPY apps/web/package.json apps/web/
 COPY packages/akn/package.json packages/akn/
 COPY packages/db/package.json packages/db/
 COPY packages/pdf/package.json packages/pdf/
-RUN pnpm install --frozen-lockfile
+# package.json pins Next 15.5.26; the committed lockfile still names ^15.1.3.
+# Resolve against the registry at build time until a refreshed lockfile is committed.
+RUN pnpm install --no-frozen-lockfile
 
 COPY . .
 RUN pnpm --filter @blevins/web build
