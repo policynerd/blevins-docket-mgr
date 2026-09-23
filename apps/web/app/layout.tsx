@@ -37,7 +37,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </span>
           </a>
           <span className="spacer" />
-          <a href="/">Proposals</a>
+          <a href="/">Files</a>
+          <a href="/meetings">Calendar</a>
           <a href="/templates">Templates</a>
           <a href="/help">How to draft</a>
           <a href="/settings">Settings</a>
