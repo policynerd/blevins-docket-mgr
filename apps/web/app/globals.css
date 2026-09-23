@@ -8,6 +8,9 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface-warm);
   color: var(--color-ink);
   font-family: var(--font-ui);
@@ -24,6 +27,23 @@ a:hover {
   text-decoration: underline;
 }
 
+.official-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 1.5rem;
+  background: #0f1722;
+  color: #f4ead2;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+.official-banner p {
+  margin: 0;
+}
+.official-banner img {
+  display: block;
+}
+
 .masthead {
   background: var(--color-navy);
   color: #fff;
@@ -34,6 +54,19 @@ a:hover {
 }
 .masthead a {
   color: #fff;
+}
+.masthead .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+.masthead .brand-seal {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0f1722;
 }
 .masthead .wordmark {
   font-family: var(--font-display);
@@ -49,6 +82,12 @@ a:hover {
 }
 .masthead .spacer {
   flex: 1;
+}
+.mast-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
 }
 
 .session {
@@ -79,6 +118,37 @@ main {
   max-width: 1180px;
   margin: 0 auto;
   padding: var(--space-6) var(--space-6) var(--space-12);
+  width: 100%;
+  flex: 1;
+}
+
+.site-footer {
+  background: #0f1722;
+  color: #d7c9a3;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+.site-footer a {
+  color: #f4ead2;
+}
+.site-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+.footer-brand {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.footer-brand strong {
+  display: block;
+  color: #fff;
 }
 
 h1 {
@@ -364,4 +434,9 @@ select:focus {
   color: var(--color-ink-3);
   padding: var(--space-8);
   text-align: center;
+}
+
+.prose p {
+  margin: 0 0 1rem;
+  max-width: 42rem;
 }
