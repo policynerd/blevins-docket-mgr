@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Libre_Baskerville, Source_Sans_3 } from 'next/font/google';
 
 import { SessionBadge } from './session';
+import { SiteFooter } from './site-footer';
 
 import './globals.css';
 import './document.css';
@@ -68,21 +69,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SessionBadge />
         </header>
         <main>{children}</main>
-        <footer className="site-footer">
-          <div className="footer-brand">
-            <img src="/brand/seal.svg" alt="" width={36} height={36} />
-            <div>
-              <strong>Blevins Holdings Board of Governors</strong>
-              <div>Office of the General Counsel · Legislative drafting</div>
-            </div>
-          </div>
-          <nav aria-label="Legal">
-            <a href="/terms">Terms of use</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/accessibility">Accessibility</a>
-            <a href="/help">How to draft</a>
-          </nav>
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );
