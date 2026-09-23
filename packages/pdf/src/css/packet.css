@@ -1,0 +1,134 @@
+@page {
+  size: Letter;
+  margin: 0.85in 0.75in 0.85in 0.75in;
+}
+
+@page :first {
+  margin: 0;
+}
+
+:root {
+  --navy: #071b2f;
+  --navy-soft: #173551;
+  --gold: #b8952f;
+  --ink: #111820;
+  --muted: #5c6770;
+  --rule: #c5ccd3;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  color: var(--ink);
+  font-family: "Libre Baskerville", "Times New Roman", Times, serif;
+  font-size: 11pt;
+  line-height: 1.45;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.cover {
+  min-height: 11in;
+  background: var(--navy);
+  color: #fff;
+  padding: 1.15in 0.9in 0.9in;
+  page-break-after: always;
+}
+.cover-rule {
+  height: 3pt;
+  background: var(--gold);
+  width: 100%;
+  margin: 22pt 0 28pt;
+}
+.cover-kicker {
+  font-family: "Source Sans 3", Arial, sans-serif;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 9pt;
+  color: var(--gold);
+  font-weight: 700;
+}
+.cover h1 {
+  font-size: 28pt;
+  line-height: 1.15;
+  font-weight: 700;
+  margin: 0 0 8pt;
+}
+.cover h2 {
+  font-weight: 400;
+  font-style: italic;
+  font-size: 16pt;
+  margin: 0 0 28pt;
+}
+.cover-meta {
+  font-family: "Source Sans 3", Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.55;
+}
+.cover-foot {
+  position: absolute;
+  bottom: 0.7in;
+  left: 0.9in;
+  right: 0.9in;
+  font-family: "Source Sans 3", Arial, sans-serif;
+  font-size: 8.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d7c48a;
+}
+
+.contents { page-break-after: always; }
+.contents h1, .history h1, .divider h1 {
+  font-size: 16pt;
+  margin: 0 0 16pt;
+}
+.toc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12pt;
+  border-bottom: 0.4pt dotted var(--rule);
+  padding: 7pt 0;
+  font-size: 10.5pt;
+}
+.toc-row .num {
+  font-family: "Source Sans 3", Arial, sans-serif;
+  color: var(--navy);
+  font-weight: 700;
+  min-width: 5.5rem;
+}
+.divider {
+  page-break-before: always;
+  page-break-after: always;
+  min-height: 9in;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 10pt solid var(--navy);
+  padding-left: 22pt;
+}
+.divider .tab {
+  font-family: "Source Sans 3", Arial, sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-size: 9pt;
+  font-weight: 700;
+}
+.history table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.5pt;
+}
+.history th, .history td {
+  border-bottom: 0.4pt solid var(--rule);
+  text-align: left;
+  padding: 6pt 8pt 6pt 0;
+  vertical-align: top;
+}
+.history th {
+  font-family: "Source Sans 3", Arial, sans-serif;
+  font-size: 8pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
