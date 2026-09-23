@@ -1,10 +1,5 @@
 /**
  * The API, reached through the Next rewrite so the browser stays same-origin.
- *
- * Authentication is the session cookie the API sets at the end of an Entra
- * sign-in. Nothing here carries an identity: the browser cannot read the
- * cookie (it is httpOnly) and cannot forge one, which is the entire reason the
- * `x-user-id` header this replaced had to go.
  */
 const BASE = '/api';
 
@@ -70,6 +65,54 @@ export interface Meta {
   appBaseUrl: string | null;
   chromium: boolean;
   product: string;
+  docketSync?: boolean;
+}
+
+export interface LegislativeFile {
+  id: string;
+  ref: string;
+  title: string;
+  templateId?: string;
+  status: string;
+  inControl: string;
+  agendaDate: string | null;
+  sponsors?: string | null;
+  enactmentNumber: string | null;
+  finalActionAt: string | null;
+  updatedAt: string;
+}
+
+export interface FileHistoryLine {
+  id: string;
+  actionAt: string;
+  actingBody: string;
+  action: string;
+  sentTo: string | null;
+  result: string | null;
+  actionNote: string | null;
+  actionText: string | null;
+  votes: { memberName: string; vote: string }[];
+}
+
+export interface Meeting {
+  id: string;
+  body: string;
+  meetingAt: string;
+  location: string | null;
+  agendaStatus: string;
+  notes: string | null;
+}
+
+export interface MeetingDetail extends Meeting {
+  items: {
+    id: string;
+    position: number;
+    heading: string | null;
+    proposalId: string | null;
+    ref?: string;
+    title?: string;
+    status?: string;
+  }[];
 }
 
 export type Align = 'start' | 'end' | 'center' | 'justify';
@@ -97,6 +140,20 @@ export const api = {
       body: JSON.stringify(body),
       ...withSession,
     }).then(json<Proposal>),
+  renameProposal: (id: string, title: string) =>
+    fetch(`${BASE}/proposals/${id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ title }),
+      ...withSession,
+    }).then(json<Proposal>),
+  renameDocument: (id: string, title: string) =>
+    fetch(`${BASE}/documents/${id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ title }),
+      ...withSession,
+    }).then(json<DocumentSummary>),
   documentHtml: (id: string) =>
     fetch(`${BASE}/documents/${id}/html`, withSession).then(
       json<{
@@ -128,4 +185,57 @@ export const api = {
       body: JSON.stringify({ label }),
       ...withSession,
     }).then(json<{ id: string; label: string }>),
+  files: () => fetch(`${BASE}/files`, withSession).then(json<LegislativeFile[]>),
+  file: (id: string) => fetch(`${BASE}/files/${id}`, withSession).then(json<LegislativeFile>),
+  updateFile: (id: string, body: { sponsors?: string; agendaDate?: string | null }) =>
+    fetch(`${BASE}/files/${id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify(body),
+      ...withSession,
+    }).then(json<LegislativeFile>),
+  fileHistory: (id: string) =>
+    fetch(`${BASE}/files/${id}/history`, withSession).then(json<FileHistoryLine[]>),
+  recordFileAction: (
+    id: string,
+    body: {
+      action: string;
+      actingBody: string;
+      sentTo?: string;
+      actionNote?: string;
+      votes?: { memberName: string; vote: string }[];
+    },
+  ) =>
+    fetch(`${BASE}/files/${id}/actions`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      ...withSession,
+    }).then(json<unknown>),
+  meetings: () => fetch(`${BASE}/meetings`, withSession).then(json<Meeting[]>),
+  meeting: (id: string) => fetch(`${BASE}/meetings/${id}`, withSession).then(json<MeetingDetail>),
+  createMeeting: (body: { body: string; meetingAt: string; location?: string; notes?: string }) =>
+    fetch(`${BASE}/meetings`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      ...withSession,
+    }).then(json<Meeting>),
+  generateAgenda: (id: string) =>
+    fetch(`${BASE}/meetings/${id}/generate`, {
+      method: 'POST',
+      headers: headers(),
+      ...withSession,
+    }).then(json<MeetingDetail>),
+  publishAgenda: (id: string, status: 'Draft' | 'Final') =>
+    fetch(`${BASE}/meetings/${id}/publish`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ status }),
+      ...withSession,
+    }).then(json<MeetingDetail>),
+  legistarCatalog: () =>
+    fetch(`${BASE}/legistar/catalog`, withSession).then(
+      json<{ bodies: string[]; statuses: string[]; actions: string[]; voteChoices: string[] }>,
+    ),
 };
