@@ -16,6 +16,7 @@ import {
 } from './auth.ts';
 
 import { TEMPLATES } from './templates.ts';
+import { templatePreview } from './template-preview.ts';
 import {
   Conflict,
   NotFound,
@@ -125,6 +126,14 @@ export async function buildServer(
 
   registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
 
+  app.get('/meta', async () => ({
+    signInConfigured: entraConfig(env) !== null,
+    appBaseUrl: env['APP_BASE_URL'] ?? null,
+    chromium: Boolean(env['CHROMIUM_PATH']),
+    product: 'blevins-drafting',
+    docketSync: Boolean(env['DOCKET_SYNC_URL'] && env['DOCKET_SYNC_SECRET']),
+  }));
+
   app.get('/templates', async () =>
     TEMPLATES.map((t) => ({
       id: t.id,
@@ -133,6 +142,13 @@ export async function buildServer(
       documents: t.documents.map((d) => ({ docType: d.docType, title: d.title })),
     })),
   );
+
+  app.get('/templates/:id', async (req) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const preview = templatePreview(id);
+    if (!preview) throw new NotFound(`No template ${id}`);
+    return preview;
+  });
 
   app.get('/proposals', async () => db.select().from(proposals).orderBy(proposals.createdAt));
 
