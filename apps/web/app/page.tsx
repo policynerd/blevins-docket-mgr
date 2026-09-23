@@ -4,12 +4,36 @@ import { useEffect, useState } from 'react';
 
 import { api, type LegislativeFile } from '../lib/api';
 
+function asFile(p: {
+  id: string;
+  ref: string;
+  title: string;
+  templateId?: string;
+  updatedAt: string;
+}): LegislativeFile {
+  return {
+    id: p.id,
+    ref: p.ref,
+    title: p.title,
+    templateId: p.templateId,
+    status: 'Draft',
+    inControl: 'Office of the General Counsel',
+    agendaDate: null,
+    enactmentNumber: null,
+    updatedAt: p.updatedAt,
+  };
+}
+
 export default function FilesPage() {
   const [rows, setRows] = useState<LegislativeFile[]>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    api.files().then(setRows).catch((e: Error) => setError(e.message));
+    api
+      .files()
+      .catch(() => api.proposals().then((list) => list.map(asFile)))
+      .then(setRows)
+      .catch((e: Error) => setError(e.message));
   }, []);
 
   return (

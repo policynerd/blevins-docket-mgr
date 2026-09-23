@@ -13,12 +13,18 @@ const ALIGNS: { id: Align; label: string }[] = [
   { id: 'justify', label: 'Justify' },
 ];
 
+const EDITABLE = ['aknP', 'heading', 'num', 'docPurpose', 'docType', 'docStage', 'guidance', 'p'];
+
 function alignOf(el: HTMLElement): Align {
   const c = el.className;
   if (/\balign-start\b/.test(c)) return 'start';
   if (/\balign-end\b/.test(c)) return 'end';
   if (/\balign-center\b/.test(c)) return 'center';
   return 'justify';
+}
+
+function isLeaf(el: HTMLElement): boolean {
+  return !Array.from(el.children).some((c) => c.tagName !== 'BR');
 }
 
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +39,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const [align, setAlign] = useState<Align>('justify');
   const active = useRef<HTMLElement | null>(null);
   const paper = useRef<HTMLDivElement>(null);
+  const dirty = useRef(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get('proposal');
@@ -46,6 +53,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         setHtml(d.html);
         setTitle(d.document.title);
         setLabel(d.version.label);
+        dirty.current = false;
       })
       .catch((e: Error) => setError(e.message));
   }, [id]);
@@ -55,34 +63,70 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     const root = paper.current?.querySelector('.akn');
     if (!root) return;
-    const EDITABLE = ['aknP', 'heading', 'num', 'docPurpose', 'docType', 'docStage', 'guidance'];
-    for (const el of Array.from(root.querySelectorAll<HTMLElement>(EDITABLE.join(',')))) {
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
       if (!el.id) continue;
-      if (Array.from(el.children).length > 0) continue;
+      if (!EDITABLE.includes(el.tagName) && !EDITABLE.includes(el.localName)) continue;
+      if (!isLeaf(el)) continue;
       el.setAttribute('data-editable', 'true');
-      el.setAttribute('contenteditable', 'plaintext-only');
+      el.setAttribute('contenteditable', 'true');
       el.spellcheck = true;
+      el.dataset['committed'] = el.textContent ?? '';
     }
   }, [html]);
+
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!dirty.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onLeave);
+    return () => window.removeEventListener('beforeunload', onLeave);
+  }, []);
 
   function remember(el: HTMLElement) {
     active.current = el;
     setAlign(alignOf(el));
   }
 
+  async function persist(el: HTMLElement) {
+    const value = el.textContent ?? '';
+    if (value === el.dataset['committed']) return false;
+    const saved = await api.editElement(id, el.id, value);
+    el.dataset['committed'] = value;
+    setLabel(saved.label);
+    return true;
+  }
+
   async function commit(event: React.FocusEvent<HTMLDivElement>) {
     const el = event.target as HTMLElement;
     if (!el.hasAttribute('data-editable')) return;
     remember(el);
-    const value = el.textContent ?? '';
-    if (value === el.dataset['committed']) return;
-
     setStatus({ kind: 'saving', text: 'Saving…' });
     try {
-      const saved = await api.editElement(id, el.id, value);
-      el.dataset['committed'] = value;
-      setLabel(saved.label);
-      setStatus({ kind: 'saved', text: `Saved ${saved.label}` });
+      const changed = await persist(el);
+      dirty.current = false;
+      setStatus({
+        kind: 'saved',
+        text: changed ? `Saved ${label || 'draft'}` : 'No change',
+      });
+    } catch (e) {
+      setStatus({ kind: 'error', text: (e as Error).message });
+    }
+  }
+
+  async function saveAll() {
+    const root = paper.current?.querySelector('.akn');
+    if (!root) return;
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-editable]'));
+    setStatus({ kind: 'saving', text: `Saving ${nodes.length} lines…` });
+    try {
+      let n = 0;
+      for (const el of nodes) {
+        if (await persist(el)) n += 1;
+      }
+      dirty.current = false;
+      setStatus({ kind: 'saved', text: n ? `Saved ${n} line${n === 1 ? '' : 's'}` : 'Nothing to save' });
     } catch (e) {
       setStatus({ kind: 'error', text: (e as Error).message });
     }
@@ -115,7 +159,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   return (
     <>
       <nav className="trail">
-        <a href="/">Proposals</a>
+        <a href="/">Files</a>
         <span aria-hidden>›</span>
         {proposalId ? (
           <>
@@ -153,8 +197,11 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
           Drafting guidance
         </label>
         <span className={`status ${status.kind}`}>
-          {status.text || 'Click a line, then set its alignment.'}
+          {status.text || 'Edit a line. Blur or Save writes it.'}
         </span>
+        <button className="primary" type="button" onClick={saveAll}>
+          Save
+        </button>
         <a className="btn" href={backHref}>
           Back to file
         </a>
@@ -163,6 +210,10 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
       <div
         ref={paper}
         className={`paper${guidance ? ' show-guidance' : ''}`}
+        onInput={() => {
+          dirty.current = true;
+          setStatus({ kind: 'idle', text: 'Unsaved changes' });
+        }}
         onBlur={commit}
         onFocus={(e) => {
           const el = e.target as HTMLElement;
