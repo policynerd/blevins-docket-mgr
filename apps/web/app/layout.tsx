@@ -20,31 +20,69 @@ const ui = Source_Sans_3({
 });
 
 export const metadata = {
-  title: 'Blevins Holdings — Board of Governors',
-  description: 'Legislative drafting and docket management',
+  title: {
+    default: 'Legislative Drafting — Board of Governors',
+    template: '%s — Board of Governors',
+  },
+  description:
+    'Official legislative drafting system of the Blevins Holdings Board of Governors.',
+  applicationName: 'Board of Governors Drafting',
+  icons: {
+    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }, { url: '/brand/seal.svg' }],
+    apple: '/brand/seal.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${legal.variable} ${ui.variable}`}>
       <body>
+        <div className="official-banner">
+          <img src="/brand/seal.svg" alt="" width={16} height={16} />
+          <p>
+            An official website of the <strong>Blevins Holdings Board of Governors</strong>.
+          </p>
+        </div>
         <header className="masthead">
           <a href="/" className="brand">
-            <img src="/brand/seal.svg" alt="" width={40} height={40} className="brand-seal" />
+            <img
+              src="/brand/seal.svg"
+              alt="Seal of the Board of Governors"
+              width={44}
+              height={44}
+              className="brand-seal"
+            />
             <span className="brand-text">
               <span className="org">Blevins Holdings</span>
               <span className="wordmark">Board of Governors</span>
             </span>
           </a>
           <span className="spacer" />
-          <a href="/">Files</a>
-          <a href="/meetings">Calendar</a>
-          <a href="/templates">Templates</a>
-          <a href="/help">How to draft</a>
-          <a href="/settings">Settings</a>
+          <nav className="mast-nav" aria-label="Primary">
+            <a href="/">Files</a>
+            <a href="/meetings">Calendar</a>
+            <a href="/templates">Templates</a>
+            <a href="/help">How to draft</a>
+            <a href="/settings">Settings</a>
+          </nav>
           <SessionBadge />
         </header>
         <main>{children}</main>
+        <footer className="site-footer">
+          <div className="footer-brand">
+            <img src="/brand/seal.svg" alt="" width={36} height={36} />
+            <div>
+              <strong>Blevins Holdings Board of Governors</strong>
+              <div>Office of the General Counsel · Legislative drafting</div>
+            </div>
+          </div>
+          <nav aria-label="Legal">
+            <a href="/terms">Terms of use</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/accessibility">Accessibility</a>
+            <a href="/help">How to draft</a>
+          </nav>
+        </footer>
       </body>
     </html>
   );

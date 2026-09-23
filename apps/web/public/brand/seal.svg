@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Seal of the Blevins Holdings Board of Governors">
+  <circle cx="100" cy="100" r="98" fill="#1b2433"/>
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#c4a35a" stroke-width="3"/>
+  <circle cx="100" cy="100" r="78" fill="none" stroke="#c4a35a" stroke-width="1.25"/>
+  <path d="M100 28 A72 72 0 0 1 100 172 A72 72 0 0 1 100 28" fill="none" id="rim"/>
+  <text fill="#f4ead2" font-family="Times New Roman, serif" font-size="11" letter-spacing="2.2" font-weight="700">
+    <textPath href="#rim" startOffset="18%">BLEVINS HOLDINGS · BOARD OF GOVERNORS</textPath>
+  </text>
+  <circle cx="100" cy="108" r="46" fill="#0f1722" stroke="#c4a35a" stroke-width="1.5"/>
+  <path d="M100 72 l18 8 v22 c0 16-8 26-18 32 c-10-6-18-16-18-32 V80 z" fill="#c4a35a"/>
+  <path d="M100 78 l12 5 v18 c0 12-6 19-12 24 c-6-5-12-12-12-24 V83 z" fill="#1b2433"/>
+  <path d="M88 96 h24 v4 H88 z M92 104 h16 v3 H92 z" fill="#c4a35a"/>
+  <path d="M70 138 c10 10 20 16 30 18 c10-2 20-8 30-18" fill="none" stroke="#c4a35a" stroke-width="2"/>
+</svg>
