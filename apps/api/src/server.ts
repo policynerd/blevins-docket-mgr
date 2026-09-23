@@ -17,6 +17,7 @@ import {
 
 import { TEMPLATES } from './templates.ts';
 import { templatePreview } from './template-preview.ts';
+import { registerFiles } from './register-files.ts';
 import {
   Conflict,
   NotFound,
@@ -125,6 +126,7 @@ export async function buildServer(
   app.get('/health', async () => ({ ok: true }));
 
   registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
+  registerFiles(app, db, requireUser);
 
   app.get('/meta', async () => ({
     signInConfigured: entraConfig(env) !== null,
