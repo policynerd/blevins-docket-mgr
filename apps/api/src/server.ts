@@ -18,6 +18,7 @@ import {
 import { TEMPLATES } from './templates.ts';
 import { templatePreview } from './template-preview.ts';
 import { registerFiles } from './register-files.ts';
+import { denyAnonymous } from './policy.ts';
 import {
   Conflict,
   NotFound,
@@ -123,6 +124,8 @@ export async function buildServer(
     return reply.code(status).send({ error: message });
   });
 
+  app.addHook('onRequest', async (req) => denyAnonymous(req, requireUser));
+
   app.get('/health', async () => ({ ok: true }));
 
   registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
@@ -175,7 +178,6 @@ export async function buildServer(
         .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
         .parse(req.query);
       const wantsGuidance = guidance === 'true' || guidance === '1';
-      if (wantsGuidance) await requireUser(req);
       const pdf = await exportProposal(db, id, { guidance: wantsGuidance });
       return reply
         .header('content-type', 'application/pdf')
