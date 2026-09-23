@@ -20,6 +20,7 @@ function asFile(p: {
     inControl: 'Office of the General Counsel',
     agendaDate: null,
     enactmentNumber: null,
+    finalActionAt: null,
     updatedAt: p.updatedAt,
   };
 }
