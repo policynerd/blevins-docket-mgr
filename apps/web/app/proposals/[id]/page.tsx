@@ -1,238 +1,41 @@
 'use client';
 
 import { use, useCallback, useEffect, useState } from 'react';
+import { api, type FileHistoryLine, type LegislativeFile, type Proposal } from '../../../lib/api';
 
-import { api, type Proposal } from '../../../lib/api';
+type Tab='overview'|'text'|'history'|'actions'|'versions'|'audit';
 
-type Tab = 'drafts' | 'milestones' | 'details';
-
-export default function ProposalPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const [proposal, setProposal] = useState<Proposal>();
-  const [milestones, setMilestones] = useState<{ id: string; label: string; createdAt: string }[]>(
-    [],
-  );
-  const [tab, setTab] = useState<Tab>('drafts');
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [taking, setTaking] = useState(false);
-  const [milestoneLabel, setMilestoneLabel] = useState('Sent to the Board');
-
-  const load = useCallback(() => {
-    api
-      .proposal(id)
-      .then(setProposal)
-      .catch((e: Error) => setError(e.message));
-    api
-      .milestones(id)
-      .then(setMilestones)
-      .catch(() => {});
-  }, [id]);
-
-  useEffect(load, [load]);
-
-  async function takeMilestone(e?: React.FormEvent) {
-    e?.preventDefault();
-    const label = milestoneLabel.trim();
-    if (!label) return;
-    setBusy(true);
-    try {
-      await api.createMilestone(id, label);
-      setTaking(false);
-      load();
-      setTab('milestones');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (error) return <div className="error">{error}</div>;
-  if (!proposal) return <div className="empty">Loading…</div>;
-
-  const drafted = proposal.documents.some((d) => d.version);
-  const frozen = milestones.length > 0;
-  const firstDoc = proposal.documents[0];
-
-  return (
-    <>
-      <nav className="trail">
-        <a href="/">Proposals</a>
-        <span aria-hidden>›</span>
-        <span className="here">{proposal.ref}</span>
-      </nav>
-
-      <div className="toolbar">
-        <div style={{ flex: 1 }}>
-          <h1>{proposal.title}</h1>
-          <div className="ref">
-            {proposal.ref} · {proposal.templateId}
-          </div>
-        </div>
-        <a
-          className="btn"
-          href={`/api/proposals/${id}/export.pdf`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Export PDF
-        </a>
-      </div>
-
-      <ol className="process">
-        <li className={`step ${drafted ? 'done' : 'next'}`}>
-          <span className="n">1</span> Draft
-        </li>
-        <li className={`step ${frozen ? 'done' : drafted ? 'next' : ''}`}>
-          <span className="n">2</span> Freeze a copy
-        </li>
-        <li className={`step ${frozen ? 'next' : ''}`}>
-          <span className="n">3</span> Circulate
-        </li>
-      </ol>
-
-      {!drafted && firstDoc ? (
-        <div className="next-action">
-          <strong>Next:</strong> open the first draft and write.
-          <a className="btn primary" href={`/documents/${firstDoc.id}?proposal=${id}`}>
-            Open {firstDoc.title}
-          </a>
-        </div>
-      ) : null}
-      {drafted && !frozen ? (
-        <div className="next-action">
-          <strong>Next:</strong> freeze a circulated copy so drafting can continue.
-          {taking ? (
-            <form className="inline-form" onSubmit={takeMilestone}>
-              <input
-                type="text"
-                value={milestoneLabel}
-                onChange={(e) => setMilestoneLabel(e.target.value)}
-                aria-label="Milestone label"
-              />
-              <button className="primary" disabled={busy}>
-                {busy ? 'Freezing…' : 'Freeze'}
-              </button>
-              <button type="button" onClick={() => setTaking(false)}>
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <button className="primary" onClick={() => setTaking(true)}>
-              Take milestone
-            </button>
-          )}
-        </div>
-      ) : null}
-      {frozen ? (
-        <div className="next-action">
-          <strong>Next:</strong> export the packet that leaves the office.
-          <a className="btn primary" href={`/api/proposals/${id}/export.pdf`} target="_blank" rel="noreferrer">
-            Export PDF
-          </a>
-        </div>
-      ) : null}
-
-      <nav className="tabs">
-        {(['drafts', 'milestones', 'details'] as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t === 'drafts' ? 'Drafts' : t === 'milestones' ? 'Milestones' : 'Details'}
-          </button>
-        ))}
-      </nav>
-
-      {tab === 'drafts' ? (
-        <div className="card">
-          {proposal.documents.map((d) => (
-            <a key={d.id} className="row" href={`/documents/${d.id}?proposal=${id}`}>
-              <div className="title">{d.title}</div>
-              <div className="meta">
-                {d.version
-                  ? `${d.version.label} · updated ${new Date(d.version.updatedAt).toLocaleString()}`
-                  : 'empty'}
-              </div>
-              <div className="hint">Continue drafting</div>
-            </a>
-          ))}
-        </div>
-      ) : null}
-
-      {tab === 'milestones' ? (
-        <div className="card">
-          {milestones.length === 0 ? (
-            <div className="empty">
-              No milestones yet. A milestone freezes every document as it stands, so a circulated
-              copy stays fixed while drafting continues.
-              <div style={{ marginTop: 'var(--space-4)' }}>
-                {taking ? (
-                  <form className="inline-form" onSubmit={takeMilestone} style={{ justifyContent: 'center' }}>
-                    <input
-                      type="text"
-                      value={milestoneLabel}
-                      onChange={(e) => setMilestoneLabel(e.target.value)}
-                      aria-label="Milestone label"
-                    />
-                    <button className="primary" disabled={busy}>
-                      {busy ? 'Freezing…' : 'Freeze'}
-                    </button>
-                  </form>
-                ) : (
-                  <button className="primary" onClick={() => setTaking(true)}>
-                    Take first milestone
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              {milestones.map((m) => (
-                <div key={m.id} className="row">
-                  <div className="title">{m.label}</div>
-                  <div className="meta">{new Date(m.createdAt).toLocaleString()}</div>
-                </div>
-              ))}
-              <div className="row">
-                {taking ? (
-                  <form className="inline-form" onSubmit={takeMilestone}>
-                    <input
-                      type="text"
-                      value={milestoneLabel}
-                      onChange={(e) => setMilestoneLabel(e.target.value)}
-                      aria-label="Milestone label"
-                    />
-                    <button className="primary" disabled={busy}>
-                      {busy ? 'Freezing…' : 'Freeze another'}
-                    </button>
-                    <button type="button" onClick={() => setTaking(false)}>
-                      Cancel
-                    </button>
-                  </form>
-                ) : (
-                  <button onClick={() => setTaking(true)}>Take another milestone</button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      ) : null}
-
-      {tab === 'details' ? (
-        <div className="card" style={{ padding: 'var(--space-5)' }}>
-          <div className="field">
-            <span>File number</span>
-            {proposal.ref}
-          </div>
-          <div className="field">
-            <span>Template</span>
-            {proposal.templateId}
-          </div>
-          <div className="field">
-            <span>Documents</span>
-            {proposal.documents.length}
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
+export default function LegislativeFilePage({params}:{params:Promise<{id:string}>}) {
+  const {id}=use(params); const [proposal,setProposal]=useState<Proposal>(); const [file,setFile]=useState<LegislativeFile>();
+  const [history,setHistory]=useState<FileHistoryLine[]>([]); const [milestones,setMilestones]=useState<{id:string;label:string;createdAt:string}[]>([]);
+  const [tab,setTab]=useState<Tab>('overview'); const [error,setError]=useState<string>();
+  const load=useCallback(()=>{ api.proposal(id).then(setProposal).catch((e:Error)=>setError(e.message)); api.file(id).then(setFile).catch(()=>{});
+    api.fileHistory(id).then(setHistory).catch(()=>{}); api.milestones(id).then(setMilestones).catch(()=>{}); },[id]);
+  useEffect(load,[load]);
+  if(error)return <div className="error">{error}</div>; if(!proposal)return <div className="empty">Loading…</div>;
+  const status=file?.status??'Draft', control=file?.inControl??'Office of the General Counsel';
+  return <>
+    <nav className="trail"><a href="/">Legislation</a><span>›</span><span className="here">{proposal.ref}</span></nav>
+    <header className="record-hero">
+      <div><div className="eyebrow">Legislative File</div><div className="record-number">{proposal.ref}</div><h1>{proposal.title}</h1>
+        <div className="record-tags"><span>{proposal.templateId}</span><em className={`status-chip status-${status.toLowerCase().replaceAll(' ','-')}`}>{status}</em></div></div>
+      <div className="record-actions"><a className="btn" href={`/api/proposals/${id}/export.pdf`} target="_blank" rel="noreferrer">Export record PDF</a>
+        <a className="btn primary" href={proposal.documents[0]?`/documents/${proposal.documents[0].id}?proposal=${id}`:'#'}>Open drafting workspace</a></div>
+    </header>
+    <div className="record-facts">
+      <div><span>In Control</span><strong>{control}</strong></div><div><span>Agenda Date</span><strong>{file?.agendaDate?new Date(file.agendaDate).toLocaleDateString():'—'}</strong></div>
+      <div><span>Sponsors</span><strong>{file?.sponsors||'—'}</strong></div><div><span>Final Action</span><strong>{file?.finalActionAt?new Date(file.finalActionAt).toLocaleDateString():'—'}</strong></div>
+      <div><span>Enactment</span><strong>{file?.enactmentNumber||'—'}</strong></div>
+    </div>
+    <nav className="tabs record-tabs">{(['overview','text','history','actions','versions','audit'] as Tab[]).map(t=><button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{t[0]!.toUpperCase()+t.slice(1)}</button>)}</nav>
+    {tab==='overview'?<div className="dashboard-grid">
+      <section><h2>Legislative History</h2><div className="card timeline">{history.length?history.slice(0,8).map(h=><div className="timeline-row" key={h.id}><time>{new Date(h.actionAt).toLocaleDateString()}</time><div><strong>{h.action}</strong><p>{h.actionText||h.actionNote||h.actingBody}</p>{h.result?<small>Result: {h.result}</small>:null}</div></div>):<div className="empty">No formal actions have been recorded.</div>}</div></section>
+      <section><h2>Record Summary</h2><div className="card detail-list"><div><span>File number</span><b>{proposal.ref}</b></div><div><span>Type / template</span><b>{proposal.templateId}</b></div><div><span>Status</span><b>{status}</b></div><div><span>In control</span><b>{control}</b></div><div><span>Documents</span><b>{proposal.documents.length}</b></div><div><span>Official snapshots</span><b>{milestones.length}</b></div></div></section>
+    </div>:null}
+    {tab==='text'?<div className="card">{proposal.documents.map(d=><a className="row" key={d.id} href={`/documents/${d.id}?proposal=${id}`}><div className="title">{d.title}</div><div className="meta">{d.docType} · {d.version?.label??'No version'}</div><div className="hint">Open document</div></a>)}</div>:null}
+    {tab==='history'?<div className="card timeline">{history.length?history.map(h=><div className="timeline-row" key={h.id}><time>{new Date(h.actionAt).toLocaleString()}</time><div><strong>{h.action}</strong><p>{h.actionText||h.actionNote||h.actingBody}</p>{h.sentTo?<small>Sent to {h.sentTo}</small>:null}</div></div>):<div className="empty">No legislative history yet.</div>}</div>:null}
+    {tab==='actions'?<div className="card">{history.length?history.map(h=><div className="row" key={h.id}><div className="title">{h.action}</div><div className="meta">{h.actingBody} · {new Date(h.actionAt).toLocaleString()}{h.result?` · ${h.result}`:''}</div>{h.votes.length?<div className="vote-line">{h.votes.map(v=><span key={v.memberName}>{v.memberName}: <b>{v.vote}</b></span>)}</div>:null}</div>):<div className="empty">No actions recorded.</div>}</div>:null}
+    {tab==='versions'?<div className="card">{milestones.length?milestones.map(m=><div className="row" key={m.id}><div className="title">{m.label}</div><div className="meta">Frozen record · {new Date(m.createdAt).toLocaleString()}</div></div>):<div className="empty">No frozen record versions yet.</div>}</div>:null}
+    {tab==='audit'?<div className="card"><div className="empty">Entity-level audit will appear here as the publication and audit ledger is wired into the record model.</div></div>:null}
+  </>;
 }
