@@ -29,6 +29,13 @@
       "when": 1786380779344,
       "tag": "0003_pale_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790131712723,
+      "tag": "0004_legislative_record",
+      "breakpoints": true
     }
   ]
 }

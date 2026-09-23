@@ -18,6 +18,7 @@ import {
 import { TEMPLATES } from './templates.ts';
 import { templatePreview } from './template-preview.ts';
 import { registerFiles } from './register-files.ts';
+import { registerLegistar } from './register-legistar.ts';
 import { denyAnonymous } from './policy.ts';
 import {
   Conflict,
@@ -130,6 +131,7 @@ export async function buildServer(
 
   registerAuth(app, db, { ...auth, rateLimitMax: limits.auth }, seams);
   registerFiles(app, db, requireUser);
+  registerLegistar(app, db, requireUser);
 
   app.get('/meta', async () => ({
     signInConfigured: entraConfig(env) !== null,

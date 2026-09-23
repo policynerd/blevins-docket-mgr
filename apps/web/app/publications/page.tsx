@@ -1,0 +1,5 @@
+'use client';
+import { useEffect,useState } from 'react';
+import { api,type Publication } from '../../lib/api';
+export default function PublicationsPage(){const [rows,setRows]=useState<Publication[]>();const [error,setError]=useState<string>();useEffect(()=>{api.publications().then(setRows).catch((e:Error)=>setError(e.message))},[]);
+return <><div className="toolbar"><div style={{flex:1}}><div className="eyebrow">Official Records</div><h1>Publication Registry</h1><div className="ref">Immutable released agendas and legislative records</div></div></div>{error?<div className="error">{error}</div>:null}<div className="record-table card"><div className="record-head publication-head"><span>Type</span><span>Record</span><span>Version</span><span>Published</span><span>Integrity</span></div>{rows?.map(p=><div className="record-line publication-line" key={p.id}><strong>{p.kind.replaceAll('_',' ')}</strong><span>{p.id}</span><span>v{p.version}</span><span>{new Date(p.publishedAt).toLocaleString()}</span><span className="hash">{p.contentHash.slice(0,12)}…</span></div>)}{rows?.length===0?<div className="empty">No official publications yet.</div>:null}</div></>}
