@@ -5,6 +5,7 @@ import { SessionBadge } from './session';
 import { SiteFooter } from './site-footer';
 
 import './globals.css';
+import './footer.css';
 import './document.css';
 
 const legal = Libre_Baskerville({
