@@ -1,27 +1,11 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-
-import { loadFooterLinks, type FooterLink } from '../lib/footer';
+import { defaultFooterLinks, type FooterLink } from '../lib/footer';
 
 function visible(links: FooterLink[], group: FooterLink['group']) {
   return links.filter((l) => l.group === group && l.href.trim());
 }
 
 export function SiteFooter() {
-  const [links, setLinks] = useState<FooterLink[]>([]);
-
-  useEffect(() => {
-    const read = () => setLinks(loadFooterLinks());
-    read();
-    window.addEventListener('blevins-footer-changed', read);
-    window.addEventListener('storage', read);
-    return () => {
-      window.removeEventListener('blevins-footer-changed', read);
-      window.removeEventListener('storage', read);
-    };
-  }, []);
-
+  const links = defaultFooterLinks;
   const org = visible(links, 'organization');
   const legal = visible(links, 'legal');
   const social = visible(links, 'social');
@@ -63,9 +47,6 @@ export function SiteFooter() {
           </nav>
         ) : null}
       </div>
-      <p className="footer-edit">
-        <a href="/settings#footer">Edit footer links</a>
-      </p>
     </footer>
   );
 }
