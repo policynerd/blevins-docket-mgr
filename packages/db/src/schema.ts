@@ -272,3 +272,229 @@ export const contributionDocuments = pgTable(
   },
   (t) => [primaryKey({ columns: [t.contributionId, t.documentId] })],
 );
+
+
+/* -------------------------------------------------------------------------- */
+/* Legislative information system record model                               */
+/* -------------------------------------------------------------------------- */
+
+export const legislativeFiles = pgTable(
+  'legislative_files',
+  {
+    proposalId: uuid('proposal_id')
+      .primaryKey()
+      .references(() => proposals.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('Draft'),
+    inControl: text('in_control').notNull().default('Clerk of the Board'),
+    sponsors: text('sponsors'),
+    agendaDate: timestamp('agenda_date', { withTimezone: true }),
+    enactmentNumber: text('enactment_number'),
+    finalActionAt: timestamp('final_action_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('legislative_files_status_idx').on(t.status),
+    index('legislative_files_control_idx').on(t.inControl),
+  ],
+);
+
+export const meetings = pgTable(
+  'meetings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    body: text('body').notNull(),
+    meetingAt: timestamp('meeting_at', { withTimezone: true }).notNull(),
+    location: text('location'),
+    notes: text('notes'),
+    status: text('status').notNull().default('SCHEDULED'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('meetings_when_idx').on(t.meetingAt), index('meetings_body_idx').on(t.body)],
+);
+
+export const agendaVersions = pgTable(
+  'agenda_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    meetingId: uuid('meeting_id')
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    status: text('status').notNull().default('DRAFT'),
+    reason: text('reason'),
+    supersedesId: uuid('supersedes_id'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('agenda_versions_meeting_version_key').on(t.meetingId, t.version),
+    index('agenda_versions_meeting_idx').on(t.meetingId, t.createdAt),
+  ],
+);
+
+export const agendaItems = pgTable(
+  'agenda_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    agendaVersionId: uuid('agenda_version_id')
+      .notNull()
+      .references(() => agendaVersions.id, { onDelete: 'cascade' }),
+    proposalId: uuid('proposal_id').references(() => proposals.id, { onDelete: 'restrict' }),
+    heading: text('heading'),
+    position: integer('position').notNull().default(0),
+    recommendedAction: text('recommended_action'),
+  },
+  (t) => [index('agenda_items_version_idx').on(t.agendaVersionId, t.position)],
+);
+
+export const fileActions = pgTable(
+  'file_actions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proposalId: uuid('proposal_id')
+      .notNull()
+      .references(() => proposals.id, { onDelete: 'cascade' }),
+    meetingId: uuid('meeting_id').references(() => meetings.id, { onDelete: 'set null' }),
+    actionAt: timestamp('action_at', { withTimezone: true }).notNull().defaultNow(),
+    actingBody: text('acting_body').notNull(),
+    action: text('action').notNull(),
+    sentTo: text('sent_to'),
+    result: text('result'),
+    actionNote: text('action_note'),
+    actionText: text('action_text'),
+    statusBefore: text('status_before'),
+    statusAfter: text('status_after'),
+    votes: text('votes').notNull().default('[]'),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('file_actions_proposal_idx').on(t.proposalId, t.actionAt),
+    index('file_actions_meeting_idx').on(t.meetingId, t.actionAt),
+  ],
+);
+
+export const actionCertifications = pgTable(
+  'action_certifications',
+  {
+    actionId: uuid('action_id')
+      .primaryKey()
+      .references(() => fileActions.id, { onDelete: 'restrict' }),
+    certifiedBy: uuid('certified_by')
+      .notNull()
+      .references(() => users.id),
+    certifiedAt: timestamp('certified_at', { withTimezone: true }).notNull().defaultNow(),
+    note: text('note'),
+  },
+);
+
+export const meetingEvents = pgTable(
+  'meeting_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    meetingId: uuid('meeting_id')
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    eventType: text('event_type').notNull(),
+    detail: text('detail').notNull().default('{}'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [index('meeting_events_meeting_idx').on(t.meetingId, t.occurredAt)],
+);
+
+export const publications = pgTable(
+  'publications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    meetingId: uuid('meeting_id').references(() => meetings.id, { onDelete: 'restrict' }),
+    proposalId: uuid('proposal_id').references(() => proposals.id, { onDelete: 'restrict' }),
+    agendaVersionId: uuid('agenda_version_id').references(() => agendaVersions.id, {
+      onDelete: 'restrict',
+    }),
+    version: integer('version').notNull(),
+    manifest: text('manifest').notNull(),
+    contentHash: text('content_hash').notNull(),
+    reason: text('reason'),
+    supersedesId: uuid('supersedes_id'),
+    publishedBy: uuid('published_by')
+      .notNull()
+      .references(() => users.id),
+    publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('publications_meeting_idx').on(t.meetingId, t.publishedAt),
+    index('publications_proposal_idx').on(t.proposalId, t.publishedAt),
+  ],
+);
+
+export const governanceTerms = pgTable(
+  'governance_terms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+    isCurrent: integer('is_current').notNull().default(0),
+  },
+  (t) => [uniqueIndex('governance_terms_name_key').on(t.name)],
+);
+
+export const governanceBodies = pgTable(
+  'governance_bodies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    bodyType: text('body_type').notNull().default('COMMITTEE'),
+    parentId: uuid('parent_id'),
+    authority: text('authority'),
+    quorumRule: text('quorum_rule'),
+    voteThreshold: text('vote_threshold'),
+    active: integer('active').notNull().default(1),
+  },
+  (t) => [uniqueIndex('governance_bodies_name_key').on(t.name)],
+);
+
+export const people = pgTable(
+  'people',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    email: text('email'),
+    biography: text('biography'),
+    active: integer('active').notNull().default(1),
+  },
+  (t) => [index('people_name_idx').on(t.name)],
+);
+
+export const bodyMemberships = pgTable(
+  'body_memberships',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bodyId: uuid('body_id')
+      .notNull()
+      .references(() => governanceBodies.id, { onDelete: 'restrict' }),
+    personId: uuid('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'restrict' }),
+    termId: uuid('term_id').references(() => governanceTerms.id, { onDelete: 'restrict' }),
+    title: text('title').notNull().default('Member'),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('body_memberships_body_idx').on(t.bodyId, t.startsAt),
+    index('body_memberships_person_idx').on(t.personId, t.startsAt),
+  ],
+);
