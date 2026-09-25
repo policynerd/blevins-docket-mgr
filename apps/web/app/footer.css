@@ -24,23 +24,19 @@
   letter-spacing: 0;
 }
 .text-uppercase { text-transform: uppercase; }
-.list-unstyled {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+.list-unstyled { list-style: none; margin: 0; padding: 0; }
 .footer__listItem { margin: 0 0 0.4rem; }
-.footer__link {
+.footer__link, .footer__social-link {
   color: #fff;
   text-decoration: none;
   font-size: 0.92rem;
 }
-.footer__link:hover, .footer__link:focus { text-decoration: underline; }
-.footer__note {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: #e8e8e8;
+.footer__link:hover, .footer__link:focus,
+.footer__social-link:hover, .footer__social-link:focus { text-decoration: underline; }
+.footer__social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
 }
 .footer__footer {
   display: flex;
