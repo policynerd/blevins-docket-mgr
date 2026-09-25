@@ -103,8 +103,21 @@ export interface Meeting {
   notes: string | null;
 }
 
-export interface Publication { id: string; kind: string; version: number; contentHash: string; reason: string | null; publishedAt: string; manifest: Record<string, unknown>; }
-export interface MeetingEvent { id: string; eventType: string; detail: Record<string, unknown>; occurredAt: string; }
+export interface Publication {
+  id: string;
+  kind: string;
+  version: number;
+  contentHash: string;
+  reason: string | null;
+  publishedAt: string;
+  manifest: Record<string, unknown>;
+}
+export interface MeetingEvent {
+  id: string;
+  eventType: string;
+  detail: Record<string, unknown>;
+  occurredAt: string;
+}
 
 export interface MeetingDetail extends Meeting {
   agendaVersion?: number;
@@ -137,8 +150,7 @@ export const api = {
   templates: () => fetch(`${BASE}/templates`, withSession).then(json<Template[]>),
   template: (id: string) =>
     fetch(`${BASE}/templates/${encodeURIComponent(id)}`, withSession).then(json<TemplatePreview>),
-  proposals: () =>
-    fetch(`${BASE}/proposals`, withSession).then(json<Omit<Proposal, 'documents'>[]>),
+  proposals: () => fetch(`${BASE}/proposals`, withSession).then(json<Omit<Proposal, 'documents'>[]>),
   proposal: (id: string) => fetch(`${BASE}/proposals/${id}`, withSession).then(json<Proposal>),
   createProposal: (body: { templateId: string; title: string }) =>
     fetch(`${BASE}/proposals`, {
@@ -163,11 +175,7 @@ export const api = {
     }).then(json<DocumentSummary>),
   documentHtml: (id: string) =>
     fetch(`${BASE}/documents/${id}/html`, withSession).then(
-      json<{
-        document: DocumentSummary;
-        version: { label: string; contentHash: string };
-        html: string;
-      }>,
+      json<{ document: DocumentSummary; version: { label: string; contentHash: string }; html: string }>,
     ),
   editElement: (documentId: string, elementId: string, value?: string, align?: Align) =>
     fetch(`${BASE}/documents/${documentId}/elements/${elementId}`, {
@@ -181,10 +189,12 @@ export const api = {
     }).then(json<{ label: string; contentHash: string }>),
   versions: (id: string) =>
     fetch(`${BASE}/documents/${id}/versions`, withSession).then(
-      json<{ id: string; label: string; note: string | null; createdAt: string }[]>),
+      json<{ id: string; label: string; note: string | null; createdAt: string }[]>,
+    ),
   milestones: (id: string) =>
     fetch(`${BASE}/proposals/${id}/milestones`, withSession).then(
-      json<{ id: string; label: string; createdAt: string }[]>),
+      json<{ id: string; label: string; createdAt: string }[]>,
+    ),
   createMilestone: (id: string, label: string) =>
     fetch(`${BASE}/proposals/${id}/milestones`, {
       method: 'POST',
@@ -201,8 +211,7 @@ export const api = {
       body: JSON.stringify(body),
       ...withSession,
     }).then(json<LegislativeFile>),
-  fileHistory: (id: string) =>
-    fetch(`${BASE}/files/${id}/history`, withSession).then(json<FileHistoryLine[]>),
+  fileHistory: (id: string) => fetch(`${BASE}/files/${id}/history`, withSession).then(json<FileHistoryLine[]>),
   recordFileAction: (
     id: string,
     body: {
@@ -228,9 +237,28 @@ export const api = {
       body: JSON.stringify(body),
       ...withSession,
     }).then(json<Meeting>),
+  addAgendaItem: (id: string, body: { proposalId?: string; heading?: string }) =>
+    fetch(`${BASE}/meetings/${id}/items`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
+      ...withSession,
+    }).then(json<unknown>),
   publications: (query = '') => fetch(`${BASE}/publications${query}`, withSession).then(json<Publication[]>),
-  publishFile: (id: string, reason?: string) => fetch(`${BASE}/files/${id}/publish`, { method: 'POST', headers: headers(), body: JSON.stringify({ reason }), ...withSession }).then(json<Publication>),
-  certifyAction: (id: string, note?: string) => fetch(`${BASE}/actions/${id}/certify`, { method: 'POST', headers: headers(), body: JSON.stringify({ note }), ...withSession }).then(json<unknown>),
+  publishFile: (id: string, reason?: string) =>
+    fetch(`${BASE}/files/${id}/publish`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason }),
+      ...withSession,
+    }).then(json<Publication>),
+  certifyAction: (id: string, note?: string) =>
+    fetch(`${BASE}/actions/${id}/certify`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ note }),
+      ...withSession,
+    }).then(json<unknown>),
   generateAgenda: (id: string) =>
     fetch(`${BASE}/meetings/${id}/generate`, {
       method: 'POST',
@@ -238,9 +266,26 @@ export const api = {
       ...withSession,
     }).then(json<MeetingDetail>),
   publishAgenda: (id: string, _status: 'Draft' | 'Final', reason?: string) =>
-    fetch(`${BASE}/meetings/${id}/publish`, { method: 'POST', headers: headers(), body: JSON.stringify({ reason }), ...withSession }).then(json<MeetingDetail>),
-  amendAgenda: (id: string, reason: string) => fetch(`${BASE}/meetings/${id}/amend`, { method: 'POST', headers: headers(), body: JSON.stringify({ reason }), ...withSession }).then(json<MeetingDetail>),
-  meetingEvent: (id: string, eventType: string, detail: Record<string, unknown> = {}) => fetch(`${BASE}/meetings/${id}/events`, { method: 'POST', headers: headers(), body: JSON.stringify({ eventType, detail }), ...withSession }).then(json<MeetingEvent>),
+    fetch(`${BASE}/meetings/${id}/publish`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason }),
+      ...withSession,
+    }).then(json<MeetingDetail>),
+  amendAgenda: (id: string, reason: string) =>
+    fetch(`${BASE}/meetings/${id}/amend`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ reason }),
+      ...withSession,
+    }).then(json<MeetingDetail>),
+  meetingEvent: (id: string, eventType: string, detail: Record<string, unknown> = {}) =>
+    fetch(`${BASE}/meetings/${id}/events`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ eventType, detail }),
+      ...withSession,
+    }).then(json<MeetingEvent>),
   legistarCatalog: () =>
     fetch(`${BASE}/legistar/catalog`, withSession).then(
       json<{ bodies: string[]; statuses: string[]; actions: string[]; voteChoices: string[] }>,
