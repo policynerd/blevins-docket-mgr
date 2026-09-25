@@ -1,0 +1,18 @@
+.official-banner {
+  background: #112e51;
+  color: #fff;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 1.25rem;
+  font-size: 0.85rem;
+}
+.official-banner p { margin: 0; }
+.official-banner a { color: #f7e7b5; }
+.site-legal {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem 2rem;
+  font-size: 0.85rem;
+  color: #4a4a45;
+}
