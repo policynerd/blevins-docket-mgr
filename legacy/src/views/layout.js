@@ -49,58 +49,27 @@ function deskStrip() {
   return `<p class="desk-strip">${bits.join(' · ')}</p>`;
 }
 
-function officialChrome() {
-  const draft = companion.draftingUrl();
-  return `
-<div class="official-banner">
-  <p>An official website of the <strong>Blevins Holdings Board of Governors</strong>.</p>
-  <a href="${draft}">Draft legislation in the drafting suite</a>
-</div>`;
-}
-
 function withInstitutionalCss(markup) {
   let html = String(markup || '');
   html = html.replace(/\[object Object\]/g, '');
   html = html.replace(/(<span class="muted">)\s*none\s*(<\/span>)/gi, '$1—$2');
-  const legacy = '<link rel="stylesheet" href="/styles.css">';
+  const legacyCss = '<link rel="stylesheet" href="/styles.css">';
   const extra = '\n  <link rel="stylesheet" href="/assets/institutional.css">'
     + '\n  <link rel="stylesheet" href="/assets/mod-tabs.css">'
     + '\n  <link rel="stylesheet" href="/assets/chamber.css">'
     + '\n  <link rel="stylesheet" href="/assets/actions-mast.css">'
-    + '\n  <link rel="stylesheet" href="/assets/a11y.css">'
-    + '\n  <link rel="stylesheet" href="/assets/official-banner.css">';
+    + '\n  <link rel="stylesheet" href="/assets/a11y.css">';
   if (!html.includes('/assets/institutional.css')) {
-    html = html.replace(legacy, legacy + extra);
-  }
-  if (!html.includes('/assets/actions-mast.css')) {
-    html = html.replace(
-      '<link rel="stylesheet" href="/assets/chamber.css">',
-      '<link rel="stylesheet" href="/assets/chamber.css">\n  <link rel="stylesheet" href="/assets/actions-mast.css">',
-    );
+    html = html.replace(legacyCss, legacyCss + extra);
   }
   html = html.replace(
     /(<a class="mod-tab(?: active)?" href="\/legislation"[^>]*>)Docket(<\/a>)/g,
     '$1Legislation$2',
   );
-  if (!html.includes('class="official-banner"')) {
-    html = html.replace('<body>', '<body>' + officialChrome());
-  }
   if (!html.includes('class="desk-strip"')) {
     html = html.replace(
       '<nav class="mod-bar" aria-label="Modules">',
       deskStrip() + '\n      <nav class="mod-bar" aria-label="Modules">',
-    );
-  }
-  if (!html.includes('data-official-footer')) {
-    html = html.replace(
-      '</body>',
-      `<footer data-official-footer class="site-legal">
-  <a href="https://blevinsholdings.com/">Blevins Holdings</a>
-  · <a href="${companion.draftingUrl()}">Drafting suite</a>
-  · <a href="/accessibility">Accessibility</a>
-  · <a href="/privacy">Privacy</a>
-</footer>
-</body>`,
     );
   }
   if (!html.includes('/assets/live-floor.js')) {

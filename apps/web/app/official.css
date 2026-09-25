@@ -8,43 +8,54 @@
   color: #112e51;
   font: 600 0.9rem var(--font-ui);
 }
-.skip-link:focus {
-  top: 0.5rem;
-}
-.official-banner {
-  background: #112e51;
-  color: #fff;
+.skip-link:focus { top: 0.5rem; }
+
+.gov-banner {
+  background: #f0f0ec;
+  border-bottom: 1px solid #d6d6d2;
   font-family: var(--font-ui);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  color: #3d3d3d;
 }
-.official-banner-row {
+.gov-banner .gb-bar {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.4rem 1.25rem;
-}
-.official-banner-row p {
-  margin: 0;
-  flex: 1;
-}
-.official-banner-row button {
-  background: transparent;
-  color: #f7e7b5;
-  border: 0;
-  text-decoration: underline;
+  padding: 0.35rem 1.25rem;
   cursor: pointer;
-  font: inherit;
+  list-style: none;
 }
-.official-banner-panel {
-  padding: 0.75rem 1.25rem 1rem;
-  background: #0b1f38;
+.gov-banner .gb-bar::-webkit-details-marker { display: none; }
+.gov-banner .gb-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+.gov-banner .gb-text { flex: 1; }
+.gov-banner .gb-toggle {
+  color: #1a4480;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.gov-banner .gb-toggle::after { content: ' \25BE'; text-decoration: none; }
+.gov-banner[open] .gb-toggle::after { content: ' \25B4'; }
+.gov-banner .gb-body {
+  padding: 0.35rem 1.25rem 1rem;
+  background: #f7f6f2;
+  border-top: 1px solid #e4e1d8;
+}
+.gov-banner .gb-cols {
   display: grid;
-  gap: 0.65rem;
+  gap: 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 72rem;
 }
-.official-banner-panel p {
-  margin: 0;
-  max-width: 48rem;
+.gov-banner .gb-col strong { display: block; margin-bottom: 0.35rem; color: #1b1b18; }
+.gov-banner .gb-col p { margin: 0; line-height: 1.45; }
+@media (max-width: 800px) {
+  .gov-banner .gb-cols { grid-template-columns: 1fr; }
 }
+
 .brand-text .purpose {
   display: block;
   font-size: 0.72rem;
@@ -63,10 +74,7 @@
   font-family: var(--font-text);
   color: #1b1b18;
 }
-.letter-seal {
-  display: block;
-  margin: 0 auto 0.85rem;
-}
+.letter-seal { display: block; margin: 0 auto 0.85rem; }
 .letter-office {
   text-align: center;
   letter-spacing: 0.08em;
@@ -75,63 +83,16 @@
   font-weight: 700;
   margin: 0;
 }
-.letter-division {
-  text-align: center;
-  margin: 0.2rem 0 1.25rem;
-  font-size: 0.9rem;
-}
-.letter-meta {
-  display: flex;
-  justify-content: space-between;
-  font-weight: 700;
-  margin: 1.5rem 0;
-}
-.letter-to,
-.letter-subject {
-  margin: 0.75rem 0;
-}
-.letter-subject strong {
-  margin-right: 0.4rem;
-}
-.letter-part {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e4e1d8;
-}
-.letter-part h2 {
-  font-size: 1.05rem;
-  margin: 0 0 0.75rem;
-}
-.letter-updated {
-  margin-top: 2rem;
-  font-size: 0.85rem;
-  color: #4a4a45;
-}
-.letter-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  margin: 1rem auto 0;
-  max-width: 48rem;
-}
-.policy-updated {
-  margin-top: 1.25rem;
-  font-size: 0.85rem;
-  color: #4a4a45;
-}
+.letter-division { text-align: center; margin: 0.2rem 0 1.25rem; font-size: 0.9rem; }
+.letter-meta { display: flex; justify-content: space-between; font-weight: 700; margin: 1.5rem 0; }
+.letter-to, .letter-subject { margin: 0.75rem 0; }
+.letter-part { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e4e1d8; }
+.letter-updated { margin-top: 2rem; font-size: 0.85rem; color: #4a4a45; }
+.letter-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin: 1rem auto 0; max-width: 48rem; }
+.policy-updated { margin-top: 1.25rem; font-size: 0.85rem; color: #4a4a45; }
 @media print {
-  .official-banner,
-  .masthead,
-  .site-footer,
-  .letter-actions,
-  .skip-link,
-  .trail {
+  .gov-banner, .official-banner, .masthead, .site-footer, .letter-actions, .skip-link, .trail {
     display: none !important;
   }
-  .letter {
-    box-shadow: none;
-    border: 0;
-    margin: 0;
-    padding: 0;
-  }
+  .letter { box-shadow: none; border: 0; margin: 0; padding: 0; }
 }

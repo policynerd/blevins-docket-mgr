@@ -1,33 +1,38 @@
-'use client';
-
-import { useState } from 'react';
-
 export function OfficialBanner() {
-  const [open, setOpen] = useState(false);
-
   return (
-    <div className="official-banner">
-      <div className="official-banner-row">
-        <img src="/brand/seal.png" alt="" width={16} height={16} />
-        <p>
-          An official website of the <strong>Blevins Holdings Board of Governors</strong>.
-        </p>
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-          Here&apos;s how you know
-        </button>
-      </div>
-      {open ? (
-        <div className="official-banner-panel">
-          <p>
-            <strong>This system is operated by the Office of the General Counsel</strong> for the
-            Blevins Holdings Board of Governors. It is not a United States Government website.
-          </p>
-          <p>
-            <strong>Secure sites use HTTPS.</strong> A lock or https:// means the connection to
-            this host is encrypted. Sign in only on this official host.
-          </p>
+    <details className="gov-banner">
+      <summary className="gb-bar">
+        <img className="gb-logo" src="/brand/seal-on-light.png" alt="" width={20} height={20} />
+        <span className="gb-text">
+          An official system of the Blevins Holdings Board of Governors
+        </span>
+        <span className="gb-toggle">Here&rsquo;s how you know</span>
+      </summary>
+      <div className="gb-body">
+        <div className="gb-cols">
+          <div className="gb-col">
+            <strong>This is the Board&rsquo;s own record</strong>
+            <p>
+              Instruments drafted here become the official text of the Board. Published copies and
+              packets are produced from that text — not from a second system.
+            </p>
+          </div>
+          <div className="gb-col">
+            <strong>Secure sites use HTTPS</strong>
+            <p>
+              A lock or https:// means the connection to this host is encrypted. Sign in only on
+              this official host or on app.blevinsholdings.com.
+            </p>
+          </div>
+          <div className="gb-col">
+            <strong>Internal use</strong>
+            <p>
+              Access is limited to authenticated members and staff. Actions that change a file are
+              attributed. The live docket and votes remain on app.blevinsholdings.com.
+            </p>
+          </div>
         </div>
-      ) : null}
-    </div>
+      </div>
+    </details>
   );
 }
