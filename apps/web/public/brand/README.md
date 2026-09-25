@@ -1,7 +1,11 @@
-Use the official Board seal only.
+Official Board of Governors seal — three masters:
 
-- `seal.svg` — knockout (white) for navy chrome: banner, masthead, footer, favicon-on-dark.
-- `seal-on-light.svg` — navy ink for paper: official HTML letter and PDF masthead.
+- seal-white.png — solid white, use on navy (banner, masthead, footer).
+- seal-black.png — solid black, use on paper (official copy, PDF).
+- seal-navy.png — line-art / engraved, optional on black or navy.
 
-Source files from brand: *Blevins-Board-of-Governors-Polished (7).svg* (knockout) and *(2).svg* (on light).
-Replace these two files in this folder, then deploy. Do not use a geometric stand-in.
+This folder must contain:
+- seal.png        ← copy of seal-white.png
+- seal-on-light.png ← copy of seal-black.png
+
+Do not use a geometric stand-in.

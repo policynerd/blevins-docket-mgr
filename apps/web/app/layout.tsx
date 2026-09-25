@@ -32,8 +32,8 @@ export const metadata = {
     'Official legislative information and drafting system of the Blevins Holdings Board of Governors.',
   applicationName: 'Blevins Legislative Information System',
   icons: {
-    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }, { url: '/brand/seal.svg' }],
-    apple: '/brand/seal.svg',
+    icon: [{ url: '/brand/seal-on-light.png', type: 'image/png' }, { url: '/favicon.svg', type: 'image/svg+xml' }],
+    apple: '/brand/seal-on-light.png',
   },
 };
 
@@ -48,7 +48,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <header className="masthead">
           <a href="/" className="brand">
             <img
-              src="/brand/seal.svg"
+              src="/brand/seal.png"
               alt="Seal of the Board of Governors"
               width={44}
               height={44}

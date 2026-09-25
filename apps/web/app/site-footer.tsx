@@ -13,7 +13,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="footer-brand">
-        <img src="/brand/seal.svg" alt="" width={36} height={36} />
+        <img src="/brand/seal.png" alt="" width={36} height={36} />
         <div>
           <strong>Blevins Holdings Board of Governors</strong>
           <div>Office of the General Counsel · Official legislative drafting system</div>

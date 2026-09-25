@@ -8,7 +8,7 @@ export function OfficialBanner() {
   return (
     <div className="official-banner">
       <div className="official-banner-row">
-        <img src="/brand/seal.svg" alt="" width={16} height={16} />
+        <img src="/brand/seal.png" alt="" width={16} height={16} />
         <p>
           An official website of the <strong>Blevins Holdings Board of Governors</strong>.
         </p>
@@ -24,8 +24,7 @@ export function OfficialBanner() {
           </p>
           <p>
             <strong>Secure sites use HTTPS.</strong> A lock or https:// means the connection to
-            this host is encrypted. Sign in only on this official host. Do not send credentials
-            to a page that only looks similar.
+            this host is encrypted. Sign in only on this official host.
           </p>
         </div>
       ) : null}
