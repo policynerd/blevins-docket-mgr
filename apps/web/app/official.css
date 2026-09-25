@@ -63,6 +63,10 @@
   font-family: var(--font-text);
   color: #1b1b18;
 }
+.letter-seal {
+  display: block;
+  margin: 0 auto 0.85rem;
+}
 .letter-office {
   text-align: center;
   letter-spacing: 0.08em;
