@@ -22,6 +22,7 @@ import { mergePdfs, renderPdf } from '@blevins/pdf';
 
 import { findTemplate } from './templates.ts';
 import { runningHead, type MeetingContext } from './letterhead.ts';
+import { pdfCacheGet, pdfCacheSet } from './pdf-cache.ts';
 
 export const contentHash = (xml: string) => createHash('sha256').update(xml).digest('hex');
 
@@ -203,6 +204,16 @@ export async function exportProposal(
   opts: { guidance?: boolean; meeting?: MeetingContext } = {},
 ): Promise<Uint8Array> {
   const proposal = await getProposal(db, proposalId);
+  const versions = await Promise.all(proposal.documents.map((d) => latestVersion(db, d.id)));
+  const key = [
+    proposalId,
+    opts.guidance ? 'g1' : 'g0',
+    opts.meeting?.date ?? '',
+    ...versions.map((v) => v?.contentHash ?? 'empty'),
+  ].join(':');
+  const hit = pdfCacheGet(key);
+  if (hit) return hit;
+
   const LETTERHEAD: readonly string[] = ['COVER_PAGE', 'EXPL_MEMORANDUM'];
   const sheetsFor = (docType: string) => [
     'tokens.css',
@@ -227,7 +238,9 @@ export async function exportProposal(
   }
 
   if (parts.length === 0) throw new NotFound(`Proposal ${proposalId} has nothing to export`);
-  return mergePdfs(parts);
+  const bytes = await mergePdfs(parts);
+  pdfCacheSet(key, bytes);
+  return bytes;
 }
 
 export async function milestoneContents(db: Db, milestoneId: string) {
