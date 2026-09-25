@@ -22,4 +22,8 @@ export const defaultFooterLinks: FooterLink[] = [
   { id: 'linking', label: 'Website policies', href: '/linking', group: 'tools' },
   { id: 'accessibility', label: 'Accessibility', href: '/accessibility', group: 'tools' },
   { id: 'sitemap', label: 'Site map', href: '/sitemap', group: 'tools' },
+  { id: 'facebook', label: 'Facebook', href: 'https://www.facebook.com/blevinsholdings', group: 'connect' },
+  { id: 'linkedin', label: 'LinkedIn', href: 'https://www.linkedin.com/company/blevins', group: 'connect' },
+  { id: 'x', label: 'X', href: 'https://x.com/blevinsholdings', group: 'connect' },
+  { id: 'instagram', label: 'Instagram', href: 'https://www.instagram.com/blevinsholdings', group: 'connect' },
 ];

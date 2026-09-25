@@ -8,6 +8,7 @@ export function SiteFooter() {
   const links = defaultFooterLinks;
   const board = group(links, 'board');
   const tools = group(links, 'tools');
+  const connect = group(links, 'connect');
 
   return (
     <footer className="container footer">
@@ -40,18 +41,20 @@ export function SiteFooter() {
           </ul>
         </div>
         <div className="footer__col">
-          <h6 className="text-uppercase footer__heading">Stay Connected</h6>
-          <p className="footer__note">
-            The public legislative docket is{' '}
-            <a className="footer__link" href="https://app.blevinsholdings.com/">
-              app.blevinsholdings.com
-            </a>
-            . Corporate information is on{' '}
-            <a className="footer__link" href="https://www.blevinsholdings.com/">
-              blevinsholdings.com
-            </a>
-            .
-          </p>
+          <h6 className="text-uppercase footer__heading footer__heading--social">Stay Connected</h6>
+          <div className="footer__social">
+            {connect.map((l) => (
+              <a
+                key={l.id}
+                className="footer__social-link"
+                href={l.href}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {l.label}
+              </a>
+            ))}
+          </div>
         </div>
       </div>
       <div className="footer__footer">
