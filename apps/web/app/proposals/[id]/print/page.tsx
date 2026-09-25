@@ -51,6 +51,13 @@ export default function OfficialCopyPage({ params }: { params: Promise<{ id: str
         </a>
       </div>
       <article className="letter">
+        <img
+          className="letter-seal"
+          src="/brand/seal-on-light.svg"
+          alt="Seal of the Blevins Holdings Board of Governors"
+          width={88}
+          height={88}
+        />
         <p className="letter-office">Blevins Holdings Board of Governors</p>
         <p className="letter-division">Office of the General Counsel</p>
         <div className="letter-meta">
