@@ -55,9 +55,10 @@ export async function listFiles(db: Db) {
 }
 
 export async function getFile(db: Db, id: string) {
-  await ensureFileRow(db, id);
-  const [row] = await db.select({ proposal: proposals, file: legislativeFiles })
-    .from(proposals).innerJoin(legislativeFiles, eq(legislativeFiles.proposalId, proposals.id))
+  const [row] = await db
+    .select({ proposal: proposals, file: legislativeFiles })
+    .from(proposals)
+    .leftJoin(legislativeFiles, eq(legislativeFiles.proposalId, proposals.id))
     .where(eq(proposals.id, id));
   if (!row) throw new NotFound(`No file ${id}`);
   return {
@@ -65,13 +66,13 @@ export async function getFile(db: Db, id: string) {
     ref: row.proposal.ref,
     title: row.proposal.title,
     templateId: row.proposal.templateId,
-    status: row.file.status,
-    inControl: row.file.inControl,
-    sponsors: row.file.sponsors,
-    agendaDate: row.file.agendaDate,
-    enactmentNumber: row.file.enactmentNumber,
-    finalActionAt: row.file.finalActionAt,
-    updatedAt: row.file.updatedAt,
+    status: row.file?.status ?? 'Draft',
+    inControl: row.file?.inControl ?? 'Clerk of the Board',
+    sponsors: row.file?.sponsors ?? null,
+    agendaDate: row.file?.agendaDate ?? null,
+    enactmentNumber: row.file?.enactmentNumber ?? null,
+    finalActionAt: row.file?.finalActionAt ?? null,
+    updatedAt: row.file?.updatedAt ?? row.proposal.updatedAt,
   };
 }
 
