@@ -272,6 +272,7 @@ export async function buildServer(
   app.post('/proposals/:id/milestones', async (req, reply) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id, 'write');
     const { label } = CreateMilestone.parse(req.body);
     const milestone = await createMilestone(db, { proposalId: id, label, userId: user.id });
     return reply.code(201).send(milestone);
