@@ -24,7 +24,6 @@ export function registerLegistar(
   app.get('/files', async () => listFiles(db));
   app.get('/files/:id', async (req) => getFile(db, z.object({ id: z.string().uuid() }).parse(req.params).id));
   app.patch('/files/:id', async (req) => {
-    await requireUser(req);
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     await requireProposalAccess(db, id, user.id, 'write');
