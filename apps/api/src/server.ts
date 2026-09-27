@@ -21,6 +21,13 @@ import { registerFiles } from './register-files.ts';
 import { registerLegistar } from './register-legistar.ts';
 import { denyAnonymous } from './policy.ts';
 import {
+  listAccessibleProposals,
+  requireContributionAccess,
+  requireDocumentAccess,
+  requireMilestoneAccess,
+  requireProposalAccess,
+} from './authorization.ts';
+import {
   Conflict,
   NotFound,
   createMilestone,
@@ -157,7 +164,10 @@ export async function buildServer(
     return preview;
   });
 
-  app.get('/proposals', async () => db.select().from(proposals).orderBy(proposals.createdAt));
+  app.get('/proposals', async (req) => {
+    const user = await requireUser(req);
+    return listAccessibleProposals(db, user.id);
+  });
 
   app.post('/proposals', async (req, reply) => {
     const user = await requireUser(req);
@@ -167,7 +177,9 @@ export async function buildServer(
   });
 
   app.get('/proposals/:id', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id);
     return getProposal(db, id);
   });
 
@@ -175,7 +187,9 @@ export async function buildServer(
     '/proposals/:id/export.pdf',
     { config: { rateLimit: { max: limits.export, timeWindow: '1 minute' } } },
     async (req, reply) => {
+      const user = await requireUser(req);
       const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      await requireProposalAccess(db, id, user.id);
       const { guidance } = z
         .object({ guidance: z.enum(['true', '1', 'false', '0']).optional() })
         .parse(req.query);
@@ -189,7 +203,9 @@ export async function buildServer(
   );
 
   app.get('/documents/:id', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireDocumentAccess(db, id, user.id);
     const [doc] = await db.select().from(documents).where(eq(documents.id, id));
     if (!doc) throw new NotFound(`No document ${id}`);
     const version = await latestVersion(db, id);
@@ -209,13 +225,16 @@ export async function buildServer(
   app.put('/documents/:id', async (req) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireDocumentAccess(db, id, user.id, 'write');
     const body = SaveDocument.parse(req.body);
     const saved = await saveDocument(db, { documentId: id, ...body, userId: user.id });
     return { id: saved.id, label: versionLabel(saved), contentHash: saved.contentHash };
   });
 
   app.get('/documents/:id/html', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireDocumentAccess(db, id, user.id);
     return documentHtml(db, id);
   });
 
@@ -224,6 +243,7 @@ export async function buildServer(
     const { id, elementId } = z
       .object({ id: z.string().uuid(), elementId: z.string().min(1).max(64) })
       .parse(req.params);
+    await requireDocumentAccess(db, id, user.id, 'write');
     const body = EditElement.parse(req.body);
     const saved = await editElement(db, {
       documentId: id,
@@ -236,12 +256,16 @@ export async function buildServer(
   });
 
   app.get('/documents/:id/versions', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireDocumentAccess(db, id, user.id);
     return (await documentHistory(db, id)).map((v) => ({ ...v, label: versionLabel(v) }));
   });
 
   app.get('/proposals/:id/milestones', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id);
     return listMilestones(db, id);
   });
 
@@ -254,20 +278,25 @@ export async function buildServer(
   });
 
   app.get('/milestones/:id/contributions', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireMilestoneAccess(db, id, user.id);
     return listContributions(db, id);
   });
 
   app.post('/milestones/:id/contributions', async (req, reply) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireMilestoneAccess(db, id, user.id, 'write');
     const { targetEmail } = z.object({ targetEmail: z.string().email() }).parse(req.body);
     const c = await sendForContribution(db, { milestoneId: id, targetEmail, userId: user.id });
     return reply.code(201).send(c);
   });
 
   app.get('/contributions/:id/documents', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireContributionAccess(db, id, user.id, 'read');
     return contributionContents(db, id);
   });
 
@@ -280,6 +309,7 @@ export async function buildServer(
         elementId: z.string().min(1).max(64),
       })
       .parse(req.params);
+    await requireContributionAccess(db, id, user.id, 'edit');
     const { value } = z.object({ value: z.string() }).parse(req.body);
     return editContribution(db, {
       contributionId: id,
@@ -293,17 +323,21 @@ export async function buildServer(
   app.post('/contributions/:id/submit', async (req) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireContributionAccess(db, id, user.id, 'edit');
     return submitContribution(db, id, user.id);
   });
 
   app.post('/contributions/:id/merge', async (req) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireContributionAccess(db, id, user.id, 'merge');
     return mergeContribution(db, id, user.id);
   });
 
   app.get('/milestones/:id/documents', async (req) => {
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireMilestoneAccess(db, id, user.id);
     return milestoneContents(db, id);
   });
 
