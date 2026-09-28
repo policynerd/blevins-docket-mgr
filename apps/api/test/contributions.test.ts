@@ -235,3 +235,30 @@ test('a milestone can only be sent to someone the system already knows', async (
   // the record that nobody has verified.
   assert.equal(res.statusCode, 409, res.body);
 });
+
+
+test('only proposal collaborators may circulate a milestone', async () => {
+  const { milestone } = await circulated();
+  const res = await app.inject({
+    method: 'POST',
+    url: `/milestones/${milestone.id}/contributions`,
+    headers: as(outsider),
+    payload: { targetEmail: 'clerk@blevinsholdings.com' },
+  });
+  assert.equal(res.statusCode, 403, res.body);
+});
+
+test('unrelated roster users cannot read a contribution', async () => {
+  const { contribution } = await circulated();
+  const [unrelated] = await db
+    .insert(users)
+    .values({ email: 'unrelated@example.com', name: 'Unrelated User' })
+    .returning();
+
+  const res = await app.inject({
+    method: 'GET',
+    url: `/contributions/${contribution.id}/documents`,
+    headers: as(unrelated!.id),
+  });
+  assert.equal(res.statusCode, 403, res.body);
+});

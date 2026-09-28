@@ -12,6 +12,7 @@ import {
 import { parse, serialize, setElementText, type DocType } from '@blevins/akn';
 
 import { Conflict, NotFound, contentHash, saveDocument } from './service.ts';
+import { requireContributionAccess, requireMilestoneAccess } from './authorization.ts';
 
 /**
  * Send a copy of a milestone to someone for comment.
@@ -24,6 +25,8 @@ export async function sendForContribution(
   db: Db,
   input: { milestoneId: string; targetEmail: string; userId: string },
 ) {
+  await requireMilestoneAccess(db, input.milestoneId, input.userId, 'write');
+
   const [milestone] = await db
     .select()
     .from(milestones)
@@ -101,6 +104,7 @@ export async function editContribution(
     userId: string;
   },
 ) {
+  await requireContributionAccess(db, input.contributionId, input.userId, 'edit');
   const [contribution] = await db
     .select()
     .from(contributions)
@@ -155,6 +159,7 @@ export async function editContribution(
 
 /** The contributor hands it back. */
 export async function submitContribution(db: Db, contributionId: string, userId: string) {
+  await requireContributionAccess(db, contributionId, userId, 'edit');
   const [contribution] = await db
     .select()
     .from(contributions)
@@ -186,6 +191,7 @@ export async function submitContribution(db: Db, contributionId: string, userId:
  * reviewer at a time and would not be if it were circulated to several.
  */
 export async function mergeContribution(db: Db, contributionId: string, userId: string) {
+  await requireContributionAccess(db, contributionId, userId, 'merge');
   const [contribution] = await db
     .select()
     .from(contributions)

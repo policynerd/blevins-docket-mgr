@@ -55,13 +55,25 @@ export async function listFiles(db: Db) {
 }
 
 export async function getFile(db: Db, id: string) {
-  await ensureFileRow(db, id);
-  const [row] = await db.select({ proposal: proposals, file: legislativeFiles })
-    .from(proposals).innerJoin(legislativeFiles, eq(legislativeFiles.proposalId, proposals.id))
+  const [row] = await db
+    .select({ proposal: proposals, file: legislativeFiles })
+    .from(proposals)
+    .leftJoin(legislativeFiles, eq(legislativeFiles.proposalId, proposals.id))
     .where(eq(proposals.id, id));
   if (!row) throw new NotFound(`No file ${id}`);
-  return { id: row.proposal.id, ref: row.proposal.ref, title: row.proposal.title, templateId: row.proposal.templateId,
-    ...row.file, proposalId: undefined };
+  return {
+    id: row.proposal.id,
+    ref: row.proposal.ref,
+    title: row.proposal.title,
+    templateId: row.proposal.templateId,
+    status: row.file?.status ?? 'Draft',
+    inControl: row.file?.inControl ?? 'Clerk of the Board',
+    sponsors: row.file?.sponsors ?? null,
+    agendaDate: row.file?.agendaDate ?? null,
+    enactmentNumber: row.file?.enactmentNumber ?? null,
+    finalActionAt: row.file?.finalActionAt ?? null,
+    updatedAt: row.file?.updatedAt ?? row.proposal.updatedAt,
+  };
 }
 
 export async function updateFileMeta(db: Db, id: string, input: { sponsors?: string; agendaDate?: string | null }) {
@@ -79,10 +91,18 @@ export async function listHistory(db: Db, id: string) {
     .from(fileActions).leftJoin(actionCertifications, eq(actionCertifications.actionId, fileActions.id))
     .where(eq(fileActions.proposalId, id)).orderBy(desc(fileActions.actionAt));
   return rows.map(({ action, certification }) => ({
-    ...action,
+    id: action.id,
+    actionAt: action.actionAt,
+    actingBody: action.actingBody,
+    action: action.action,
+    sentTo: action.sentTo,
+    result: action.result,
+    actionNote: action.actionNote,
+    actionText: action.actionText,
+    statusBefore: action.statusBefore,
+    statusAfter: action.statusAfter,
     votes: parseJson<{ memberName: string; vote: string }[]>(action.votes, []),
     certifiedAt: certification?.certifiedAt ?? null,
-    certifiedBy: certification?.certifiedBy ?? null,
   }));
 }
 
@@ -152,7 +172,15 @@ export async function listMeetings(db: Db) {
   const rows = await db.select().from(meetings).orderBy(desc(meetings.meetingAt));
   return Promise.all(rows.map(async (m) => {
     const agenda = await latestAgenda(db, m.id);
-    return { ...m, agendaStatus: agenda?.status === 'PUBLISHED' ? 'Final' : 'Draft', agendaVersion: agenda?.version ?? 0 };
+    return {
+      id: m.id,
+      body: m.body,
+      meetingAt: m.meetingAt,
+      location: m.location,
+      status: m.status,
+      agendaStatus: agenda?.status === 'PUBLISHED' ? 'Final' : 'Draft',
+      agendaVersion: agenda?.version ?? 0,
+    };
   }));
 }
 
@@ -175,12 +203,29 @@ export async function getMeeting(db: Db, id: string) {
   const events = await db.select().from(meetingEvents).where(eq(meetingEvents.meetingId, id)).orderBy(asc(meetingEvents.occurredAt));
   const pubs = await db.select().from(publications).where(eq(publications.meetingId, id)).orderBy(desc(publications.publishedAt));
   return {
-    ...meeting,
+    id: meeting.id,
+    body: meeting.body,
+    meetingAt: meeting.meetingAt,
+    location: meeting.location,
+    status: meeting.status,
     agendaStatus: agenda?.status === 'PUBLISHED' ? 'Final' : 'Draft',
     agendaVersion: agenda?.version ?? 0,
     items: agenda ? (await agendaDetail(db, agenda.id)).items : [],
-    events: events.map((e) => ({ ...e, detail: parseJson(e.detail, {}) })),
-    publications: pubs.map((p) => ({ ...p, manifest: parseJson(p.manifest, {}) })),
+    events: events.map((e) => ({
+      id: e.id,
+      eventType: e.eventType,
+      detail: parseJson(e.detail, {}),
+      occurredAt: e.occurredAt,
+    })),
+    publications: pubs.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      version: p.version,
+      contentHash: p.contentHash,
+      reason: p.reason,
+      publishedAt: p.publishedAt,
+      manifest: parseJson(p.manifest, {}),
+    })),
   };
 }
 
@@ -279,7 +324,18 @@ export async function listPublications(db: Db, input: { meetingId?: string; prop
   let rows = await db.select().from(publications).orderBy(desc(publications.publishedAt));
   if (input.meetingId) rows = rows.filter((r) => r.meetingId === input.meetingId);
   if (input.proposalId) rows = rows.filter((r) => r.proposalId === input.proposalId);
-  return rows.map((r) => ({ ...r, manifest: parseJson(r.manifest, {}) }));
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    meetingId: r.meetingId,
+    proposalId: r.proposalId,
+    agendaVersionId: r.agendaVersionId,
+    version: r.version,
+    contentHash: r.contentHash,
+    reason: r.reason,
+    publishedAt: r.publishedAt,
+    manifest: parseJson(r.manifest, {}),
+  }));
 }
 
 export async function publishFileRecord(db: Db, proposalId: string, userId: string, reason?: string) {

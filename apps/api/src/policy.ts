@@ -1,19 +1,29 @@
 import type { FastifyRequest } from 'fastify';
 
-const PUBLIC = new Set(['/health', '/meta', '/templates']);
+const PUBLIC_EXACT = new Set([
+  '/health',
+  '/meta',
+  '/templates',
+  '/legistar/catalog',
+  '/files',
+  '/meetings',
+  '/bodies',
+  '/publications',
+]);
 
-export function isPublicPath(url: string): boolean {
+const PUBLIC_PREFIXES = ['/templates/', '/files/', '/meetings/'];
+
+export function isPublicPath(url: string, method = 'GET'): boolean {
   const path = url.split('?')[0] ?? url;
-  if (PUBLIC.has(path)) return true;
-  if (path.startsWith('/templates/')) return true;
   if (path.startsWith('/auth/')) return true;
-  return false;
+  if (method !== 'GET') return false;
+  return PUBLIC_EXACT.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
 export async function denyAnonymous(
   req: FastifyRequest,
   requireUser: (req: FastifyRequest) => Promise<unknown>,
 ) {
-  if (isPublicPath(req.url)) return;
+  if (isPublicPath(req.url, req.method)) return;
   await requireUser(req);
 }

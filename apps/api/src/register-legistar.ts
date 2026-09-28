@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '@blevins/db';
+import { requireProposalAccess } from './authorization.ts';
 
 import { ACTIONS, BODIES, VOTE_CHOICES } from './legistar.ts';
 import {
@@ -23,8 +24,9 @@ export function registerLegistar(
   app.get('/files', async () => listFiles(db));
   app.get('/files/:id', async (req) => getFile(db, z.object({ id: z.string().uuid() }).parse(req.params).id));
   app.patch('/files/:id', async (req) => {
-    await requireUser(req);
+    const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id, 'write');
     const body = z.object({ sponsors: z.string().max(2000).optional(), agendaDate: z.string().nullable().optional() }).parse(req.body);
     return updateFileMeta(db, id, body);
   });
@@ -32,6 +34,7 @@ export function registerLegistar(
   app.post('/files/:id/actions', async (req) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id, 'write');
     const body = z
       .object({
         action: Action,
@@ -129,6 +132,7 @@ export function registerLegistar(
   app.post('/files/:id/publish', async (req) => {
     const user = await requireUser(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    await requireProposalAccess(db, id, user.id, 'write');
     const { reason } = z.object({ reason: z.string().max(2000).optional() }).parse(req.body ?? {});
     return publishFileRecord(db, id, user.id, reason);
   });
