@@ -267,10 +267,10 @@ export async function generateAgenda(db: Db, meetingId: string, userId: string, 
 
 export async function addAgendaItem(db: Db, meetingId: string, input: { proposalId?: string; heading?: string; recommendedAction?: string }, userId: string) {
   const agenda = await writableAgenda(db, meetingId, userId);
-  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(agendaItems).where(eq(agendaItems.agendaVersionId, agenda.id));
+  const [counted] = await db.select({ n: sql<number>`count(*)::int` }).from(agendaItems).where(eq(agendaItems.agendaVersionId, agenda.id));
   const [item] = await db.insert(agendaItems).values({
     agendaVersionId: agenda.id, proposalId: input.proposalId ?? null, heading: input.heading ?? null,
-    recommendedAction: input.recommendedAction ?? null, position: (n ?? 0) + 1,
+    recommendedAction: input.recommendedAction ?? null, position: (counted?.n ?? 0) + 1,
   }).returning();
   return item;
 }
