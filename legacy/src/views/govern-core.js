@@ -161,6 +161,7 @@ function retireForm(member, body, opts = {}) {
         <label>How the service ended<select name="cause">${raw(selectOptions(END_CAUSES, 'Retired'))}</select></label>
       </div>
       <label>Note for the record<input type="text" name="reason"></label>
+      <p class="muted">The membership is closed, not deleted: the term, its votes and this note stay on the public record.</p>
       <div class="form-actions">
         <button type="submit" class="btn primary">Propose retirement</button>
         <a class="btn-link" href="/govern/members">Cancel</a>

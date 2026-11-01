@@ -392,6 +392,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, h1, head
   ${head || ''}
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   ${officialBanner()}
   <input type="checkbox" id="nav-toggle-cb" class="nav-toggle-cb" hidden>
   <div class="app">
@@ -414,7 +415,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, h1, head
       </div>
       <nav class="mod-bar" aria-label="Modules">${moduleTabs(user, active)}</nav>
       ${announcementBanner()}
-      <main class="main-area">
+      <main id="main-content" class="main-area" tabindex="-1">
         ${heading ? pageHead({ title: h1 || title, subtitle, crumbs, actions }) : ''}
         ${body}
       </main>
@@ -432,6 +433,7 @@ function layout({ title, active, body, subtitle, head, crumbs, actions, h1, head
             <a href="/api/v1">Web API</a>
             <a href="/terms">Terms</a>
             <a href="/privacy">Privacy</a>
+            <a href="/accessibility">Accessibility</a>
           </div>
         </div>
         <div class="footer-legal">

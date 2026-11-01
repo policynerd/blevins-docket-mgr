@@ -680,6 +680,7 @@ function calendar(query = {}, user = null) {
   const filterForm = `
     <form class="search-panel" method="get" action="/calendar" role="search">
       <div class="sp-head">Calendar</div>
+      ${query.layout === 'month' ? '<input type="hidden" name="layout" value="month">' : ''}
       <div class="sp-grid">
         <label class="sp-field">View
           <select name="view">${['upcoming', 'past', 'all'].map((v) => opt(v, view, v[0].toUpperCase() + v.slice(1))).join('')}</select>
@@ -704,18 +705,110 @@ function calendar(query = {}, user = null) {
       ${page < pages ? `<a class="btn-link" href="${urlWith({ page: page + 1 })}">Next ›</a>` : '<span class="pager-disabled">Next ›</span>'}
     </nav>` : '';
 
-  const body = html`
-    ${raw(filterForm)}
+  // Two layouts of the same meetings. Each switch is a text link that says
+  // what it shows; neither is an icon a screen reader would announce as a
+  // pictograph.
+  const layoutMode = query.layout === 'month' ? 'month' : 'list';
+  const layoutSwitch = `<nav class="cal-layouts" aria-label="Calendar layout">`
+    + `<a class="cal-layout${layoutMode === 'list' ? ' active' : ''}" href="${urlWith({ layout: '' })}"${layoutMode === 'list' ? ' aria-current="page"' : ''}>List</a>`
+    + `<a class="cal-layout${layoutMode === 'month' ? ' active' : ''}" href="${urlWith({ layout: 'month' })}"${layoutMode === 'month' ? ' aria-current="page"' : ''}>Month</a>`
+    + `</nav>`;
+
+  const toolbar = `
     <div class="list-toolbar">
-      <p class="muted result-count">${total ? `Showing ${firstRow}–${lastRow} of ${total}` : '0'} meeting${total === 1 ? '' : 's'}</p>
+      <p class="muted result-count">${layoutMode === 'list'
+        ? `${total ? `Showing ${firstRow}–${lastRow} of ${total}` : '0'} meeting${total === 1 ? '' : 's'}`
+        : ''}</p>
       <span class="export-links">
-        <a class="btn-link" href="/calendar.ics">📅 Subscribe (iCal)</a>
+        <a class="btn-link" href="/calendar.ics">Subscribe to the iCal feed</a>
         <a class="btn-link" href="/admin/meetings/new">+ Schedule meeting</a>
       </span>
-    </div>
-    ${raw(table)}
-    ${raw(pager)}`;
+    </div>`;
+
+  const main = layoutMode === 'month'
+    ? monthGrid({ month: query.month, today, bodyId: filterArgs.bodyId, publicOnly: filterArgs.publicOnly,
+      urlFor: (month) => {
+        const p = new URLSearchParams({ layout: 'month', month });
+        if (body_id) p.set('body_id', body_id);
+        return '/calendar?' + p.toString();
+      } })
+    : table + pager;
+
+  const body = html`
+    ${raw(filterForm)}
+    ${raw(layoutSwitch)}
+    ${raw(toolbar)}
+    ${raw(main)}`;
   return layout({ title: 'Calendar', active: '/calendar', body });
+}
+
+// A month of meetings as a seven-column grid. Weeks start on Sunday; days
+// outside the month are empty cells so every column stays one weekday.
+// The month is read from ?month=YYYY-MM and falls back to today's.
+function monthGrid({ month, today, bodyId, publicOnly, urlFor }) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(month || ''));
+  const year = m ? Number(m[1]) : Number(today.slice(0, 4));
+  const mon = m ? Number(m[2]) - 1 : Number(today.slice(5, 7)) - 1;
+  const first = new Date(Date.UTC(year, mon, 1));
+  const days = new Date(Date.UTC(year, mon + 1, 0)).getUTCDate();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const ym = (d) => iso(d).slice(0, 7);
+  const from = iso(first);
+  const to = iso(new Date(Date.UTC(year, mon, days)));
+
+  const list = repo.meetings.searchCalendar({
+    view: 'all', from, to, bodyId, publicOnly, today, limit: 1000, offset: 0,
+  });
+  const byDay = new Map();
+  for (const mt of list.slice().reverse()) {
+    const k = String(mt.meeting_date).slice(0, 10);
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(mt);
+  }
+
+  const title = first.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const prev = new Date(Date.UTC(year, mon - 1, 1));
+  const next = new Date(Date.UTC(year, mon + 1, 1));
+  const prevLabel = prev.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const nextLabel = next.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  const WEEKDAYS = [['Sun', 'Sunday'], ['Mon', 'Monday'], ['Tue', 'Tuesday'], ['Wed', 'Wednesday'],
+    ['Thu', 'Thursday'], ['Fri', 'Friday'], ['Sat', 'Saturday']];
+  const head = '<tr>' + WEEKDAYS.map(([s, l]) => `<th scope="col" role="columnheader"><abbr title="${l}">${s}</abbr></th>`).join('') + '</tr>';
+
+  const cells = [];
+  for (let i = 0; i < first.getUTCDay(); i++) cells.push('<td class="cal-empty" role="gridcell"></td>');
+  for (let d = 1; d <= days; d++) {
+    const date = new Date(Date.UTC(year, mon, d));
+    const key = iso(date);
+    const evs = byDay.get(key) || [];
+    const long = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    const items = evs.length
+      ? `<ul class="cal-events">${evs.map((mt) => `<li><a href="/meetings/${mt.id}">`
+        + `${mt.meeting_time ? `<span class="cal-ev-when">${escapeText(mt.meeting_time)}</span> ` : ''}`
+        + `${escapeText(mt.body_name)}</a></li>`).join('')}</ul>`
+      : '';
+    const isToday = key === today;
+    cells.push(`<td role="gridcell" class="${isToday ? 'cal-today' : ''}"${isToday ? ' aria-current="date"' : ''}>`
+      + `<span class="cal-date"><span class="visually-hidden">${escapeText(long)}${evs.length ? `, ${evs.length} meeting${evs.length > 1 ? 's' : ''}` : ''}</span><span aria-hidden="true">${d}</span></span>`
+      + items + '</td>');
+  }
+  while (cells.length % 7) cells.push('<td class="cal-empty" role="gridcell"></td>');
+  const rows = [];
+  for (let i = 0; i < cells.length; i += 7) rows.push(`<tr role="row">${cells.slice(i, i + 7).join('')}</tr>`);
+
+  return `<section class="cal-month-wrap" aria-labelledby="cal-month-title">
+      <div class="cal-month-nav">
+        <a class="btn-link" href="${escapeText(urlFor(ym(prev)))}">‹ ${escapeText(prevLabel)}</a>
+        <h2 id="cal-month-title">${escapeText(title)}</h2>
+        <a class="btn-link" href="${escapeText(urlFor(ym(next)))}">${escapeText(nextLabel)} ›</a>
+      </div>
+      <table class="cal-month" role="grid" aria-labelledby="cal-month-title">
+        <thead>${head}</thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+      ${list.length ? '' : '<p class="muted">No meetings are scheduled this month.</p>'}
+    </section>`;
 }
 
 // --- Meeting detail ----------------------------------------------------------

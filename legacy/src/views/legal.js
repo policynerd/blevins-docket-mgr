@@ -90,6 +90,52 @@ function privacyPage() {
   return layout({ title: 'Privacy Notice', active: '', body });
 }
 
+// The accessibility statement. Its controls are buttons handled by
+// /assets/a11y-prefs.js, which stores the choice in this browser only.
+function accessibilityPage() {
+  const btn = (attr, value, label) =>
+    `<button type="button" class="btn" ${attr}="${value}" aria-pressed="false">${label}</button>`;
+  const prefs = `
+    <div class="a11y-prefs" data-a11y-prefs>
+      <fieldset>
+        <legend>Text size</legend>
+        ${btn('data-a11y-text', 'default', 'Default')}
+        ${btn('data-a11y-text', 'large', 'Large')}
+        ${btn('data-a11y-text', 'larger', 'Larger')}
+      </fieldset>
+      <fieldset>
+        <legend>Contrast</legend>
+        ${btn('data-a11y-contrast', 'default', 'Default')}
+        ${btn('data-a11y-contrast', 'high', 'High contrast')}
+      </fieldset>
+    </div>
+    <p class="muted">These settings are saved in this browser only and apply to every page of this site.
+    Your operating system's reduced-motion and increased-contrast settings are also honoured.</p>`;
+  const statement = `
+    <div class="doc-body">
+      <p>The ${escapeText(ORG.name)} is committed to making its public records — legislation, meeting
+      calendars, agendas, minutes, votes and budgets — usable by everyone.</p>
+      <h3>Standard</h3>
+      <p>This site aims to conform to the Web Content Accessibility Guidelines, WCAG 2.2, at level AA.</p>
+      <h3>What we do</h3>
+      <ul>
+        <li>Every page begins with a link that skips straight to its main content.</li>
+        <li>Keyboard focus is always visible.</li>
+        <li>The meeting calendar is offered as both a month grid and a list.</li>
+        <li>Budget usage is stated as a percentage in text, not shown only as a coloured bar.</li>
+        <li>Meetings can be followed in any calendar application through the iCal feed.</li>
+      </ul>
+      <h3>Known limitations</h3>
+      <p>Some older attachments are scanned documents and may not be readable by assistive technology.
+      The ${escapeText(ORG.clerkOffice || 'Office of the Clerk')} will provide any public record in an accessible format on request.</p>
+      <h3>Feedback</h3>
+      <p>If you meet a barrier on this site, please contact the ${escapeText(ORG.clerkOffice || 'Office of the Clerk')}.
+      Tell us the page and what you were trying to do, and we will respond.</p>
+    </div>`;
+  const body = html`${raw(card('Display preferences', prefs))}${raw(card('Accessibility statement', statement))}`;
+  return layout({ title: 'Accessibility', active: '', body });
+}
+
 // --- Admin editor (one form, two word-processor fields) ---------------------
 function legalForm({ saved = false } = {}) {
   const form = html`
@@ -133,4 +179,4 @@ function footerForm({ saved = false } = {}) {
   return layout({ title: 'Footer editor', active: '/admin', body });
 }
 
-module.exports = { termsPage, privacyPage, legalForm, footerForm, setContent, setFooterHtml };
+module.exports = { termsPage, privacyPage, accessibilityPage, legalForm, footerForm, setContent, setFooterHtml };

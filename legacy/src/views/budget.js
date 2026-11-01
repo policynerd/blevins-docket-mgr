@@ -71,10 +71,52 @@ function budgetList(user) {
   return layout({ title: 'Budget', active: '/budget', subtitle: 'Fiscal-year budgets, amendments, and spending.', body });
 }
 
-function bar(used, total) {
-  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+// A usage meter. The bar is drawn for sighted users, but the number is always
+// in the text too: a coloured fill alone tells a screen reader, a printout, or
+// a colour-blind reader nothing, and an overrun is the one value that matters.
+// `label` overrides the visible text where the ratio is not "percent used"
+// (the monthly trend scales against the busiest month, not a budget).
+function bar(used, total, { label } = {}) {
+  const real = total > 0 ? Math.round((used / total) * 100) : 0;
+  const pct = Math.min(100, Math.max(0, real));
   const over = used > total && total > 0;
-  return `<div class="budget-bar"><span style="width:${pct}%" class="${over ? 'over' : ''}"></span></div>`;
+  const text = label || `${real}% used${over ? ' (over budget)' : ''}`;
+  return `<div class="budget-meter">`
+    + `<div class="budget-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-valuetext="${escapeText(text)}">`
+    + `<span style="width:${pct}%" class="${over ? 'over' : ''}"></span></div>`
+    + `<span class="budget-meter-label">${escapeText(text)}</span></div>`;
+}
+
+// Current budget against spend, per category, as a labelled SVG. Every bar
+// carries its amount as text beside it, and the figure has a text alternative,
+// so the chart restates the table below it rather than replacing it.
+function categoryChart(cats) {
+  if (!cats.length) return '';
+  const rowH = 34, labelW = 150, amtW = 130, barW = 360;
+  const width = labelW + barW + amtW;
+  const height = cats.length * rowH + 8;
+  const max = Math.max(1, ...cats.map(([, c]) => Math.max(c.current, c.actual)));
+  const rows = cats.map(([cat, c], i) => {
+    const y = i * rowH + 4;
+    const wCur = Math.round((c.current / max) * barW);
+    const wSpent = Math.round((Math.min(c.actual, max) / max) * barW);
+    return `<g>`
+      + `<text class="bc-label" x="0" y="${y + 15}">${escapeText(cat.length > 22 ? cat.slice(0, 21) + '…' : cat)}</text>`
+      + `<rect class="bc-track" x="${labelW}" y="${y + 2}" width="${barW}" height="20"></rect>`
+      + `<rect class="bc-current" x="${labelW}" y="${y + 2}" width="${wCur}" height="9"></rect>`
+      + `<rect class="bc-spent" x="${labelW}" y="${y + 13}" width="${wSpent}" height="9"></rect>`
+      + `<text class="bc-amt" x="${labelW + barW + 8}" y="${y + 11}">${escapeText(money(c.current))}</text>`
+      + `<text class="bc-amt" x="${labelW + barW + 8}" y="${y + 23}">${escapeText(money(c.actual))} spent</text>`
+      + `</g>`;
+  }).join('');
+  const alt = cats.map(([cat, c]) => `${cat}: ${money(c.actual)} spent of ${money(c.current)}`).join('; ');
+  return `<figure class="budget-chart">`
+    + `<figcaption>Current budget and spend by category</figcaption>`
+    + `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="${escapeText(alt)}">${rows}</svg>`
+    + `<ul class="budget-chart-key">`
+    + `<li><span class="key-swatch key-current" aria-hidden="true"></span>Current budget</li>`
+    + `<li><span class="key-swatch key-spent" aria-hidden="true"></span>Spent to date</li>`
+    + `</ul></figure>`;
 }
 
 // Category-grouped rows (with subtotals) for the detail grid.
@@ -247,7 +289,7 @@ function budgetDetail(b, user) {
     <div class="detail-head">
       <h1>${b.fiscal_year} Budget ${statusBadge(b.status)}</h1>
       <span class="head-actions">
-        <a class="btn" href="/budget/${b.id}/dashboard">📊 Dashboard</a>
+        <a class="btn" href="/budget/${b.id}/dashboard">Dashboard</a>
         <a class="btn" href="/budget/${b.id}.csv">⬇ CSV</a>
       </span>
     </div>
@@ -369,7 +411,8 @@ function budgetDashboard(b) {
     c.committed += l.committed;
     cats.set(cat, c);
   }
-  const catRows = [...cats.entries()].sort((x, y) => y[1].current - x[1].current).map(([cat, c]) => `
+  const catsSorted = [...cats.entries()].sort((x, y) => y[1].current - x[1].current);
+  const catRows = catsSorted.map(([cat, c]) => `
     <tr><td>${escapeText(cat)}</td>
       <td class="num">${money(c.current)}</td>
       <td class="num">${money(c.actual)}</td>
@@ -389,7 +432,7 @@ function budgetDashboard(b) {
     <tr><td>${escapeText(m.month)}</td>
       <td class="num">${money(m.spent)}</td>
       ${sum.hasRevenue ? `<td class="num">${money(m.received)}</td>` : ''}
-      <td class="bar-col">${bar(m.spent, maxSpend)}</td></tr>`).join('');
+      <td class="bar-col">${bar(m.spent, maxSpend, { label: `${Math.round((m.spent / maxSpend) * 100)}% of peak month` })}</td></tr>`).join('');
   const monthTable = months.length
     ? `<table class="data compact"><thead><tr><th>Month</th><th class="num">Spent</th>
         ${sum.hasRevenue ? '<th class="num">Received</th>' : ''}<th></th></tr></thead><tbody>${monthRows}</tbody></table>`
@@ -418,7 +461,7 @@ function budgetDashboard(b) {
       <span class="head-actions"><a class="btn" href="/budget/${b.id}.csv">⬇ CSV</a></span>
     </div>
     ${raw(tiles)}
-    ${raw(card('Spending by category', catTable))}
+    ${raw(card('Spending by category', categoryChart(catsSorted) + catTable))}
     ${raw(card('Monthly actuals', monthTable))}
     ${raw(card('Lines to watch (highest budget usage)', hotTable))}`;
   return layout({ title: b.fiscal_year + ' dashboard', active: '/budget', body });
