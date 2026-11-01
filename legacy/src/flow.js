@@ -297,8 +297,13 @@ function renderTable(doc, node) {
   // Head matter and a packet's contents are label/value pairs rather than
   // tabular data, and they are the two layouts space-padding used to imitate.
   // `field()` is the column they were reaching for.
+  // Only a genuinely two-column table is laid out this way: the agenda packet's
+  // contents table is also class "contents" but carries four columns (tab,
+  // agenda number, item, page), and folding it into pairs dropped the item
+  // titles and page numbers from every packet rendered without Chromium.
   const cls = String(node.cls || '');
-  if (/\b(headmatter|contents)\b/.test(cls)) {
+  const pairs = rows.every((tr) => cellsOf(tr).length <= 2);
+  if (pairs && /\b(headmatter|contents)\b/.test(cls)) {
     for (const tr of rows) {
       const cells = cellsOf(tr);
       doc.field(textOf(cells[0]), textOf(cells[1]), { size: 10.5, labelW: 52, after: 4 });
@@ -311,7 +316,10 @@ function renderTable(doc, node) {
   const ncol = Math.max(1, ...grid.map((r) => r.length));
   const pad = (r) => r.concat(new Array(Math.max(0, ncol - r.length)).fill(''));
   const headed = cellsOf(rows[0]).every((c) => c.name === 'th');
-  const cols = new Array(ncol).fill(doc.contentW / ncol);
+  // The packet contents is narrow tab / agenda / page columns around one wide
+  // title column; an even split would wrap every title to a word per line.
+  const weights = /\bcontents\b/.test(cls) && ncol === 4 ? [0.11, 0.11, 0.64, 0.14] : null;
+  const cols = weights ? weights.map((w) => doc.contentW * w) : new Array(ncol).fill(doc.contentW / ncol);
   doc.table(cols, (headed ? grid.slice(1) : grid).map(pad),
     { head: headed ? pad(grid[0]) : null, after: 8 });
 }

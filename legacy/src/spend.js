@@ -13,6 +13,10 @@
 const { db } = require('./db');
 const auth = require('./auth');
 
+// Own the tables this module reads, as assent.js does, rather than relying on
+// the HTTP wiring having applied them first. apply() is idempotent.
+require('./schema-extra').apply();
+
 const KINDS = ['expense', 'commitment', 'reimbursement'];
 const STATUSES = ['Draft', 'Submitted', 'Approved', 'Denied', 'Posted', 'Voided'];
 const OPEN = new Set(['Submitted', 'Approved']);

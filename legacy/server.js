@@ -652,6 +652,7 @@ route('GET', /^\/topics\/?$/, (req, res) => sendHtml(res, pages.topicsList()));
 // Legal (public) -------------------------------------------------------------
 route('GET', /^\/terms\/?$/, (req, res) => sendHtml(res, legal.termsPage()));
 route('GET', /^\/privacy\/?$/, (req, res) => sendHtml(res, legal.privacyPage()));
+route('GET', /^\/accessibility\/?$/, (req, res) => sendHtml(res, legal.accessibilityPage()));
 
 // Budget (public read; clerk manages via /admin routes below) ----------------
 route('GET', /^\/budget\/?$/, (req, res, ctx) => sendHtml(res, budgetView.budgetList(ctx.user)));
